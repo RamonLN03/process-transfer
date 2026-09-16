@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "process-transfer"
+version = "0.0.1"
+description = "Physics-aware transfer of hybrid process models from data-rich to data-scarce plants"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Ramón López Nieto" }]
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.12",
+    "pydantic>=2.6",
+    "pyyaml>=6.0",
+    "pyarrow>=15.0",
+    "duckdb>=1.0",
+    "pandas>=2.2",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
