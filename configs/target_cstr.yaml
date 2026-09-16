@@ -1,0 +1,29 @@
+# Target plant: simulation truth.
+# In M0 the target differs from the source only in hidden heat-transfer
+# behaviour (docs/decisions.md D-008): lower conductance and a weaker
+# temperature dependence. Everything the modeller knows is identical.
+plant:
+  name: target
+  process_type: cstr
+  design:
+    volume: {value: 100.0, unit: L}
+  properties:
+    density: {value: 1000.0, unit: g/L}
+    heat_capacity: {value: 0.239, unit: J/(g*K)}
+    reaction_enthalpy: {value: -5.0e+4, unit: J/mol}
+  nominal_inputs:
+    feed_flow: {value: 100.0, unit: L/min}
+    feed_concentration: {value: 0.5, unit: mol/L}
+    feed_temperature: {value: 350.0, unit: K}
+    coolant_temperature: {value: 337.5, unit: K}
+true_physics:
+  kinetics:
+    form: saturating
+    k0: {value: 1.44e+11, unit: 1/min}
+    activation_temperature: {value: 8750.0, unit: K}
+    saturation_constant: {value: 4.0, unit: L/mol}
+  heat_transfer:
+    form: linear_in_temperature
+    UA_ref: {value: 8.0e+4, unit: J/(min*K)}
+    alpha: {value: 0.002, unit: 1/K}
+    T_ref: {value: 350.0, unit: K}

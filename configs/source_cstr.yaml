@@ -1,0 +1,32 @@
+# Source plant: simulation truth.
+# `plant` is what an engineer would know. `true_physics` is hidden from the
+# modeller and never enters training or evaluation (AGENTS.md).
+# Engineering units; the loader converts to SI (process_transfer.units).
+# Chemistry and properties: Seborg, Edgar, Mellichamp and Doyle, Example 2.5.
+# Plant design and hidden physics: docs/decisions.md D-005 to D-007.
+# Exponents carry an explicit sign because PyYAML reads `1e5` as a string.
+plant:
+  name: source
+  process_type: cstr
+  design:
+    volume: {value: 100.0, unit: L}
+  properties:
+    density: {value: 1000.0, unit: g/L}
+    heat_capacity: {value: 0.239, unit: J/(g*K)}
+    reaction_enthalpy: {value: -5.0e+4, unit: J/mol}
+  nominal_inputs:
+    feed_flow: {value: 100.0, unit: L/min}
+    feed_concentration: {value: 0.5, unit: mol/L}
+    feed_temperature: {value: 350.0, unit: K}
+    coolant_temperature: {value: 337.5, unit: K}
+true_physics:
+  kinetics:
+    form: saturating
+    k0: {value: 1.44e+11, unit: 1/min}
+    activation_temperature: {value: 8750.0, unit: K}
+    saturation_constant: {value: 4.0, unit: L/mol}
+  heat_transfer:
+    form: linear_in_temperature
+    UA_ref: {value: 1.0e+5, unit: J/(min*K)}
+    alpha: {value: 0.005, unit: 1/K}
+    T_ref: {value: 350.0, unit: K}
