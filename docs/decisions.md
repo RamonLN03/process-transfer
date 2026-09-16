@@ -63,3 +63,11 @@ A small explicit conversion table at the configuration boundary, not Pint. Unkno
 ## D-014 Data location and repository visibility (2026-09-16, accepted)
 
 `PT_DATA_DIR` defaults to `data/` inside the repository, ignored by git; it can point outside synced folders. The repository is private for now (see project_scope.md, commercialisation).
+
+## D-015 Sign of the reaction enthalpy is not constrained (2026-09-16, accepted)
+
+`reaction_enthalpy` is a plain `Quantity`, not a positive-only or negative-only field. The M0 CSTR configuration uses the negative value of an exothermic reaction, but the configuration models must be able to represent endothermic reactions in later process families (M7), so no global sign constraint is added to the plant configuration. Sign expectations belong to a specific plant's documentation, not to the schema.
+
+## D-016 No AI co-author trailers in commit messages (2026-09-16, accepted)
+
+Commit messages carry no `Co-Authored-By` trailers naming AI agents. The four initial commits were rewritten on 2026-09-16, before any remote existed, to remove such trailers; content, authorship and dates were unchanged (identical tree hashes). Authorship of the repository is the user's; agent roles are recorded in AGENTS.md, Multi-Agent Coordination.
