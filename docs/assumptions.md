@@ -53,9 +53,35 @@ The modeller knows the reaction, that it is exothermic, the Arrhenius form, the 
 
 Whether E/R counts as known or estimable for the modeller is open and only matters from M1.
 
-## Operating point and envelope (preliminary)
+## Operating points (M0-E01)
 
-A scratch calculation outside the repository, to be reproduced by repository code before these numbers are quoted anywhere else, gave: source nominal point C_A = 0.25 mol/L, T = 350 K, unique steady state, eigenvalues -1.60 +- 1.36i 1/min; target C_A = 0.190 mol/L, T = 355.2 K, unique, eigenvalues -0.96 +- 1.80i 1/min. Under the planned excitation amplitudes the source stayed within 341 to 363 K and the target within 343 to 372 K. Documented envelope for M0: T in [335, 380] K, C_A in (0, 1.2 C_Af].
+Computed by `experiments/00_verify_operating_points.py`; see `docs/experiment_log.md`, M0-E01.
+
+| | Source | Target |
+|---|---|---|
+| Steady states for nominal inputs, 280 to 480 K | 1 | 1 |
+| C_A | 250.02 mol/m^3 (0.25002 mol/L) | 189.67 mol/m^3 (0.18967 mol/L) |
+| T | 350.00 K | 355.17 K |
+| Conversion | 50.0 % | 62.1 % |
+| Eigenvalues | -1.605 +- 1.362i 1/min | -0.964 +- 1.804i 1/min |
+| Stable with the 0.5 1/min margin (D-017) | yes | yes |
+
+The source is designed for 250 mol/m^3 at 350 K (D-005). The book's k0 and E/R give k(350 K) = 0.99993 1/min rather than exactly 1, so the computed point differs from the design values by 0.02 mol/m^3 and 0.8 mK.
+
+## Envelope under the D-010 amplitudes (M0-E01)
+
+Documented envelope for M0: T in [335, 380] K, C_A in (0, 1.2 C_Af]. The temperature limits are a convention of this study, not a property of the fluid.
+
+Each of the 24 input cases (8 single-input excursions, 16 corners of the input box) has a unique, locally stable steady state on both plants, and every 40 min step response converges to it. The hottest case is the all-plus corner, with q, C_Af, T_f and T_c all high: more flow of a richer feed brings more reactant and therefore more heat.
+
+| | Source | Target |
+|---|---|---|
+| Temperature range over all cases | 339.67 to 372.44 K | 341.19 to 385.29 K |
+| Concentration range | 110 to 440 mol/m^3 | 46 to 392 mol/m^3 |
+| Least stable case, max real part | -0.896 1/min | -0.381 1/min |
+| Inside the documented envelope | yes | no, by 5.3 K on the all-plus corner |
+
+The target does not meet the D-009 criterion with the D-010 amplitudes. The remedy is the open decision D-018, with options evaluated in M0-E02; no data are generated until it is taken. The first version of this file quoted a narrower range from a scratch calculation that simulated four cases and assumed the hot corner had low flow. That assumption was wrong.
 
 ## Measurement
 

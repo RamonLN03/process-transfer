@@ -71,3 +71,23 @@ A small explicit conversion table at the configuration boundary, not Pint. Unkno
 ## D-016 No AI co-author trailers in commit messages (2026-09-16, accepted)
 
 Commit messages carry no `Co-Authored-By` trailers naming AI agents. The four initial commits were rewritten on 2026-09-16, before any remote existed, to remove such trailers; content, authorship and dates were unchanged (identical tree hashes). Authorship of the repository is the user's; agent roles are recorded in AGENTS.md, Multi-Agent Coordination.
+
+## D-017 Stability margin at the nominal point (2026-09-18, accepted)
+
+At the nominal inputs every eigenvalue must have real part below -0.5 1/min (-8.33e-3 1/s), so that disturbances decay with a time constant of at most two minutes. The value was part of the M0 design proposal accepted on 2026-09-16 and is recorded here because D-009 left it unstated. On the boundary of the input box the requirement is a unique, locally stable steady state for every input case, without a margin, in addition to the envelope of D-009.
+
+## D-018 Target leaves the temperature envelope under the D-010 amplitudes (2026-09-18, proposed)
+
+M0-E01 found that the target peaks at 385.3 K on the all-plus corner of the input box, 5.3 K above the documented limit, while every input case keeps a unique stable steady state. M0-E02 evaluated the remedies (target plant):
+
+| Option | Change | T range, K | Least stable case, 1/min | r_true / r_model | Envelope |
+|---|---|---|---|---|---|
+| Baseline | none | 341.2 to 385.3 | -0.381 | 1.69 to 0.78 | violated |
+| A15 | q and C_Af +-15 % | 341.8 to 380.6 | -0.610 | 1.63 to 0.80 | violated by 0.6 K |
+| A10 | q and C_Af +-10 % | 342.4 to 376.2 | -0.723 | 1.58 to 0.83 | met |
+| B | UA_ref x1.5 on both plants, T_c = 341.667 K | 342.8 to 372.5 | -1.176 | 1.42 to 0.76 | met |
+| C | target UA_ref = 0.9 x source | 340.2 to 382.3 | -0.632 | 1.63 to 0.74 | violated |
+
+Considerations. A10 changes only the excitation (D-010) and keeps the accepted plant design and the source-target shift; it costs little visibility of the kinetic mismatch, because the temperature inputs drive most of the concentration excursion. B changes the plant design (D-005), moves the target's operating point closer to the source's (216 mol/m^3 and 352.9 K instead of 190 mol/m^3 and 355.2 K) and implies the larger heat-transfer area that D-005 already judged less plausible, in exchange for the strongest damping. C does not solve the problem. Raising the 380 K limit is possible, since the limit is a convention, but it would fit the criterion to the result.
+
+Recommendation of the implementation agent: A10. The decision belongs to the project owner. Until it is taken, the target envelope test is a strict expected failure and no data are generated.
