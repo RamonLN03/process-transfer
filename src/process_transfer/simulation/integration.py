@@ -16,8 +16,15 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from process_transfer.cstr_variables import FloatArray
+from process_transfer.validation import require_positive
 
 RightHandSide = Callable[[FloatArray, FloatArray], FloatArray]  # f(x, u) -> dx/dt
+
+
+# A guard against a mistyped period, not a physical limit: ten million samples of two
+# states are 160 MB. A request beyond it is refused with a message, instead of ending
+# in a MemoryError or an OverflowError from deep inside numpy.
+MAX_SAMPLES_PER_SEGMENT = 10_000_000
 
 
 class IntegrationError(RuntimeError):
@@ -36,7 +43,14 @@ def sample_times(duration: float, sample_period: float) -> FloatArray:
         if not math.isfinite(value) or value <= 0.0:
             raise ValueError(f"{name} must be a finite positive number of seconds, got {value!r}")
 
-    whole_periods = int(math.floor(duration / sample_period))
+    ratio = duration / sample_period  # finite inputs can still overflow here
+    if not math.isfinite(ratio) or ratio > MAX_SAMPLES_PER_SEGMENT:
+        raise ValueError(
+            f"duration {duration!r} s with sample_period {sample_period!r} s would give "
+            f"about {ratio:.3g} samples; the limit is {MAX_SAMPLES_PER_SEGMENT}. Use a "
+            "longer sample_period or split the duration."
+        )
+    whole_periods = int(math.floor(ratio))
     times = sample_period * np.arange(whole_periods + 1, dtype=np.float64)
     if duration - times[-1] > 1.0e-9 * sample_period:
         times = np.append(times, duration)
@@ -61,6 +75,15 @@ class SegmentTrajectory:
     states: FloatArray  # shape (n_samples, n_states)
     inputs: FloatArray  # the constant input vector of the segment
 
+    def __post_init__(self) -> None:
+        if self.times.ndim != 1 or len(self.times) < 2:
+            raise ValueError("a segment needs at least its two end samples")
+        if self.states.ndim != 2 or len(self.states) != len(self.times):
+            raise ValueError(
+                f"states must have one row per sample: {self.states.shape} against "
+                f"{len(self.times)} sampling instants"
+            )
+
 
 @dataclass(frozen=True)
 class Trajectory:
@@ -72,6 +95,10 @@ class Trajectory:
     rtol: float
     atol: float
     n_rhs_evaluations: int
+
+    def __post_init__(self) -> None:
+        if len(self.segments) == 0:
+            raise ValueError("a trajectory needs at least one segment")
 
     @property
     def times(self) -> FloatArray:
@@ -207,13 +234,20 @@ def simulate_piecewise(
     if len(segments) == 0:
         raise ValueError("at least one input segment is required")
 
+    # scipy replaces a tolerance it finds too small and only warns; reject it here.
+    rtol = require_positive("rtol", rtol)
+    atol = require_positive("atol", atol)
     state = np.asarray(x0, dtype=np.float64)
+    if state.ndim != 1 or not np.all(np.isfinite(state)):
+        raise ValueError(f"x0 must be a finite vector, got {x0!r}")
     start = 0.0
     n_rhs_evaluations = 0
     simulated: list[SegmentTrajectory] = []
     for index, segment in enumerate(segments):
         local_times = sample_times(segment.duration, sample_period)
         u = np.asarray(segment.inputs, dtype=np.float64)
+        if not np.all(np.isfinite(u)):
+            raise ValueError(f"segment {index} has non-finite inputs: {u!r}")
         solution = solve_ivp(
             lambda t, x, u=u: f(x, u),
             (0.0, segment.duration),

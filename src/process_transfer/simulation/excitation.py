@@ -63,11 +63,16 @@ def levels_to_segments(
         raise ValueError(f"clock must be a finite positive number of seconds, got {clock!r}")
     nominal = np.asarray(nominal, dtype=np.float64)
     amplitudes = np.asarray(amplitudes, dtype=np.float64)
+    if not np.all(np.isfinite(nominal)):
+        raise ValueError("nominal inputs must be finite")
     if np.any(amplitudes < 0.0) or not np.all(np.isfinite(amplitudes)):
         raise ValueError("amplitudes must be finite and non-negative")
     levels = np.asarray(levels)
     if levels.ndim != 2 or levels.shape[1] != nominal.size:
         raise ValueError(f"levels must have shape (n_ticks, {nominal.size}), got {levels.shape}")
+    if levels.size and np.max(np.abs(levels)) > 1:
+        # a level of 2 would silently double the amplitude the protocol declares
+        raise ValueError("levels must lie between -1 and +1")
     return [InputSegment(clock, nominal + row * amplitudes) for row in levels]
 
 

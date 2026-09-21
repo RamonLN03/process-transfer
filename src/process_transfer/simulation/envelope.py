@@ -20,10 +20,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.integrate import solve_ivp
 
 from process_transfer.cstr_variables import INPUT_NAMES, FloatArray
-from process_transfer.simulation.integration import sample_times
+from process_transfer.simulation.integration import InputSegment, simulate_piecewise
 
 RightHandSide = Callable[[FloatArray, FloatArray], FloatArray]  # f(x, u) -> dx/dt
 
@@ -54,6 +53,17 @@ def input_cases(nominal: FloatArray, deviations: FloatArray) -> list[tuple[str, 
     ``deviations`` are absolute, non-negative SI deviations, one per input. For
     four inputs this gives 8 single-input cases and 16 corners.
     """
+    nominal = np.asarray(nominal, dtype=np.float64)
+    deviations = np.asarray(deviations, dtype=np.float64)
+    expected = (len(INPUT_NAMES),)
+    if nominal.shape != expected or deviations.shape != expected:
+        raise ValueError(f"nominal and deviations must have shape {expected}")
+    if not (np.all(np.isfinite(nominal)) and np.all(np.isfinite(deviations))):
+        raise ValueError("nominal and deviations must be finite")
+    if np.any(deviations < 0.0):
+        # a negative deviation would silently swap the meaning of the + and - labels
+        raise ValueError(f"deviations must not be negative, got {deviations!r}")
+
     cases: list[tuple[str, FloatArray]] = []
     for index, name in enumerate(INPUT_NAMES):
         for sign, symbol in ((+1.0, "+"), (-1.0, "-")):
@@ -81,31 +91,24 @@ def simulate_envelope(
     The trajectory is sampled every ``sample_period`` seconds and at ``duration``
     itself, so ``final_state`` is always the state at the end of the simulation.
     """
-    times = sample_times(duration, sample_period)
     results: list[EnvelopeCase] = []
     for label, u in cases:
-        solution = solve_ivp(
-            lambda t, x, u=u: f(x, u),
-            (0.0, duration),
-            x0,
-            method="LSODA",
-            t_eval=times,
-            rtol=1.0e-9,
-            atol=1.0e-9,
+        # One validated path for every simulation: the sampling grid, finite inputs and
+        # finite states are checked by simulate_piecewise, which raises instead of
+        # returning ranges computed from NaN.
+        trajectory = simulate_piecewise(
+            f, x0, [InputSegment(duration, np.asarray(u, dtype=np.float64))], sample_period
         )
-        if not solution.success:
-            raise RuntimeError(f"integration failed for case {label!r}: {solution.message}")
-        c_a, temperature = solution.y
-        final_state = solution.y[:, -1]
+        final_state = trajectory.states[-1]
         results.append(
             EnvelopeCase(
                 label=label,
-                inputs=u,
+                inputs=np.asarray(u, dtype=np.float64),
                 final_state=final_state,
-                final_derivative=f(final_state, u),
+                final_derivative=f(final_state, np.asarray(u, dtype=np.float64)),
                 duration=duration,
-                c_a_range=(float(c_a.min()), float(c_a.max())),
-                temperature_range=(float(temperature.min()), float(temperature.max())),
+                c_a_range=trajectory.state_range(0),
+                temperature_range=trajectory.state_range(1),
             )
         )
     return results
