@@ -1,7 +1,9 @@
 """Configuration models for plants, hidden physics and the modeller's knowledge.
 
 Quantities are written in engineering units in YAML and exposed in SI through
-``Quantity.si``. The models are strict: unknown fields are errors, so a
+``Quantity.si``. Every field states the physical dimension it expects, so a
+known unit of the wrong kind (a volume in kelvin) is rejected, and every value
+must be finite. The models are strict: unknown fields are errors, so a
 true-plant file cannot be loaded as modeller knowledge by accident, and vice
 versa. That strictness is the ground-truth boundary of ``AGENTS.md``
 expressed in code: everything under ``TruePlantConfig.true_physics`` is
@@ -12,12 +14,12 @@ simulation truth and never reaches a model; ``TruePlantConfig.plant`` and
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from process_transfer.units import to_si
+from process_transfer.units import dimension_of, to_si
 
 
 class StrictModel(BaseModel):
@@ -27,14 +29,25 @@ class StrictModel(BaseModel):
 
 
 class Quantity(StrictModel):
-    """A physical quantity as written in configuration: a value and a unit string."""
+    """A physical quantity as written in configuration: a finite value and a unit.
 
-    value: float
+    Subclasses set ``DIMENSION`` to the physical dimension the field requires;
+    the base class accepts any known unit.
+    """
+
+    DIMENSION: ClassVar[str | None] = None
+
+    value: float = Field(allow_inf_nan=False)
     unit: str
 
     @model_validator(mode="after")
-    def _unit_must_be_known(self) -> Quantity:
-        to_si(self.value, self.unit)  # raises UnknownUnitError for anything unknown
+    def _unit_must_be_known_and_of_the_right_dimension(self) -> Quantity:
+        dimension = dimension_of(self.unit)  # raises UnknownUnitError for anything unknown
+        expected = type(self).DIMENSION
+        if expected is not None and dimension != expected:
+            raise ValueError(
+                f"unit {self.unit!r} measures {dimension}, but this field requires {expected}"
+            )
         return self
 
     @property
@@ -51,7 +64,57 @@ class Quantity(StrictModel):
 class PositiveQuantity(Quantity):
     """A quantity that is physically required to be strictly positive."""
 
-    value: float = Field(gt=0)
+    value: float = Field(gt=0, allow_inf_nan=False)
+
+
+class Volume(PositiveQuantity):
+    DIMENSION = "volume"
+
+
+class VolumetricFlow(PositiveQuantity):
+    DIMENSION = "volumetric_flow"
+
+
+class Concentration(PositiveQuantity):
+    DIMENSION = "concentration"
+
+
+class Temperature(PositiveQuantity):
+    """An absolute temperature, or a quantity such as E/R expressed in kelvin."""
+
+    DIMENSION = "temperature"
+
+
+class Density(PositiveQuantity):
+    DIMENSION = "density"
+
+
+class SpecificHeatCapacity(PositiveQuantity):
+    DIMENSION = "specific_heat_capacity"
+
+
+class MolarEnergy(Quantity):
+    """Signed on purpose: negative for an exothermic reaction (docs/decisions.md D-015)."""
+
+    DIMENSION = "molar_energy"
+
+
+class RateConstant(PositiveQuantity):
+    DIMENSION = "inverse_time"
+
+
+class ThermalConductance(PositiveQuantity):
+    DIMENSION = "thermal_conductance"
+
+
+class InverseConcentration(PositiveQuantity):
+    DIMENSION = "inverse_concentration"
+
+
+class InverseTemperature(Quantity):
+    """Signed: a slope per kelvin may be positive or negative."""
+
+    DIMENSION = "inverse_temperature"
 
 
 # --------------------------------------------------------------------------- #
@@ -60,23 +123,23 @@ class PositiveQuantity(Quantity):
 
 
 class ReactorDesign(StrictModel):
-    volume: PositiveQuantity
+    volume: Volume
 
 
 class PhysicalProperties(StrictModel):
-    density: PositiveQuantity
-    heat_capacity: PositiveQuantity
-    reaction_enthalpy: Quantity  # negative for an exothermic reaction
+    density: Density
+    heat_capacity: SpecificHeatCapacity
+    reaction_enthalpy: MolarEnergy
 
 
 class NominalInputs(StrictModel):
     """Nominal values of the four inputs: feed flow and composition, feed and coolant
     temperature. Excitation moves the inputs around these values."""
 
-    feed_flow: PositiveQuantity
-    feed_concentration: PositiveQuantity
-    feed_temperature: PositiveQuantity
-    coolant_temperature: PositiveQuantity
+    feed_flow: VolumetricFlow
+    feed_concentration: Concentration
+    feed_temperature: Temperature
+    coolant_temperature: Temperature
 
 
 class PlantSpec(StrictModel):
@@ -104,9 +167,9 @@ class SaturatingKinetics(StrictModel):
     """
 
     form: Literal["saturating"]
-    k0: PositiveQuantity
-    activation_temperature: PositiveQuantity  # E/R
-    saturation_constant: PositiveQuantity  # K_sat
+    k0: RateConstant
+    activation_temperature: Temperature  # E/R
+    saturation_constant: InverseConcentration  # K_sat
 
 
 class TemperatureDependentConductance(StrictModel):
@@ -114,9 +177,9 @@ class TemperatureDependentConductance(StrictModel):
     (docs/decisions.md D-007). The modeller sees a constant UA instead."""
 
     form: Literal["linear_in_temperature"]
-    UA_ref: PositiveQuantity
-    alpha: Quantity
-    T_ref: PositiveQuantity
+    UA_ref: ThermalConductance
+    alpha: InverseTemperature
+    T_ref: Temperature
 
 
 class TruePhysics(StrictModel):
@@ -141,13 +204,13 @@ class FirstOrderKinetics(StrictModel):
     a modeller would start from and later re-estimate."""
 
     form: Literal["first_order"]
-    k0: PositiveQuantity
-    activation_temperature: PositiveQuantity
+    k0: RateConstant
+    activation_temperature: Temperature
 
 
 class ConstantConductance(StrictModel):
     form: Literal["constant"]
-    UA: PositiveQuantity
+    UA: ThermalConductance
 
 
 class ModellerConfig(StrictModel):
