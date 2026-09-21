@@ -19,7 +19,11 @@ import itertools
 import numpy as np
 
 from process_transfer.cstr_variables import FloatArray
-from process_transfer.simulation.excitation import LevelArray, excursions_with_rest
+from process_transfer.simulation.excitation import (
+    LevelArray,
+    binary_levels,
+    excursions_with_rest,
+)
 from process_transfer.simulation.integration import InputSegment
 
 # A10 (D-018): q and C_Af +-10 % of their nominal values, T_f and T_c +-5 K.
@@ -74,6 +78,21 @@ def corner_levels() -> LevelArray:
 def corner_label(levels: LevelArray) -> str:
     """Signs of q, C_Af, T_f and T_c, for example ``++--``."""
     return "".join("+" if level > 0 else "-" for level in levels)
+
+
+def p3_corners(n_excursions: int, seed: int) -> LevelArray:
+    """The corners of a seeded P3 sequence, each drawn with equal probability and
+    independently, repeats allowed.
+
+    A function of the excitation seed and of nothing else: the generator is built here
+    and used for this only, so no other draw, of sensor noise for instance, can shift
+    the sequence or be shifted by it. The same seed gives the sequence that
+    ``separated_excursions`` draws from ``numpy.random.default_rng(seed)``, which is how
+    M0-E03 built its P3 sequences.
+    """
+    if isinstance(seed, bool) or not isinstance(seed, (int, np.integer)) or seed < 0:
+        raise ValueError(f"seed must be an explicit non-negative integer, got {seed!r}")
+    return binary_levels(n_excursions, 4, np.random.default_rng(int(seed)))
 
 
 def p3_segments(nominal_inputs: FloatArray, corners: LevelArray) -> list[InputSegment]:
