@@ -41,7 +41,7 @@ Generated data never goes into git. The `PT_DATA_DIR` environment variable sets 
 src/process_transfer/   reusable code, organised by concern (see docs/architecture.md)
 tests/                  pytest suite, including tests of physical behaviour
 docs/                   scope, research questions, architecture, roadmap, decisions, assumptions
-configs/                plant and excitation configurations (engineering units, converted to SI on load)
+configs/                plant and sensor configurations (engineering units, converted to SI on load)
 sql/                    schema and readable data-quality queries
 experiments/            scripts that generate data and run experiments
 ```

@@ -4,7 +4,7 @@ One entry per experiment or data-generation run, in order. Each entry separates 
 
 ## M0
 
-No plant data have been generated yet. The entries below are deterministic verifications of the virtual plants.
+No data set has been stored yet. M0-E01 to M0-E03b are deterministic verifications of the virtual plants; M0-E04 generates observations in memory, seeded, and checks them.
 
 ### M0-E01 Operating points, local stability and envelope (2026-09-18)
 
@@ -184,4 +184,46 @@ Acceptance of H1, H2 and H4 is exact: acceptance by `check_trajectory`; equality
 
 Diagnostics: the inputs and the true response of both plants; exact states against readings over the first 360 s of scenario A; histograms of the standardised errors and all 64 z-scores. The last two use exact states and errors and are marked as diagnostics. No array is written to disk, since the storage layer does not exist yet.
 
-**Result.** Not run yet at the commit that registers this definition.
+**Result.** First run with the registered seeds: run `20260921T204823Z_2a912ac`, from the commit that registered the definition, clean working tree, identified in its provenance block. Run time 3.2 s on the development machine (Windows 11, Python 3.13.7): generation of the six runs 0.8 s, checks under 0.1 s, figures 2.0 s. All four hypotheses hold.
+
+H1. Both true trajectories are accepted.
+
+| | Source | Target |
+|---|---|---|
+| True samples, every 0.1 s | 72 001 | 72 001 |
+| Temperature, K | 340.42 to 365.7505 | 342.37 to 376.1884 |
+| C_A, mol/m^3 | 136.0 to 347.1 | 67.0 to 279.6 |
+| Balance residuals, mass and energy | 2.8e-10, 6.8e-10 | 4.2e-10, 4.6e-10 |
+
+Corners of excitation seed 0, in order: `+++-`, `----`, `-+++`, `++++`, `++++`, `-++-`, `-++-`, `+++-`, `-+-+`, `----`. The hottest corner comes up twice in a row.
+
+H2. On both plants: 1201 rows, at 0, 6, ..., 7200 s exactly, strictly increasing; every row is a stored true sample, one in every 60; 19 changes of the inputs, all of them on rows, at the 19 switching instants, each row carrying the new inputs. The inputs are identical on the two plants. The true peak of the target, 376.1884 K at t = 2926.9 s, falls between the readings at 2922 and 2928 s; the largest exact temperature on the 6 s grid is 0.038 K lower (0.051 K on the source). That is why the truth keeps its own sampling.
+
+H3. All 64 z-scores are within +-4. The largest is 2.31, the mean of the C_A errors of the target in scenario A; for 64 independent standard normal scores the largest would typically be about 2.5.
+
+| Series, n = 1201 | Mean | z | Root mean square | z | Lag-one | z | Beyond 1 sigma | Beyond 2 sigma | Largest error |
+|---|---|---|---|---|---|---|---|---|---|
+| A, source, C_A, mol/m^3 | +0.083 | +0.58 | 5.195 | +1.92 | +0.020 | +0.68 | 0.336 | 0.054 | 3.02 sigma |
+| A, source, T, K | -0.0257 | -1.78 | 0.4970 | -0.28 | -0.029 | -1.02 | 0.301 | 0.049 | 3.28 sigma |
+| A, target, C_A, mol/m^3 | +0.334 | +2.31 | 5.152 | +1.50 | -0.059 | -2.05 | 0.336 | 0.052 | 3.23 sigma |
+| A, target, T, K | -0.0128 | -0.88 | 0.5063 | +0.63 | -0.011 | -0.36 | 0.331 | 0.047 | 3.37 sigma |
+| B, source, C_A, mol/m^3 | +0.170 | +1.18 | 4.831 | -1.65 | +0.022 | +0.77 | 0.308 | 0.037 | 3.69 sigma |
+| B, source, T, K | +0.0098 | +0.68 | 0.5038 | +0.38 | +0.040 | +1.39 | 0.329 | 0.051 | 3.35 sigma |
+| B, target, C_A, mol/m^3 | +0.101 | +0.70 | 5.036 | +0.37 | +0.011 | +0.38 | 0.323 | 0.054 | 3.45 sigma |
+| B, target, T, K | +0.0247 | +1.71 | 0.5150 | +1.48 | -0.061 | -2.10 | 0.330 | 0.051 | 4.18 sigma |
+
+Expected for correct noise: mean 0 within 0.144 mol/m^3 or 0.0144 K, root mean square 5 mol/m^3 or 0.5 K within 2 %, fractions 0.317 and 0.0455. Of the 24 correlations the largest are C_A with T on the target in scenario A, r = -0.058 (z = -2.01), the T errors of the target under the two sensor seeds, r = -0.054 (z = -1.89), and the T errors of the source with the exact temperature, r = -0.051 (z = -1.77). The target carries 5.15 and 5.04 mol/m^3, not the 3.8 mol/m^3 of the reading that was not chosen. One reading of the 9608 lies 4.18 sigma from the truth, and about a third lie beyond one sigma: sigma is not a bound, and nothing was clipped.
+
+H4. Scenario A generated a second time gives the same instants, readings, inputs and true states, bit for bit, and the same digests (source `ee056623981d139a...`, target `2d658c5e43e41c80...`). With sensor seed 2027 the true states, the instants and the inputs are bit-identical to those of A, and all 1201 rows of readings differ on both plants (digests `c77d9c611fca1113...` and `4aead82c02b7a187...`). Digests identify content on one machine and one set of library versions; the last bits of a simulated state may differ elsewhere.
+
+Amounts. Six runs were generated and none stored: per run 1201 rows of 7 numbers, 8407 numbers or 67 kB as 64-bit floats, against 72 001 true samples of 2 states. `Observations` holds eleven fields, listed in `summary.json`, none of them an exact state, an error, a parameter or a seed.
+
+**Interpretation.** For these two plants, this protocol and these seeds, the observations are what D-020 specifies: the same absolute noise on source and target, in SI units, independent between sensors, plants, samples and seeds, and independent of the states it is added to. They are reproducible from the configuration and the two seeds alone, and the two kinds of randomness do not touch: another sensor seed changes every reading and nothing else. The grid is the sensor's, the truth keeps the resolution on which it is validated, and the record of the inputs is exact because every change falls on a row.
+
+Two observations outside the registered criteria, both made after the run and recorded as such.
+
+The scores lean to positive values: their mean is +0.25 and their root mean square 1.15, and the means by family are +0.56 for the mean, +0.54 for the spread and -0.29 for the lag-one score, each over 8 series with a standard error of 0.35. The scores are not independent, since the spread and the two tail fractions of a series move together, so no single test applies to the 64. To see whether the sensors or the statistics are biased, the same statistics were computed through `measure` for seeds 0 to 999, two streams and two channels, 4000 series: every family has a mean within 0.02 of zero, with a standard error of 0.016, and a standard deviation between 0.99 and 1.02. A mean spread score of +0.54 or more over eight series happens in 5 % of such sets. The lean of this realisation is chance. `tests/test_sensors.py` now holds that calibration, on 250 seeds that nobody chose.
+
+The ten excursions are a longer history than the pairs of M0-E03b. Every excursion of the target starts within 5.4e-3 mol/m^3 and 6.8e-4 K of the nominal steady state, against tolerances of 0.038 mol/m^3 and 0.005 K, and its peak differs from that of the same excursion started exactly at the steady state by at most 4.1e-4 K, against 0.05 K; on the source the figures are 1.5e-5 mol/m^3, 6.1e-7 K and 7.0e-7 K. The second of the two consecutive `++++` excursions is no worse than the first. This is one sequence, not a study of histories; it is now a regression test in `tests/test_p3_protocol.py`, with the tolerances unchanged.
+
+Limitations. Two runs of 2 h per plant and one excitation sequence: the statistics say that these sensors behave as specified, not how much data a model will need. The noise is ideal by decision, Gaussian, white, unbiased and without delay or gaps, and the inputs carry no error; none of that is a finding. A limit of 4 over 1201 readings cannot see a standard deviation wrong by less than 8 % or a correlation below 0.12. Noise streams are keyed by plant index and run index, and two runs given the same seed and stream would share their noise exactly: nothing yet prevents that mistake when many runs are generated, and the storage layer will need a rule for it. No data set has been stored: the observations exist in memory and are identified by their digests.

@@ -8,6 +8,7 @@ The package is organised so that these remain logically distinct (AGENTS.md):
 |---|---|---|
 | Simulation truth: true plants, hidden physics, noise-free states | `process_transfer.simulation` | M0 |
 | Modeller physics: the simplified equations an engineer would write | `process_transfer.modeller` | M0 (equations only) |
+| Measurement: sensors, and the observations that modelling is given | `process_transfer.measurement` | M0 |
 | Data infrastructure: Parquet, DuckDB, SQL, paths | `process_transfer.data` | M0 |
 | Configuration and units | `process_transfer.config`, `process_transfer.units` | M0 |
 | Models (black box, hybrid) | `process_transfer.models` | M1 |
@@ -15,6 +16,25 @@ The package is organised so that these remain logically distinct (AGENTS.md):
 | Evaluation (metrics, physics metrics, plots) | `process_transfer.evaluation` | M1 onwards |
 
 Ground-truth information (true parameters, hidden constitutive relations, noise-free trajectories, exact rates) is stored separately from observable information and never enters training or evaluation inputs, except in an explicit oracle experiment.
+
+## From the truth to observations
+
+    true trajectory, every 0.1 s          simulation.integration
+              |
+    acceptance checks of the truth        simulation.checks
+              |
+    exact values at the sensor instants   simulation.operating_run
+              |
+    readings                              measurement.sensors (knows no plant)
+              |
+    Observations        RunTruth
+    for modelling       diagnostics only
+
+The boundary is in the interfaces, not only in the documentation. `measurement` never imports `simulation` or `modeller`, and a test on the import graph enforces it. A sensor is handed the values to measure and an instrument specification; it has no access to a rate law, a parameter or the simulator. `Observations` has a closed list of fields, pinned by a test: instants, readings, known inputs, names, units, the sampling period and the noise level of the instruments. `RunTruth` holds what no model may see: the true trajectory, its acceptance checks, the exact values, the measurement errors and the seed of the noise. The seed is on that side on purpose, since it would allow the noise to be regenerated and subtracted.
+
+The criteria for true states, physical bounds and closed balances, apply to the truth and are checked before anything is observed. They are never applied to readings, and readings are never clipped or corrected.
+
+A row of observations holds an instant, the readings of the state at that instant, and the inputs applied from that instant on (zero-order hold, right-continuous). The sensors read stored samples of the truth, never interpolated ones, and every change of the inputs must fall on a row.
 
 ## Repository layout
 
@@ -68,11 +88,15 @@ Experiment and model tables (`model_runs`, `metrics`, `transfer_actions`) arrive
 
 Generated data paths respect the `PT_DATA_DIR` environment variable and are never committed.
 
+What is ready for this layer, and what is not. `Observations` is the input of the writer to come: one run of one plant, times in seconds, readings and inputs in SI with their names and units, which maps onto `measurements` rows in long format (plant, sensor, run, timestamp, value) and onto the `sensors` table through names, units, sampling period and noise level; its content digest identifies a run independently of any file format. `configs/sensors_cstr.yaml` and the known part of the plant configurations feed `sensors`, `plants` and `process_parameters`. `RunTruth` must go to a separate location that the training path cannot read. Not decided yet: run identifiers and the rule that gives every run its own noise stream, the quality flag, how inputs are stored, since they are known exactly and have no sensor, and the on-disk layout. No Parquet or DuckDB code exists yet.
+
 Experiments write to `PT_DATA_DIR/experiments/<experiment>/<run id>/`, one directory per run, never reused: figures, a `summary.json` with a provenance block, and copies of the configuration files. These are diagnostic artefacts of the simulator. They may contain hidden parameters, since the true-plant configurations are copied in full, and they stay apart from the data that will later be made available for training or adaptation, which never carries ground truth.
 
 ## Reproducibility
 
 Every generated dataset and experiment is reproducible from the code version (git hash), the configuration, the random seed, the simulator version and the process parameters. Generated files carry that metadata. `data/provenance.py` records the commit and the state of the working tree, fingerprints of the configurations, the environment and the settings of the run. When git is missing, or the working tree has local changes, the run says so and is not presented as identified by its commit. Explicit seeds are used wherever randomness is involved, and generated datasets are never edited by hand.
+
+Randomness is always named. The excitation draws from `numpy.random.default_rng(excitation seed)` and the sensor noise from `numpy.random.SeedSequence(entropy=sensor seed, spawn_key=(plant index, run index, channel))`. The two generators share nothing and no global generator is used, so neither can shift the other: another sensor seed changes the readings and nothing else. Two runs with the same seed and stream replay the same noise, which is what makes a run reproducible and a mistake when the runs are meant to differ; every run needs its own stream.
 
 Reproducibility is tested at the level that matters: identical numerical trajectories for the same seed, identical schema, and identical canonical content where appropriate. Tests do not depend on byte-for-byte identity of serialised files or on the serialisation details of a particular PyArrow version.
 
