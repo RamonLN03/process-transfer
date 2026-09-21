@@ -17,7 +17,6 @@ u = [q, C_Af, T_f, T_c]:
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -58,14 +57,19 @@ class TrueCSTRParameters:
         )
 
 
-def reaction_rate(c_a: float, temperature: float, p: TrueCSTRParameters) -> float:
-    """True rate of A -> B in mol/(m^3 s): Arrhenius with saturation in C_A."""
-    k = p.k0 * math.exp(-p.activation_temperature / temperature)
+def reaction_rate(
+    c_a: float | FloatArray, temperature: float | FloatArray, p: TrueCSTRParameters
+) -> float | FloatArray:
+    """True rate of A -> B in mol/(m^3 s): Arrhenius with saturation in C_A.
+
+    Accepts scalars or arrays of samples, so that the same law serves the
+    right-hand side and the integrated balances."""
+    k = p.k0 * np.exp(-p.activation_temperature / temperature)
     return k * c_a / (1.0 + p.saturation_constant * c_a)
 
 
-def conductance(temperature: float, p: TrueCSTRParameters) -> float:
-    """True heat-transfer conductance UA(T) in W/K."""
+def conductance(temperature: float | FloatArray, p: TrueCSTRParameters) -> float | FloatArray:
+    """True heat-transfer conductance UA(T) in W/K, for scalars or arrays."""
     return p.ua_ref * (1.0 + p.alpha * (temperature - p.t_ref))
 
 
