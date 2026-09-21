@@ -4,7 +4,7 @@ One entry per experiment or data-generation run, in order. Each entry separates 
 
 ## M0
 
-No data set has been stored yet. M0-E01 to M0-E03b are deterministic verifications of the virtual plants; M0-E04 generates observations in memory, seeded, and checks them.
+M0-E01 to M0-E03b are deterministic verifications of the virtual plants. M0-E04 generates observations in memory, seeded, and checks them. M0-E05 is the first entry to store a data set, `m0-e05`, and it does so to test the data path, not to provide training data.
 
 ### M0-E01 Operating points, local stability and envelope (2026-09-18)
 
@@ -258,4 +258,28 @@ Expected costs, from two smaller runs outside the repository, stated before the 
 
 Expected artefacts. `PT_DATA_DIR/available/datasets/m0-e05/` with `manifest.json`, four small Parquet tables and six files under `measurements/`; `PT_DATA_DIR/available/databases/m0-e05.duckdb`; `PT_DATA_DIR/available/exports/m0-e05/` with `export.json` and six Parquet files; one directory per generation under `PT_DATA_DIR/private/datasets/m0-e05/` with `provenance.json`, `pipeline_report.json` and copies of the configurations; and `PT_DATA_DIR/experiments/m0_e05/<run id>/` with `summary.json`, `readings_C_A.png`, `readings_T.png` and copies of the configurations. The exit code is 0 only if every hypothesis holds.
 
-**Result.** Not run yet at the commit that registers this definition.
+**Result.** First run on the registered definition: run `20260921T221211Z_fa0378c`, from the commit that registered it, clean working tree, identified in its provenance block. The data set `m0-e05` did not exist before it. All nine hypotheses hold, and the exit code was 0.
+
+| | Expected before the run | Found |
+|---|---|---|
+| Rows: plants, parameters, channels, runs, measurements | 2, 16, 12, 6, 43 236 | 2, 16, 12, 6, 43 236 |
+| Data set on disk | 0.3 to 0.6 MB | 0.345 MB, 11 files |
+| Export on disk | about the same | 0.247 MB, 7 files, a little under the range |
+| Database on disk | 5 to 12 MB | 6.83 MB |
+| Generate, observe and write Parquet | 2 to 5 s | 1.73 s |
+| Ingest into DuckDB | 5 to 20 s | 1.52 s, well under: the expectation was pessimistic |
+| Whole script | under a minute | 16.2 s |
+
+Stages of the first generation, in seconds, on the development machine (Windows 11, Python 3.13.7, pyarrow 25.0.1, duckdb 1.5.5): configurations 0.004; plants and starting points 0.11; generate, validate, observe and write 1.73; read Parquet back 0.14; ingest 1.52; SQL quality checks 0.24; export 0.95; scan for hidden information 0.31; 5.2 in all. The second generation took 3.8 s, the reader without the private branch 3.3 s, the planted defects 1.0 s and the noise diagnostics 1.1 s.
+
+H1. Both starting points verified, the source at -1.605 and the target at -0.964 1/min against a margin of -0.5, balances closed there to a relative 1e-15; six true trajectories accepted. H2. For all six runs the observations read back from Parquet, those rebuilt from DuckDB and those rebuilt from the exported files equal the generated ones bit for bit, with the same content hashes: `9006d4e1bf9ff9d0...`, `aba65cd6c2817a8a...` and `6d9b8c99a852e794...` on the source, and `c45d6a0957b867e0...`, `9e561bfc61983740...` and `37a3b227eec190ae...` on the target, for excitation seeds 0, 1 and 2. H3. In every run the instants at which the stored inputs change, and the inputs from then on, are the 20 settings of the protocol exactly. H4. The seven quality queries return no row on the database. In the copies of `target.p3.e0.x10.n0`, the untouched copy and the three valid oddities give no finding, and each of the ten defects is reported by the query that exists for it; four of them are also reported by another query, a duplicate by the row count of the cadence check for instance. H5. The second generation gives the same six hashes, reports the data set and the export as already present, and the modification time of no file of the available data sets and exports changed. H6. Every run is reported as already present and the row counts are unchanged. H7. In another process, with a data directory holding only a copy of the data set, the six runs were ingested into a new database, the quality queries found nothing, and the export has the same six hashes; no private directory existed there. H8. The scan read 19 files, the 11 of the data set, the database and the 7 of the export, and found nothing; on a copy of the export with a seed in the manifest it reported 2 findings, with an exact state as a column 2 findings, and none on the untouched copy.
+
+H9. All 102 z-scores are within +-4. The largest is 2.58, the spread of the T errors of `target.p3.e2.x10.n0`, whose root mean square is 0.4737 K for a specified 0.5 K. The mean of the scores is -0.11 and their root mean square 0.96. Over the 12 series the root mean square of the C_A errors runs from 4.896 to 5.167 mol/m^3 and that of the T errors from 0.4737 to 0.4984 K; the target carries 4.90, 5.07 and 5.17 mol/m^3, the absolute noise of D-020 and not 3.8 mol/m^3. One reading of 14 412 lies 4.21 sigma from the truth.
+
+**Interpretation.** For this data set, the path keeps the data intact and the truth out. What the sensors gave is what Parquet holds, what the database returns and what the export delivers, to the last bit; identities, instants and input changes survive; a repetition changes nothing and says so; and a reader needs nothing but the data set. The quality queries are neither blind nor trigger-happy on the cases put to them. The noise drawn from streams derived from run identities behaves as specified and is independent between plants that receive the same inputs, which is what D-021 was meant to give.
+
+These are results about software, as the registration said. They are evidence for the cases exercised: six runs, one protocol, one process, ten defects and two kinds of planted leak, on one machine. They are not a proof that no defect can pass the quality queries or that no leak can pass the scan, which compares names and numbers and would not see a hidden value that had been scaled or rounded. Nothing here says that the data are sufficient for any model.
+
+Two things found while preparing the experiment, before its registration, and corrected then. A defect that exists only between plants, one variable in two units, could not be seen by the quality gate of an ingestion, which looks at one run of one plant; the database as a whole is now checked inside the transaction (`b409f14`). And one of the defects first chosen for H4, a concentration channel in mol/L, turned out to be of that kind and was replaced before registration by one that a single run can show.
+
+Limitations. The run time of ingestion grows with the square of the number of runs, because the whole database is checked after each. The content hashes are those of one machine and one set of library versions. `aligned_series` names the six variables of the CSTR. The data set lives by default under the repository, in a synchronised folder; `PT_DATA_DIR` exists to move it.
