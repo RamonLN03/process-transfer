@@ -21,6 +21,7 @@ import numpy as np
 
 from process_transfer.config import ModellerConfig, PlantSpec
 from process_transfer.cstr_variables import FloatArray
+from process_transfer.validation import require_finite, require_non_negative, require_positive
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,22 @@ class ModellerCSTRParameters:
     k0: float  # pre-exponential factor, 1/s
     activation_temperature: float  # E/R, K
     ua: float  # constant heat-transfer conductance, W/K
+
+    def __post_init__(self) -> None:
+        """Validate once, here, so that the right-hand side never has to. Zero is a
+        valid limit for k0, E/R and UA; volume, density and heat capacity divide."""
+        for name in ("volume", "density", "heat_capacity"):
+            require_positive(name, getattr(self, name))
+        for name in ("k0", "activation_temperature", "ua"):
+            require_non_negative(name, getattr(self, name))
+        require_finite("reaction_enthalpy", self.reaction_enthalpy)
+        require_positive(
+            "volume * density * heat_capacity", self.volume * self.density * self.heat_capacity
+        )
+        require_finite(
+            "reaction_enthalpy / (density * heat_capacity)",
+            self.reaction_enthalpy / (self.density * self.heat_capacity),
+        )
 
     @classmethod
     def from_config(cls, plant: PlantSpec, modeller: ModellerConfig) -> ModellerCSTRParameters:

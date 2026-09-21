@@ -119,8 +119,8 @@ def integrated_balances(trajectory: Trajectory, p: TrueCSTRParameters) -> Balanc
         # Nothing can be integrated; report that, instead of arithmetic on infinities.
         return BalanceCheck(*([math.nan] * 8))
 
-    beta = -p.reaction_enthalpy / (p.density * p.heat_capacity)  # K m^3 / mol, any sign
-    thermal_mass = p.volume * p.density * p.heat_capacity  # J/K
+    beta = p.adiabatic_coefficient  # K m^3 / mol, any sign
+    thermal_mass = p.thermal_mass  # J/K, positive by construction of the parameters
 
     mass_residual = mass_scale = mass_resolution = 0.0
     energy_residual = energy_scale = energy_resolution = 0.0

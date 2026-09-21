@@ -23,6 +23,7 @@ import numpy as np
 
 from process_transfer.config import TruePlantConfig
 from process_transfer.cstr_variables import FloatArray
+from process_transfer.validation import require_finite, require_non_negative, require_positive
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,37 @@ class TrueCSTRParameters:
     ua_ref: float  # UA at the reference temperature, W/K
     alpha: float  # relative slope of UA with temperature, 1/K
     t_ref: float  # reference temperature of UA(T), K
+
+    def __post_init__(self) -> None:
+        """Validate once, here, so that the right-hand side never has to.
+
+        Zero is accepted for k0, E/R, K_sat and UA_ref: no reaction, no temperature
+        dependence, no saturation and an adiabatic reactor are valid physical limits,
+        used to test the numerical functions even though the configuration schema asks
+        for positive values. Volume, density and heat capacity divide, and must be
+        positive. The products formed from them are checked too, because finite
+        factors do not guarantee a finite, non-zero product.
+        """
+        for name in ("volume", "density", "heat_capacity"):
+            require_positive(name, getattr(self, name))
+        for name in ("k0", "activation_temperature", "saturation_constant", "ua_ref"):
+            require_non_negative(name, getattr(self, name))
+        for name in ("reaction_enthalpy", "alpha", "t_ref"):
+            require_finite(name, getattr(self, name))
+        require_positive("volume * density * heat_capacity", self.thermal_mass)
+        require_finite(
+            "reaction_enthalpy / (density * heat_capacity)", self.adiabatic_coefficient
+        )
+
+    @property
+    def thermal_mass(self) -> float:
+        """V rho cp, J/K."""
+        return self.volume * self.density * self.heat_capacity
+
+    @property
+    def adiabatic_coefficient(self) -> float:
+        """beta = -dH / (rho cp), K m^3/mol: positive for an exothermic reaction."""
+        return -self.reaction_enthalpy / (self.density * self.heat_capacity)
 
     @classmethod
     def from_config(cls, cfg: TruePlantConfig) -> TrueCSTRParameters:
@@ -63,13 +95,23 @@ def reaction_rate(
     """True rate of A -> B in mol/(m^3 s): Arrhenius with saturation in C_A.
 
     Accepts scalars or arrays of samples, so that the same law serves the
-    right-hand side and the integrated balances."""
+    right-hand side and the integrated balances.
+
+    Valid for T > 0 and 1 + K_sat C_A > 0, which every physical state satisfies.
+    Outside that domain the result is infinite or undefined; the law is not guarded
+    here, because it runs inside the integrator. A trajectory that leaves the domain
+    ends up non-finite or non-physical and is rejected by ``simulate_piecewise`` and
+    ``simulation/checks.py``."""
     k = p.k0 * np.exp(-p.activation_temperature / temperature)
     return k * c_a / (1.0 + p.saturation_constant * c_a)
 
 
 def conductance(temperature: float | FloatArray, p: TrueCSTRParameters) -> float | FloatArray:
-    """True heat-transfer conductance UA(T) in W/K, for scalars or arrays."""
+    """True heat-transfer conductance UA(T) in W/K, for scalars or arrays.
+
+    The linear law is physically meaningful only where it is positive, that is for
+    1 + alpha (T - T_ref) > 0 (T above 150 K on the source). It is not clipped here;
+    ``simulation/checks.py`` rejects a trajectory that leaves that domain."""
     return p.ua_ref * (1.0 + p.alpha * (temperature - p.t_ref))
 
 
