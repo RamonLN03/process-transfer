@@ -64,3 +64,41 @@ Several of these use parameter values that the configuration schema does not adm
 * The limit on the sampling grid is per segment. The total over many segments is not bounded.
 * Overflow of the states themselves during an integration is not checked at every step; it is caught afterwards, as non-finite states.
 * Parameters and arguments are validated where they enter. Code that mutates an array after handing it over can still defeat that; arrays are not copied defensively everywhere.
+
+## Review of 2026-09-21, second: structure of a trajectory and identification of the code
+
+Scope. The two defects found in the review of `325cb93`, and the rest of the two interfaces they belong to: how a `Trajectory` is built, and how `data/provenance.py` reads git. Every row below was reproduced against the code at `325cb93` before it was changed.
+
+### Failures reproduced and fixed
+
+| Module | Input | What happened | Silent | Resolution | Commit |
+|---|---|---|---|---|---|
+| `integration.Trajectory` | two pieces simulated apart, each at rest at its own steady state, placed side by side | the state jumped by -67.09 mol/m^3 and +6.86 K where they met, and `check_trajectory` accepted it, because the balances are closed inside each segment | yes | the state at the start of a segment must equal the state at the end of the previous one, checked when the trajectory is built | `875e83a` |
+| `integration.Trajectory` | a second segment moved 30 s later, or 30 s earlier | accepted; with the overlap `Trajectory.times` was not even monotonic | yes | consecutive segments must share their switching instant | `875e83a` |
+| `integration.SegmentTrajectory` | sampling instants in reverse order, or repeated | accepted, with time running backwards | yes | instants must be finite and strictly increasing | `875e83a` |
+| `integration.SegmentTrajectory` | a matrix of inputs; segments with different numbers of states or inputs | accepted, and failed later with a shape error or not at all | partly | one constant input vector per segment, the same sizes in every segment | `875e83a` |
+| `integration.Trajectory.duration` | a run of segments cut out of a longer trajectory | returned the final instant: 120 s for a piece lasting 60 s | yes | the time between the first and the last sample | `875e83a` |
+| `provenance.git_state` | `git status` failing with an empty output | read as a clean working tree: `dirty = False`, `code_identified = True` | yes | exit codes checked; the state of the tree is recorded as unknown and the commit is kept | `9603ade` |
+| `provenance.git_state` | `git diff` failing | the SHA-256 of an empty output was recorded as the fingerprint of the changes | yes | no fingerprint, and the reason says so | `9603ade` |
+| `provenance.git_state` | `git rev-parse HEAD` answering with something that is not an object name | recorded as the commit | yes | a commit is 40 or 64 hexadecimal digits, or it is not recorded | `9603ade` |
+| `provenance.new_run_directory` | a commit with an unknown working tree | the run id carried no mark and looked like a clean run | yes | the mark `-unverified` | `9603ade` |
+
+### Exact comparison at a junction, on purpose
+
+The rule of this file forbids an arbitrary epsilon, and here none is needed. The switching instant is one instant and the state there is one state, stored twice: as the last sample of a segment and as the first of the next. `Trajectory.times` and `Trajectory.states` keep a single copy, which is only right if the two are the same number. `simulate_piecewise` makes them so by construction: the first sample of a segment is its initial condition, which is the last sample of the previous segment, and both instants are the same floating-point sum. A tolerance would need a scale for times and another for each state, and would mean choosing between two different values without saying so. A difference of one unit in the last place is therefore rejected, and a test pins that. A trajectory assembled from pieces is made valid by starting each piece from the final state of the previous one, not by loosening the comparison.
+
+### Valid cases, kept valid
+
+* inputs that change discontinuously at a junction, which is what a junction is for; the sample taken there carries the inputs applied from that instant on;
+* consecutive segments with equal inputs;
+* a trajectory that does not start at t = 0, including negative instants, and unevenly spaced samples.
+
+### Limitation closed
+
+The first review listed arrays that a caller can mutate after handing them over. For trajectories that is closed: a segment stores read-only copies of its arrays, so what was validated is what every later reader sees. It still holds for `InputSegment`, whose input vector is the caller's array until `simulate_piecewise` copies it.
+
+### Open limitations
+
+* A non-finite state inside a segment is still accepted when a trajectory is built, and reported afterwards by `check_trajectory` and by the peak functions. At a junction it is rejected, because it cannot be shown to be continuous.
+* `git_state` does not limit how long git may take; a git that hangs would hang the run.
+* The fingerprint of local changes covers tracked files only. Untracked files are listed by name and not hashed.
