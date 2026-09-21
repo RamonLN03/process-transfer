@@ -5,6 +5,7 @@ import pytest
 
 from process_transfer.simulation.excitation import (
     binary_levels,
+    excursions_with_rest,
     levels_to_segments,
     limited_move_levels,
     separated_excursions,
@@ -75,3 +76,25 @@ def test_invalid_arguments_are_rejected() -> None:
         levels_to_segments(NOMINAL, AMPLITUDES, np.zeros((2, 3), dtype=int), clock=1.0)
     with pytest.raises(ValueError, match="n_excursions"):
         separated_excursions(NOMINAL, AMPLITUDES, 0, 120.0, 600.0, rng)
+
+
+def test_excursions_with_rest_follow_the_given_corners_in_order() -> None:
+    corners = np.array([[1, 1, -1, -1], [1, 1, 1, 1]])
+    segments = excursions_with_rest(NOMINAL, AMPLITUDES, corners, hold=120.0, rest=600.0)
+    assert [segment.duration for segment in segments] == [120.0, 600.0, 120.0, 600.0]
+    np.testing.assert_allclose(segments[0].inputs, NOMINAL + corners[0] * AMPLITUDES)
+    np.testing.assert_array_equal(segments[1].inputs, NOMINAL)
+    np.testing.assert_allclose(segments[2].inputs, NOMINAL + corners[1] * AMPLITUDES)
+    np.testing.assert_array_equal(segments[3].inputs, NOMINAL)
+    with pytest.raises(ValueError, match="non-empty"):
+        excursions_with_rest(NOMINAL, AMPLITUDES, np.zeros((0, 4), dtype=int), 120.0, 600.0)
+
+
+def test_random_excursions_are_the_deterministic_ones_with_drawn_corners() -> None:
+    drawn = separated_excursions(NOMINAL, AMPLITUDES, 5, 120.0, 600.0, np.random.default_rng(9))
+    corners = binary_levels(5, 4, np.random.default_rng(9))
+    given = excursions_with_rest(NOMINAL, AMPLITUDES, corners, 120.0, 600.0)
+    assert len(drawn) == len(given) == 10
+    for a, b in zip(drawn, given, strict=True):
+        assert a.duration == b.duration
+        np.testing.assert_array_equal(a.inputs, b.inputs)

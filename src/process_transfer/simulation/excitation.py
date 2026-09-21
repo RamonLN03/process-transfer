@@ -76,6 +76,25 @@ def levels_to_segments(
     return [InputSegment(clock, nominal + row * amplitudes) for row in levels]
 
 
+def excursions_with_rest(
+    nominal: FloatArray, amplitudes: FloatArray, corners: LevelArray, hold: float, rest: float
+) -> list[InputSegment]:
+    """Each row of ``corners`` held for ``hold`` seconds, then the nominal inputs for
+    ``rest`` seconds. The state is whatever the plant has reached: nothing resets it
+    between excursions, so the residual left by one excursion is carried into the next.
+    """
+    nominal = np.asarray(nominal, dtype=np.float64)
+    corners = np.asarray(corners)
+    if corners.ndim != 2 or len(corners) == 0:
+        raise ValueError("corners must be a non-empty array with one row per excursion")
+    resting = np.zeros((1, nominal.size), dtype=np.int64)
+    segments: list[InputSegment] = []
+    for corner in corners:
+        segments += levels_to_segments(nominal, amplitudes, corner[np.newaxis, :], hold)
+        segments += levels_to_segments(nominal, amplitudes, resting, rest)
+    return segments
+
+
 def separated_excursions(
     nominal: FloatArray,
     amplitudes: FloatArray,
@@ -91,11 +110,5 @@ def separated_excursions(
     the inputs then return to nominal for ``rest`` seconds.
     """
     _check_count("n_excursions", n_excursions)
-    nominal = np.asarray(nominal, dtype=np.float64)
-    corners = binary_levels(n_excursions, nominal.size, rng)
-    resting = np.zeros((1, nominal.size), dtype=np.int64)
-    segments: list[InputSegment] = []
-    for corner in corners:
-        segments += levels_to_segments(nominal, amplitudes, corner[np.newaxis, :], hold)
-        segments += levels_to_segments(nominal, amplitudes, resting, rest)
-    return segments
+    corners = binary_levels(n_excursions, np.asarray(nominal).size, rng)
+    return excursions_with_rest(nominal, amplitudes, corners, hold, rest)
