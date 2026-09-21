@@ -5,8 +5,12 @@ raises otherwise), every time, state and input is finite, the states are physica
 the temperature stays inside the documented envelope and the integrated balances
 close. Nothing is clipped or repaired: a violation is reported as a violation.
 
-Physical-state rules, for a reactor that only consumes A:
+Physical rules, for a reactor that only consumes A:
 
+* the four inputs, feed flow and concentration, feed and coolant temperature, are
+  positive;
+* the conductance law stays in its valid domain: UA(T) is never negative (zero is
+  the adiabatic limit);
 * C_A stays positive;
 * C_A never exceeds the richest feed applied so far (or its own initial value);
 * for an exothermic reaction, T never falls below the coldest of the feed and the
@@ -22,7 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from process_transfer.simulation.balances import integrated_balances
-from process_transfer.simulation.cstr_true import TrueCSTRParameters
+from process_transfer.simulation.cstr_true import TrueCSTRParameters, conductance
 from process_transfer.simulation.integration import Trajectory
 
 TEMPERATURE_ENVELOPE = (335.0, 380.0)  # K, docs/assumptions.md
@@ -71,6 +75,8 @@ def _states_are_physical(trajectory: Trajectory, p: TrueCSTRParameters) -> bool:
     first = trajectory.segments[0].states[0]
     richest_feed, coldest_stream = float(first[0]), float(first[1])
     for segment in trajectory.segments:
+        if np.any(segment.inputs <= 0.0):
+            return False
         _, c_af, t_f, t_c = segment.inputs
         richest_feed = max(richest_feed, float(c_af))
         coldest_stream = min(coldest_stream, float(t_f), float(t_c))
@@ -78,6 +84,8 @@ def _states_are_physical(trajectory: Trajectory, p: TrueCSTRParameters) -> bool:
         if np.any(c_a <= 0.0) or np.any(c_a > richest_feed * (1.0 + 1.0e-9)):
             return False
         if exothermic and np.any(temperature < coldest_stream * (1.0 - 1.0e-9)):
+            return False
+        if np.any(conductance(temperature, p) < 0.0):
             return False
     return True
 

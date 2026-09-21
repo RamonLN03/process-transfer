@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from conftest import PlantUnderTest
+from process_transfer.simulation import cstr_true
 from process_transfer.simulation.checks import check_trajectory
 from process_transfer.simulation.integration import InputSegment, simulate_piecewise
 
@@ -108,3 +109,41 @@ def test_unphysical_states_are_reported_not_repaired(
             trajectory, segments=(dataclasses.replace(segment, states=states),)
         )
         assert not check_trajectory(corrupted, plant.parameters).states_physical
+
+
+def test_non_positive_inputs_are_not_physical(true_plants: dict[str, PlantUnderTest]) -> None:
+    """Regression: a negative feed flow integrates without complaint, and the trajectory
+    used to be reported as physical."""
+    plant = true_plants["source"]
+    reversed_flow = plant.nominal_inputs.copy()
+    reversed_flow[0] = -reversed_flow[0]
+    trajectory = simulate_piecewise(
+        plant.f, plant.nominal_state, [InputSegment(5.0, reversed_flow)]
+    )
+    check = check_trajectory(trajectory, plant.parameters, envelope=(0.0, 1000.0))
+    assert not check.states_physical and not check.accepted
+
+
+def test_a_temperature_outside_the_domain_of_the_conductance_law_is_not_physical(
+    true_plants: dict[str, PlantUnderTest],
+) -> None:
+    """UA(T) = UA_ref [1 + alpha (T - T_ref)] turns negative below T_ref - 1/alpha, 150 K on
+    the source. The enthalpy is set to zero so that no other rule is involved."""
+    plant = true_plants["source"]
+    athermal = dataclasses.replace(plant.parameters, reaction_enthalpy=0.0)
+    trajectory = simulate_piecewise(
+        lambda x, u: cstr_true.rhs(0.0, x, u, athermal),
+        plant.nominal_state,
+        [InputSegment(10.0, plant.nominal_inputs)],
+    )
+    (segment,) = trajectory.segments
+    states = segment.states.copy()
+    states[5, 1] = 100.0
+    frozen = dataclasses.replace(
+        trajectory, segments=(dataclasses.replace(segment, states=states),)
+    )
+    assert cstr_true.conductance(100.0, athermal) < 0.0
+    assert not check_trajectory(frozen, athermal, envelope=(0.0, 1000.0)).states_physical
+
+    constant_ua = dataclasses.replace(athermal, alpha=0.0)
+    assert check_trajectory(frozen, constant_ua, envelope=(0.0, 1000.0)).states_physical
