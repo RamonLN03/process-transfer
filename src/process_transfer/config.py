@@ -1,4 +1,4 @@
-"""Configuration models for plants, hidden physics and the modeller's knowledge.
+"""Configuration models for plants, hidden physics, the modeller's knowledge and sensors.
 
 Quantities are written in engineering units in YAML and exposed in SI through
 ``Quantity.si``. Every field states the physical dimension it expects, so a
@@ -7,8 +7,8 @@ must be finite. The models are strict: unknown fields are errors, so a
 true-plant file cannot be loaded as modeller knowledge by accident, and vice
 versa. That strictness is the ground-truth boundary of ``AGENTS.md``
 expressed in code: everything under ``TruePlantConfig.true_physics`` is
-simulation truth and never reaches a model; ``TruePlantConfig.plant`` and
-``ModellerConfig`` are what an engineer would know.
+simulation truth and never reaches a model; ``TruePlantConfig.plant``,
+``ModellerConfig`` and ``SensorsConfig`` are what an engineer would know.
 """
 
 from __future__ import annotations
@@ -136,6 +136,17 @@ class InverseTemperature(Quantity):
     DIMENSION = "inverse_temperature"
 
 
+class Duration(PositiveQuantity):
+    DIMENSION = "time"
+
+
+class NonNegativeQuantity(Quantity):
+    """A quantity that may be zero but not negative, such as a noise level. Zero is a
+    valid limit (an exact sensor), not an error."""
+
+    value: float = Field(ge=0, allow_inf_nan=False)
+
+
 # --------------------------------------------------------------------------- #
 # Known plant information (available to the modeller)
 # --------------------------------------------------------------------------- #
@@ -241,6 +252,61 @@ class ModellerConfig(StrictModel):
 
 
 # --------------------------------------------------------------------------- #
+# Sensors (an instrument specification, available knowledge)
+# --------------------------------------------------------------------------- #
+
+# The noise of a sensor is expressed in the dimension of the variable it measures.
+_MEASURED_DIMENSIONS = {"C_A": "concentration", "T": "temperature"}
+
+
+class SensorConfig(StrictModel):
+    """One sensor: the variable it measures and its noise.
+
+    ``noise_std`` is the standard deviation of additive, zero-mean Gaussian noise,
+    independent from one sample to the next and from one sensor to another. It is not
+    a bound on the error: about a third of the readings lie further than one standard
+    deviation from the true value. Zero describes an exact sensor.
+    """
+
+    variable: Literal["C_A", "T"]
+    form: Literal["additive_gaussian"]
+    noise_std: NonNegativeQuantity
+
+    @model_validator(mode="after")
+    def _noise_has_the_dimension_of_the_variable(self) -> SensorConfig:
+        expected = _MEASURED_DIMENSIONS[self.variable]
+        found = dimension_of(self.noise_std.unit)
+        if found != expected:
+            raise ValueError(
+                f"the noise of the {self.variable} sensor must be a {expected}, "
+                f"but {self.noise_std.unit!r} measures {found}"
+            )
+        return self
+
+
+class SensorsConfig(StrictModel):
+    """The instrument specification of a process (docs/decisions.md D-020).
+
+    There is one such file for the CSTR, not one per plant: source and target carry
+    the same instruments, so their noise cannot differ by accident. Nothing here is
+    hidden physics. It is what a data sheet would say.
+    """
+
+    process_type: Literal["cstr"]
+    sampling_period: Duration
+    sensors: tuple[SensorConfig, ...]
+
+    @model_validator(mode="after")
+    def _each_variable_is_measured_once(self) -> SensorsConfig:
+        variables = [sensor.variable for sensor in self.sensors]
+        if len(variables) == 0:
+            raise ValueError("at least one sensor is required")
+        if len(set(variables)) != len(variables):
+            raise ValueError(f"every variable may have one sensor only, got {variables}")
+        return self
+
+
+# --------------------------------------------------------------------------- #
 # Loading
 # --------------------------------------------------------------------------- #
 
@@ -262,3 +328,8 @@ def load_true_plant(path: str | Path) -> TruePlantConfig:
 def load_modeller(path: str | Path) -> ModellerConfig:
     """Load the modeller's simplified physics and nominal parameter values."""
     return ModellerConfig.model_validate(load_yaml(path))
+
+
+def load_sensors(path: str | Path) -> SensorsConfig:
+    """Load the instrument specification shared by the plants of a process."""
+    return SensorsConfig.model_validate(load_yaml(path))

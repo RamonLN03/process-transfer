@@ -1,0 +1,20 @@
+# Instrument specification of the CSTR, common to source and target
+# (docs/decisions.md D-020). There is no per-plant sensor file on purpose: both plants
+# carry the same analyser and the same thermometer.
+#
+# noise_std is the standard deviation of additive, zero-mean Gaussian noise,
+# independent between samples and between the two sensors. It is NOT a bound on the
+# error, and readings are never clipped to it. No bias, no drift, no delay and no
+# missing values in M0. The four inputs are known without error and have no sensor.
+#
+# Engineering units; the loader converts to SI (process_transfer.units):
+# 0.005 mol/L is 5 mol/m^3, and 0.1 min is 6 s.
+process_type: cstr
+sampling_period: {value: 0.1, unit: min}
+sensors:
+  - variable: C_A
+    form: additive_gaussian
+    noise_std: {value: 0.005, unit: mol/L}
+  - variable: T
+    form: additive_gaussian
+    noise_std: {value: 0.5, unit: K}
