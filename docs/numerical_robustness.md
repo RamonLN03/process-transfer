@@ -4,13 +4,13 @@ The rule itself lives in `AGENTS.md`, under Numerical Robustness. This file is t
 
 One mechanism enforces part of the rule on every test run: `pyproject.toml` turns every `RuntimeWarning` into an error, so a division by zero or an invalid operation inside numpy, which would otherwise only print a warning and carry on with `inf` or `NaN`, fails the test that triggers it.
 
-## Review of 2026-09-22: the M0 modules as they stood at `50dc509`
+## Review of 2026-09-21: the M0 modules as they stood at `50dc509`
 
 Scope. A bounded review of the interfaces that exist today: `units`, `config`, `simulation/cstr_true`, `modeller/cstr_first_order`, `simulation/steady_state`, `simulation/integration`, `simulation/envelope`, `simulation/excitation`, `simulation/balances`, `simulation/checks` and `data/paths`. For each: denominators, exponentials, interpolation, empty sets, grid generation, and the result of conversions and products, not only their inputs. It is not an enumeration of every possible number; it looks at inputs that the current interfaces can receive and at operations that fail without saying so. Every candidate was run against the code before anything was changed, and only reproduced failures were fixed.
 
 ### Failures reproduced and fixed
 
-Two were found by the reviewer of `50dc509`; the rest by probing the interfaces.
+Two were found by the reviewer of `50dc509`, one while testing protocol P3, the rest by probing the interfaces.
 
 | Module | Input | What happened | Silent | Resolution | Commit |
 |---|---|---|---|---|---|
@@ -27,6 +27,7 @@ Two were found by the reviewer of `50dc509`; the rest by probing the interfaces.
 | `excitation.levels_to_segments` | a level of 7 | the input moved by seven amplitudes | yes | levels must lie between -1 and +1 | `35a0067` |
 | `integration.simulate_piecewise` | `rtol = 0` | scipy substituted its own tolerance and warned | partly | tolerances must be positive and finite | `35a0067` |
 | `integration.sample_times` | 1e6 s at 1e-9 s; 1e308 s at 1e-308 s | `MemoryError` for 7 PiB; `OverflowError` | no | refused above ten million samples per segment, with advice | `35a0067` |
+| `integration.simulate_piecewise` | any nonlinear system | the first stored sample of a segment came from the solver's interpolant at t = 0 and differed from the last sample of the previous segment in the last bit, so a switching instant was stored with two states | yes | the first sample of a segment is its initial condition, by definition | `07bcdc1` |
 | `integration.Trajectory` | no segments | `IndexError` on first use | no | rejected at construction | `35a0067` |
 | `checks` | negative feed flow | trajectory reported as physical | yes | the four inputs must be positive | `01c55ea` |
 | `checks` | temperature below T_ref - 1/alpha | the linear conductance turned negative and moved heat the wrong way | yes | a trajectory reaching that region is not physical; zero conductance stays valid | `01c55ea` |

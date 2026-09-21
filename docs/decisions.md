@@ -100,7 +100,7 @@ Decision, 2026-09-21. The project owner chose A10: q and C_Af +-10 %, T_f and T_
 
 Limitation, found in the review of `f6c5781` and confirmed by M0-E03. Every option above, A10 included, was judged on single steps from the nominal steady state at 24 input cases. That is what A10 satisfies, and nothing more. When input changes are chained the state at each change depends on the history: a cold stage of 120 s at the A10 levels followed by a hot one takes the target to 395.6 K, and with random binary levels every one of 20 seeded sequences leaves the envelope. A10 therefore fixes the amplitudes for steps from nominal. It does not satisfy the requirement that open-loop excitation stays inside the envelope (D-009) for sequences, and that requirement is not closed by the change of amplitudes. It continues as D-019. No data are generated until D-019 is decided.
 
-## D-019 Protocol for chained input changes (2026-09-21, proposed)
+## D-019 Protocol for chained input changes (2026-09-21, P3 accepted as the initial protocol)
 
 Open requirement: open-loop excitation must keep both plants inside the documented envelope (D-009) when input changes are chained, not only for steps from the nominal steady state. D-018 does not settle it. M0-E03 evaluated five protocols on a 120 s clock, with 20 seeds of 2 h each, adversarial ramps and, for binary protocols, all two-stage corner transitions. Target plant, the binding one:
 
@@ -117,6 +117,12 @@ What the evidence supports. P0 must not be used. P1 to P4 passed every case that
 Recommendation of the implementation agent, not a decision. Use P3 as the default sequential protocol. Its safety rests on the enumerated steps and not on a sample of random sequences, and its excursions are countable tests, which is the unit in which D-011 already measures the adaptation budget. Where continuous excitation is wanted, use P4 and accept the narrower range. Treat P1 and P2 as not sufficiently supported until a wider study, with more seeds or a search for worst-case histories, shows otherwise. Do not enlarge the 380 K limit or change the physical design to admit a protocol.
 
 Still open after this entry: the protocol itself, the length of the rest in P3 (600 s was tried, nothing else), whether single-input excursions are added to the corner excursions, and whether the 2 min clock of D-010 stands.
+
+Decision, 2026-09-21. The project owner accepts P3 as the initial excitation protocol: A10 amplitudes, excursions of 120 s to the corners of the input box, 600 s of recovery at the nominal inputs, the state never being reset. It is defined once, in `src/process_transfer/simulation/protocols.py`.
+
+Scope of the acceptance. P3 stands for the plants and conditions that were verified: the present source and target, these amplitudes, this hold and this rest. M0-E03b measured its premise instead of assuming it: after the rest the target is within 1.3 mK and 0.0065 mol/m^3 of its nominal steady state, the state carried into the next excursion changes its peak by less than a millikelvin, and over all 256 ordered pairs of excursions the largest peak is 376.19 K on the target and 365.75 K on the source, the peaks of the hottest corner from the exact steady state. That is evidence about what was simulated, not a guarantee. Another plant, such as a new target in M3, or another amplitude, hold or rest, needs the same verification before data are generated with it.
+
+Not decided here: the rest time has been measured, not optimised (on the target 600 s meets the recovery tolerance by a factor of about four); single-input excursions are not part of P3; P1, P2 and P4 remain unsupported or unused; the noise level of the C_A sensor is still open (D-020).
 
 ## D-020 Two readings of the noise level of the C_A sensor (2026-09-21, proposed)
 

@@ -98,11 +98,15 @@ q and C_Af +-10 %, T_f and T_c +-5 K; the same 24 cases.
 
 This is all that A10 has been shown to satisfy: single steps, from the nominal steady state, at 24 input cases. It says nothing about the interior of the input box, about the rest of its boundary, or about what happens when one change follows another.
 
-### Chained input changes (M0-E03): the requirement is open
+### Chained input changes (M0-E03, M0-E03b): protocol P3, within its scope
 
 When changes are chained, the state at each change depends on the history. From the nominal steady state of the target, 120 s at q = 110 L/min, C_Af = 0.55 mol/L, T_f = 345 K and T_c = 332.5 K raise C_A from 190 to 347 mol/m^3; raising T_f to 355 K and T_c to 342.5 K then takes the reactor to 395.63 K, 42.6 s later. With random binary levels at the A10 amplitudes on a 120 s clock, every one of 20 seeded sequences of 2 h leaves the envelope on the target, with peaks between 381.5 and 396.6 K. The source stays inside in every case tested.
 
-Four alternative protocols passed every case that was simulated (D-019). That is evidence about the sequences tested, not a guarantee over all the sequences a protocol can generate. The requirement that open-loop excitation stays inside the envelope (D-009) is therefore not satisfied for sequences at present, the excitation protocol is an open decision, and no plant data are generated until it is taken.
+Four alternative protocols passed every case that was simulated (D-019). That is evidence about the sequences tested, not a guarantee over all the sequences a protocol can generate.
+
+The project owner accepted one of them, P3, as the initial excitation: A10 amplitudes, 120 s at a corner of the input box, 600 s at the nominal inputs, the state never reset (`simulation/protocols.py`). Its case is structural: if every excursion starts at the nominal steady state, the responses are the 16 corner steps, which are enumerated. M0-E03b measured that premise. After the rest the target is within 1.3 mK and 0.0065 mol/m^3 of its steady state and the source closer by two orders of magnitude; the carried state changes the next peak by less than a millikelvin; over all 256 ordered pairs of excursions the largest peak is 365.75 K on the source and 376.19 K on the target, 3.8 K below the limit.
+
+This satisfies the requirement of D-009 for P3 on the present source and target, at these amplitudes, hold and rest, and nowhere else. Random sequences at the same amplitudes still leave the envelope, and a new plant, amplitude, hold or rest has to be verified again. The rest time was measured, not optimised: 600 s meets the recovery tolerance on the target by a factor of about four.
 
 ## Measurement
 

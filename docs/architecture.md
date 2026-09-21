@@ -34,7 +34,7 @@ Notebooks may analyse results but call package functions; reusable logic lives u
 
 ## Units
 
-Configuration files use engineering units, each quantity written as a value and a unit string. Values are converted to SI when loaded, through a small explicit conversion table that rejects unknown units. Inside the simulator everything is a plain SI float; no unit-wrapped objects pass through the ODE right-hand side. Units are stored as metadata in the `sensors` table so that data are self-describing.
+Configuration files use engineering units, each quantity written as a value and a unit string. Values are converted to SI when loaded, through a small explicit conversion table that rejects unknown units. Each field declares the physical dimension it requires, and the SI value itself is checked, since a finite value can overflow or underflow in the conversion. Inside the simulator everything is a plain SI float; no unit-wrapped objects pass through the ODE right-hand side. Units are stored as metadata in the `sensors` table so that data are self-describing.
 
 ## Data architecture
 
@@ -68,9 +68,11 @@ Experiment and model tables (`model_runs`, `metrics`, `transfer_actions`) arrive
 
 Generated data paths respect the `PT_DATA_DIR` environment variable and are never committed.
 
+Experiments write to `PT_DATA_DIR/experiments/<experiment>/<run id>/`, one directory per run, never reused: figures, a `summary.json` with a provenance block, and copies of the configuration files. These are diagnostic artefacts of the simulator. They may contain hidden parameters, since the true-plant configurations are copied in full, and they stay apart from the data that will later be made available for training or adaptation, which never carries ground truth.
+
 ## Reproducibility
 
-Every generated dataset and experiment is reproducible from the code version (git hash), the configuration, the random seed, the simulator version and the process parameters. Generated files carry that metadata. Explicit seeds are used wherever randomness is involved, and generated datasets are never edited by hand.
+Every generated dataset and experiment is reproducible from the code version (git hash), the configuration, the random seed, the simulator version and the process parameters. Generated files carry that metadata. `data/provenance.py` records the commit and the state of the working tree, fingerprints of the configurations, the environment and the settings of the run. When git is missing, or the working tree has local changes, the run says so and is not presented as identified by its commit. Explicit seeds are used wherever randomness is involved, and generated datasets are never edited by hand.
 
 Reproducibility is tested at the level that matters: identical numerical trajectories for the same seed, identical schema, and identical canonical content where appropriate. Tests do not depend on byte-for-byte identity of serialised files or on the serialisation details of a particular PyArrow version.
 

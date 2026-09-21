@@ -123,3 +123,35 @@ Safety has a price in information. P1 and P4 narrow the excited range; on the ta
 No protocol, amplitude, seed or criterion was changed after seeing results. The physical design and the 380 K limit were not touched. The choice of a protocol modifies D-010 and is recorded as the open decision D-019.
 
 Limitations. Twenty seeds of 2 h sample a very large set of sequences thinly. Transitions were scanned exhaustively only between corners and only for two stages. The three-level protocols have no exhaustive scan. Only a 120 s clock was examined. The results hold for the present source and target; a different target, as in the domain-shift study of M3, would need the same verification.
+
+Re-run with corrected validators, 2026-09-21. Two acceptance checks used by this experiment were found defective in the review of `50dc509` and corrected: the refined peak looked at one segment only (`41695aa`), and the balance residuals were divided by a signed scale (`e9ccfb2`). Further argument checks were added to the simulation modules (`docs/numerical_robustness.md`). The experiment was run again at `852fee0`, from a clean working tree. Every peak, every count of rejected seeds, ramps and transitions, and the whole verdict table are identical to the run recorded above. No acceptance changed. Two things differ, neither of them a result. The relative balance residuals are about half of what they were, because they are now compared with the traffic through each balance, feed plus reaction plus heat exchange, instead of with the reaction term alone: 1.9e-9 and 1.3e-9 on the counterexample (3.7e-9 and 2.7e-9 before), and at most 1.9e-9 among the seeded sequences (4.1e-9 before); the tolerance of 1e-6 was not touched. And the seed reported as the worst for P3 on the source is 1 instead of 17: several seeds share the same peak, 365.7505 K, and the tie is broken in the last digits. From this run on, every run writes to its own directory `PT_DATA_DIR/experiments/m0_e03/<run id>` with a provenance block (commit and state of the working tree, fingerprints and copies of the configurations, protocols, seeds, criteria, integrator settings, environment); earlier runs overwrote `PT_DATA_DIR/m0_e03`. Run time 70 to 75 s.
+
+### M0-E03b Recovery and carried state under protocol P3 (2026-09-21)
+
+Code: `experiments/03_p3_recovery_and_pairs.py`; the protocol and its tolerances are defined in `src/process_transfer/simulation/protocols.py`. Results below are from the run at `852fee0`, clean working tree, identified in its provenance block; two earlier runs gave identical numbers. Configuration: `configs/source_cstr.yaml`, `configs/target_cstr.yaml`. Deterministic; no random seed. Command: `python experiments/03_p3_recovery_and_pairs.py`, about 15 s (recovery 0.5 s, pairs 13 s). Outputs go to `PT_DATA_DIR/experiments/m0_e03b/<run id>`.
+
+Process note. The script was meant to be committed before its first run, as M0-E03 was. A lint error stopped that commit, and the sweep ran once from the uncommitted file; its provenance block says so (`f458185-dirty`). The tolerances and the logic committed afterwards (`f768f90`) are the ones that ran. That the tolerances preceded the results is therefore supported by the file and by their derivation, not by the history. The reviewer's numbers for both checks were also known beforehand.
+
+**Hypothesis.** Under P3 (A10 amplitudes, 120 s at a corner, 600 s at the nominal inputs) every excursion starts, for all practical purposes, at the nominal steady state, even though the state is never reset; so the worst temperature of a P3 sequence is the worst of the 16 corner steps from nominal, 365.75 K on the source and 376.19 K on the target.
+
+**Method.** No reset anywhere: each segment starts from the final state of the previous one. (1) Recovery: for each of the 16 corners, an excursion from the nominal steady state and the rest that follows; the distance to the nominal steady state at the end of the rest. (2) Carried state: all 256 ordered pairs of corners, repeats included; excursion a, rest, excursion b, rest. For each pair the acceptance checks of `simulation/checks.py` on the whole trajectory, its peak, and the difference between the peak of b inside the pair and the peak of b started from the exact steady state. Integration and sampling as in M0-E03. Tolerances, derived from quantities that do not depend on the results: for the recovery 0.005 K and 0.038 mol/m^3, one hundredth of the planned sensor noise, taking for C_A the stricter of the two readings open in D-020; for the agreement of peaks 0.05 K, a tenth of sigma_T and about 1 % of the 3.8 K between the worst step and the limit.
+
+**Result.**
+
+| | Source | Target |
+|---|---|---|
+| Largest residual after the rest, C_A | 2.199e-5 mol/m^3 | 6.505e-3 mol/m^3 |
+| Largest residual after the rest, T | 7.308e-7 K | 1.333e-3 K |
+| Corner leaving the largest residual | ++-- | ++-- |
+| Decay of the slowest mode at nominal over 600 s | 1.07e-7 | 6.53e-5 |
+| Within the recovery tolerance | yes | yes, by a factor of 3.8 in T and 5.8 in C_A |
+| Pairs rejected, of 256 | 0 | 0 |
+| Largest peak over the pairs | 365.7505 K, ++-- then ++++ | 376.1895 K, ++-- then ++++ |
+| Largest change of a peak caused by the carried state | 1.04e-6 K | 8.95e-4 K |
+| Within the 0.05 K agreement | yes | yes |
+
+The reviewer's independent figures, 2.20e-5 mol/m^3 and 7.31e-7 K on the source, 0.006505 mol/m^3 and 0.001333 K on the target, and peaks of 365.7505 K and 376.1895 K, are reproduced. The residuals agree with the linear decay of the slowest mode: deviations of order 100 mol/m^3 and 20 K at the end of an excursion, multiplied by 6.5e-5, give what is observed on the target. On the target the envelope of the decay crosses the temperature tolerance after roughly 480 to 500 s of rest.
+
+**Interpretation.** The hypothesis holds for these plants and conditions. After the rest the target is within 1.3 mK and 0.0065 mol/m^3 of its nominal steady state, the source closer by two orders of magnitude, and carrying that residual into the next excursion changes its peak by less than a millikelvin. The largest peak over all 256 pairs is the peak of the hottest corner started from the exact steady state. Because each rest reduces what is carried by a factor of about 6.5e-5 on the target, residuals do not build up from one excursion to the next; that is an argument, supported by the 20 seeded P3 sequences of ten excursions in M0-E03, not a separate test of long histories.
+
+This is evidence about the present source and target, the A10 amplitudes, corner excursions of 120 s and a rest of 600 s. It is not a guarantee for another plant, amplitude, hold or rest, and a different target, as in M3, needs the same verification. The rest was measured, not optimised: on the target 600 s meets the temperature tolerance by a factor of about four, so a rest much shorter than eight minutes would not.
