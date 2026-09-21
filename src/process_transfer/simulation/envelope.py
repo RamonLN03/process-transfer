@@ -17,6 +17,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 
 from process_transfer.cstr_variables import INPUT_NAMES, FloatArray
+from process_transfer.simulation.integration import sample_times
 
 RightHandSide = Callable[[FloatArray, FloatArray], FloatArray]  # f(x, u) -> dx/dt
 
@@ -69,8 +70,12 @@ def simulate_envelope(
     duration: float = 2400.0,
     sample_period: float = 1.0,
 ) -> list[EnvelopeCase]:
-    """Apply each input case as a step from ``x0`` and record the ranges visited."""
-    times = np.arange(0.0, duration + 0.5 * sample_period, sample_period)
+    """Apply each input case as a step from ``x0`` and record the ranges visited.
+
+    The trajectory is sampled every ``sample_period`` seconds and at ``duration``
+    itself, so ``final_state`` is always the state at the end of the simulation.
+    """
+    times = sample_times(duration, sample_period)
     results: list[EnvelopeCase] = []
     for label, u in cases:
         solution = solve_ivp(
