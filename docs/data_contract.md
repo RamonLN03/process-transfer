@@ -48,6 +48,8 @@ The content hash, `content_sha256`, says what the numbers are. It is the SHA-256
 
 Policy on repetition, the same for a data set on disk and for a run in the database. The same identity with the same content is accepted and changes nothing: the operation is idempotent. The same identity with different content is a conflict and raises an error; nothing is overwritten. A published data set is never modified: new runs mean a new data set.
 
+A run belongs to one data set. `operating_runs.dataset_id` says which, so the same run offered to a database by another data set is a conflict even when its content is the same: accepting it silently would leave the record saying something that is no longer the whole truth.
+
 Identifiers that become part of a path, `dataset_id`, `plant_id` and `run_id`, are lower-case ASCII: a letter or digit first, then letters, digits, `.`, `_` or `-`, at most 100 characters, not ending in a dot and not a reserved device name of Windows. Lower case only, because two names that differ in case are one file on Windows and two on Linux.
 
 ### Canonical encoding of the content, version `observations/v1`
@@ -110,7 +112,7 @@ Three notions that must not be confused:
 * acceptance of a simulation belongs to the truth. A true trajectory that fails `simulation/checks.py` is never observed and never stored, so every stored run comes from an accepted trajectory. The checks themselves, peaks and balance residuals, stay under `private/`;
 * selection of data is what a query does when it builds a training or evaluation set. It is not stored in the data.
 
-Records are checked twice. Before a run enters the database, its rows are loaded into a staging schema without constraints and the quality queries of `sql/quality/` must return no rows. The constraints of the main schema are the second line.
+Records are checked twice. Before a run enters the database, its rows are loaded into a staging schema without constraints, the quality queries of `sql/quality/` must return no rows, and the content rebuilt from the staged rows must have the hash recorded for the run. The constraints of the main schema are the second line. The whole ingestion of a run is one transaction, so a run is in the database entirely or not at all.
 
 ## Available information
 

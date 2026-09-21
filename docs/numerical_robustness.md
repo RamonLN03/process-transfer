@@ -158,3 +158,43 @@ Scope. Two defects found in the review of `7bc3e6a`, both reproduced through `ob
 * a subset of the sensors, and any order of them, each variable keeping its own noise;
 * the configuration file in engineering units, converted by the loader as before;
 * an exact sensor, which still has its keys and its unit checked.
+
+## Review of 2026-09-21, fifth: identifiers, persistence and the database
+
+Scope. The interfaces added for storage: `canonical`, `sampling_clock`, `data/identifiers`, `data/schema`, `data/records`, `data/parquet_store`, `data/private_store`, `data/database` and the SQL under `sql/`. What is examined here is less about arithmetic than the earlier reviews and more about identities, paths, duplicates, conflicts and failures half way.
+
+### Defects found while building them
+
+| Where | Input | What happened | Silent | Resolution |
+|---|---|---|---|---|
+| `Observations.content_digest` | two sets of different shapes whose numbers line up, one label holding the separator character | the same digest: one row with four inputs against two rows with one input. Labels were joined with a separator and arrays appended without their shapes | yes | a versioned canonical encoding, `observations/v1`, with a kind and explicit lengths for every value; a test rebuilds it by hand, byte for byte |
+| Arrow, through `records.table_from_rows` | a null in a column declared not nullable | the table was built without complaint: Arrow records nullability and does not enforce it | yes | nullability is checked explicitly, on writing and on reading; Parquet would also refuse it on writing, later and less clearly |
+| `database.ingest_run` | a successful ingestion | the staging schema kept the rows of the last run after the commit | no, found by its test | staging is emptied inside the same transaction |
+
+### Domain and limits
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `sampling_clock.nearest_ticks` | finite instants, a finite start, a positive period | no instants gives no ticks; a clock that starts anywhere, negative instants included | a tick number beyond 2**53, which a float cannot hold exactly, whether it comes from a tiny period, a distant instant or an overflow of the difference |
+| `identifiers.path_identifier` | lower-case ASCII, letter or digit first, up to 100 characters | the limit of 100 itself | upper case, separators, a leading dot, a trailing dot, Windows device names such as `nul.p3`, non-ASCII, anything that is not a string |
+| `identifiers.run_identifier` | non-negative integer seeds and realisation, at least one excursion, no dot inside plant or protocol | numpy integers | floats, booleans, strings, negatives, zero excursions |
+| `records.validate_observations` | identifiers usable in a path, distinct non-empty channel names, SI units, every row on the sensor clock, no tick missing | a run that does not start at zero keeps its instants and gets ticks from 0 | a channel named twice across readings and inputs, a unit that is not SI, a row off the clock, a gap: contract version 1 stores complete runs only |
+| `parquet_store.DatasetWriter` | at least one plant, each once; runs of those plants; one run per identity; channels of a plant equal across its runs | the same data set written again: accepted, and not a byte nor a timestamp changes | a run of an unknown plant or of another data set, a run added twice, channels that differ between runs, a plant without runs, an empty data set, an existing data set with other content |
+| `parquet_store.open_dataset_directory` | a directory holding exactly the files of its manifest | none | no manifest, which is also what an interrupted writing leaves; another contract, schema version or encoding; a missing or unexpected file; a schema that differs; a null in a required column; row counts or content hashes that differ |
+| `database.ingest_run` | a run of a published data set | the same run with the same content from the same data set: accepted, nothing changes | defective staged rows, content that differs from the recorded hash, a plant described differently, a run already present with other content or from another data set |
+| `database.block_average` | a whole number of ticks, 1 or more | one tick per block gives the series; more ticks than the run gives one block; the last block of a run is shorter and says so | zero, negatives, fractions, booleans, strings |
+
+### Failures half way
+
+* Writing a data set. Files go to a staging directory, the whole is read back and verified, and the directory is renamed into place. An interrupted process leaves a `.staging-` directory that no reader takes for a data set; a failure inside `publish` removes it. A test kills the writing at two different points and then writes the data set successfully.
+* Two writers of one identity. The rename fails for the second, which then examines what is there instead of replacing it.
+* Ingesting a run. One transaction; a test makes the insertion fail after the run row is in, and finds no plant, channel, run or measurement of it afterwards, an empty staging schema, and a connection back on the main schema. Files altered after a data set was verified are refused by the quality queries, or by the content hash when every record is individually valid.
+
+### Open limitations
+
+* Atomic publication relies on the rename of a directory on one volume. It protects against an interrupted process, not against a power cut in the middle of the rename, and it does not coordinate several machines. Files are not flushed to the disk explicitly.
+* A stale `.staging-` directory left by a killed process is not removed automatically; it is harmless and can be deleted by hand.
+* The SQL files are read from the repository, next to `pyproject.toml`. An installed package without a checkout cannot open a database; the error says so.
+* `aligned_series` names the six variables of the CSTR. Another process family needs its own view.
+* The database has no protection against two processes writing at once beyond what DuckDB itself gives, which is a single writer per file.
+* `PT_DATA_DIR` defaults to a directory inside the repository, which may be a synchronised folder. A database file there can be corrupted by the synchronisation client while it is open; the variable exists to point elsewhere.
