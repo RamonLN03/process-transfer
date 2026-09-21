@@ -13,6 +13,7 @@ simulation truth and never reaches a model; ``TruePlantConfig.plant`` and
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -47,6 +48,24 @@ class Quantity(StrictModel):
         if expected is not None and dimension != expected:
             raise ValueError(
                 f"unit {self.unit!r} measures {dimension}, but this field requires {expected}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _si_value_must_be_representable(self) -> Quantity:
+        """A finite value does not guarantee a finite SI value: the conversion factor can
+        overflow a very large number to infinity or underflow a very small one to zero.
+        The equations use the SI value, so that is the one checked."""
+        si_value, si_unit = to_si(self.value, self.unit)
+        if not math.isfinite(si_value):
+            raise ValueError(
+                f"{self.value!r} {self.unit} is not representable in SI ({si_unit}): "
+                "the conversion overflows"
+            )
+        if self.value != 0.0 and si_value == 0.0:
+            raise ValueError(
+                f"{self.value!r} {self.unit} underflows to zero in SI ({si_unit}); "
+                "a non-zero quantity must stay non-zero"
             )
         return self
 

@@ -157,3 +157,29 @@ def test_the_generic_quantity_accepts_any_known_unit_but_no_unknown_one() -> Non
 def test_every_unit_has_the_same_dimension_as_its_si_target() -> None:
     for unit in known_units():
         assert dimension_of(unit) == dimension_of(si_unit_of(unit)), unit
+
+
+# --------------------------------------------------------------------------- #
+# The SI value, not only the written value, must be usable
+# --------------------------------------------------------------------------- #
+
+
+def test_a_positive_value_that_underflows_to_zero_in_si_is_rejected() -> None:
+    """Regression: 1e-322 L is positive and finite, but 1e-325 m^3 is zero in double
+    precision, and the equations divide by the volume."""
+    with pytest.raises(ValidationError, match="underflows to zero"):
+        Volume(value=1.0e-322, unit="L")
+    assert Volume(value=1.0e-300, unit="L").si > 0.0  # small, but representable
+
+
+def test_a_finite_value_that_overflows_in_si_is_rejected() -> None:
+    """Regression: 1e306 mol/L is finite, 1e309 mol/m^3 is infinite."""
+    with pytest.raises(ValidationError, match="overflows"):
+        Quantity(value=1.0e306, unit="mol/L")
+    with pytest.raises(ValidationError, match="overflows"):
+        MolarEnergy(value=-1.0e306, unit="kJ/mol")
+
+
+def test_zero_is_still_a_valid_signed_quantity() -> None:
+    assert MolarEnergy(value=0.0, unit="J/mol").si == 0.0
+    assert InverseTemperature(value=0.0, unit="1/K").si == 0.0
