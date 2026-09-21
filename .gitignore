@@ -13,8 +13,10 @@ venv/
 # Environment
 .env
 
-# Generated data (see PT_DATA_DIR in .env.example)
-data/
+# Generated data (see PT_DATA_DIR in .env.example). Anchored to the repository
+# root: an unanchored "data/" would also ignore the source package
+# src/process_transfer/data/.
+/data/
 *.parquet
 *.duckdb
 *.duckdb.wal
