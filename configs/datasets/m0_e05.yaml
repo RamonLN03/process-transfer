@@ -1,0 +1,25 @@
+# Definition of the data set of M0-E05 (docs/experiment_log.md), fixed and committed
+# before its first formal run. Read by the generator only: sensor_master_seed is private
+# and never reaches the available branch.
+#
+# Three P3 sequences of two hours on each plant, six runs. Both plants receive the same
+# three input sequences (D-008: the same nominal inputs, and here the same excitation
+# seeds). Their noise is independent: the noise stream of a run follows from its
+# identity, which names the plant.
+#
+# Protocol P3 (D-019) and the sensors (D-020) are used as accepted, unchanged. This is a
+# test of the data path, not a training set and not a benchmark for M1.
+#
+# Paths are relative to this file.
+dataset_id: m0-e05
+description: M0-E05, the full data path on three P3 sequences per plant.
+plants:
+  - ../source_cstr.yaml
+  - ../target_cstr.yaml
+sensors: ../sensors_cstr.yaml
+protocol: p3
+n_excursions: 10          # 10 x (120 s + 600 s) = 2 h per run
+excitation_seeds: [0, 1, 2]
+noise_realisation: 0
+sensor_master_seed: 20260922
+simulation_period: {value: 0.1, unit: s}
