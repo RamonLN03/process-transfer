@@ -32,7 +32,17 @@ from pathlib import Path
 
 from process_transfer.data.paths import output_dir, repository_root
 
-PACKAGES = ("process-transfer", "numpy", "scipy", "pydantic", "pyyaml", "matplotlib")
+PACKAGES = (
+    "process-transfer",
+    "numpy",
+    "scipy",
+    "pydantic",
+    "pyyaml",
+    "matplotlib",
+    "pyarrow",
+    "duckdb",
+    "pandas",
+)
 
 
 def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
@@ -171,6 +181,12 @@ def new_run_directory(experiment: str, state: dict[str, object] | None = None) -
     reported as clean carries no mark. Two runs in the same second get a numeric
     suffix. An existing directory is never reused, so a run never overwrites another.
     """
+    return new_directory(output_dir("experiments", experiment), state)
+
+
+def attempt_stamp(state: dict[str, object] | None = None) -> str:
+    """UTC time to the second, the short commit (or ``nogit``) and the mark of the working
+    tree: what identifies one attempt at running something."""
     state = git_state() if state is None else state
     commit = str(state["commit"])[:7] if state.get("commit") else "nogit"
     dirty = state.get("dirty")
@@ -178,12 +194,18 @@ def new_run_directory(experiment: str, state: dict[str, object] | None = None) -
         mark = "-unverified" if state.get("commit") else ""
     else:
         mark = "-dirty" if dirty else ""
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    parent = output_dir("experiments", experiment)
+    return f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}_{commit}{mark}"
+
+
+def new_directory(parent: Path, state: dict[str, object] | None = None) -> Path:
+    """A fresh directory under ``parent`` named after this attempt. An existing directory
+    is never reused: two attempts in the same second get a numeric suffix."""
+    parent.mkdir(parents=True, exist_ok=True)
+    stamp = attempt_stamp(state)
     attempt = 1
     while True:
         suffix = "" if attempt == 1 else f"-{attempt}"
-        candidate = parent / f"{stamp}_{commit}{mark}{suffix}"
+        candidate = parent / f"{stamp}{suffix}"
         try:
             candidate.mkdir(parents=False, exist_ok=False)
         except FileExistsError:

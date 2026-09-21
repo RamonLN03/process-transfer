@@ -8,6 +8,7 @@ import pytest
 
 from process_transfer.config import load_true_plant
 from process_transfer.cstr_variables import nominal_inputs
+from process_transfer.measurement.observations import Observations
 from process_transfer.simulation import cstr_true
 from process_transfer.simulation.cstr_true import TrueCSTRParameters
 from process_transfer.simulation.steady_state import find_steady_states
@@ -44,3 +45,32 @@ def true_plants(configs_dir: Path) -> dict[str, PlantUnderTest]:
         )
         plants[name] = PlantUnderTest(p, u, steady.state)
     return plants
+
+
+def synthetic_observations(
+    plant: str = "target",
+    run: str = "target.p3.e0.x1.n0",
+    n: int = 21,
+    offset: float = 0.0,
+    sample_period: float = 6.0,
+) -> Observations:
+    """A small, deterministic observation set that needs no simulation: a reading that
+    wanders, one negative reading, and inputs that switch once, at row ``n // 2``."""
+    k = np.arange(n, dtype=np.float64)
+    measured = np.column_stack([190.0 + 25.0 * np.sin(0.7 * k) + offset, 355.0 + np.cos(0.3 * k)])
+    measured[3, 0] = -2.5  # a noisy concentration reading may be negative; it is stored as it is
+    inputs = np.tile([1.0e-3 / 0.6, 500.0, 350.0, 337.5], (n, 1))
+    inputs[n // 2 :, 3] = 342.5  # the coolant temperature steps up, from that row on
+    return Observations(
+        plant=plant,
+        run=run,
+        times=sample_period * k,
+        measured=measured,
+        inputs=inputs,
+        measured_names=("C_A", "T"),
+        measured_units=("mol/m^3", "K"),
+        input_names=("q", "C_Af", "T_f", "T_c"),
+        input_units=("m^3/s", "mol/m^3", "K", "K"),
+        sample_period=sample_period,
+        noise_std=(5.0, 0.5),
+    )

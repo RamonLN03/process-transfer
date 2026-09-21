@@ -25,7 +25,7 @@ The tables of `AGENTS.md`, with the columns fixed here. SI units throughout. No 
 |---|---|---|
 | `plants` | `plant_id`, `name`, `process_type` | `plant_id` |
 | `process_parameters` | `plant_id`, `parameter`, `value`, `unit` | `plant_id`, `parameter` |
-| `sensors` | `sensor_id`, `plant_id`, `variable_name`, `channel_kind`, `unit`, `sampling_period_s`, `noise_model`, `noise_std` | `sensor_id`; also unique on `plant_id` with `sensor_id` and with `variable_name` |
+| `sensors` | `sensor_id`, `plant_id`, `variable_name`, `channel_kind`, `channel_index`, `unit`, `sampling_period_s`, `noise_model`, `noise_std` | `sensor_id`; also unique on `plant_id` with `sensor_id` and with `variable_name` |
 | `operating_runs` | `run_id`, `plant_id`, `dataset_id`, `operating_mode`, `description`, `start_time_s`, `end_time_s`, `sampling_period_s`, `n_samples`, `content_sha256` | `run_id`; also unique on `plant_id` with `run_id` |
 | `measurements` | `plant_id`, `run_id`, `sensor_id`, `sample_index`, `time_s`, `value`, `quality_flag` | `run_id`, `sensor_id`, `sample_index` |
 
@@ -93,6 +93,8 @@ The four inputs, q, C_Af, T_f and T_c, are stored with their full history in the
 |---|---|---|
 | `measured` | a sensor reading of a state, with noise | `additive_gaussian`, the standard deviation in SI, zero or more |
 | `input` | a known input, exact (D-020) | both null |
+
+`channel_index` is the position of a channel among the channels of its kind for that plant. It fixes the order of the columns when a run is rebuilt from the long table, which the content hash depends on; a database gives no order of its own. Names, order, units, sampling period and noise level belong to the plant and must agree across its runs.
 
 This widens the meaning of `sensors` from instruments to channels. The name is kept because it is one of the five entities of `AGENTS.md`. An input is never presented as a sensor with noise: its noise fields are null, not zero, and the schema enforces the pairing. `sensor_id` is `<plant_id>.<variable_name>`.
 

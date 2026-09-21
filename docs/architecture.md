@@ -80,8 +80,8 @@ Measurements are stored in long format. The M0 schema has exactly five tables, w
 
     plants               plant_id, name, process_type
     process_parameters   plant_id, parameter, value, unit   (known parameters only)
-    sensors              sensor_id, plant_id, variable_name, channel_kind, unit,
-                         sampling_period_s, noise_model, noise_std
+    sensors              sensor_id, plant_id, variable_name, channel_kind, channel_index,
+                         unit, sampling_period_s, noise_model, noise_std
     operating_runs       run_id, plant_id, dataset_id, operating_mode, description,
                          start_time_s, end_time_s, sampling_period_s, n_samples,
                          content_sha256

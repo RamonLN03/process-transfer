@@ -55,6 +55,22 @@ def test_measurement_never_imports_simulation_truth_or_the_modeller() -> None:
     _assert_never_imports("measurement", "process_transfer.modeller")
 
 
+def test_the_data_layer_never_imports_simulation_truth_or_the_modeller() -> None:
+    """Storage, database and export are on the available side. They are handed
+    ``Observations`` and the known specification of a plant; an import of the simulation
+    would put the hidden physics within reach of what writes the files a model reads."""
+    _assert_never_imports("data", "process_transfer.simulation")
+    _assert_never_imports("data", "process_transfer.modeller")
+
+
+def test_the_neutral_modules_import_no_physics() -> None:
+    for module in ("canonical.py", "sampling_clock.py", "validation.py", "units.py"):
+        modules, has_relative = _imports(PACKAGE_ROOT / module)
+        assert not has_relative
+        assert not {m for m in modules if m.startswith("process_transfer.simulation")}, module
+        assert not {m for m in modules if m.startswith("process_transfer.modeller")}, module
+
+
 def test_shared_variable_definitions_import_no_physics() -> None:
     modules, has_relative = _imports(PACKAGE_ROOT / "cstr_variables.py")
     assert not has_relative
