@@ -52,7 +52,7 @@ Identifiers that become part of a path, `dataset_id`, `plant_id` and `run_id`, a
 
 ### Canonical encoding of the content, version `observations/v1`
 
-The first digest of `Observations` concatenated labels with a separator and arrays without their shapes. Moving a column from the inputs to the measured variables could then leave the bytes unchanged. Version 1 encodes structure:
+The first digest of `Observations` joined the labels with a separator character and appended the arrays without their shapes, so the structure was not part of what was hashed. Two observation sets of different shapes had the same digest when their numbers lined up and a label contained the separator: one row with four inputs against two rows with one input, reproduced before the change. Version 1 encodes structure:
 
     b"process-transfer/observations/v1\n", then for each field, in this order,
     plant, run, measured_names, measured_units, input_names, input_units,

@@ -27,6 +27,25 @@ import numpy as np
 from process_transfer.cstr_variables import FloatArray
 from process_transfer.validation import require_non_negative, require_positive
 
+CONTENT_ENCODING = "observations/v1"
+
+
+def _length(value: int) -> bytes:
+    return int(value).to_bytes(8, "big")
+
+
+def _encode_string(value: str) -> bytes:
+    data = value.encode("utf-8")
+    return b"S" + _length(len(data)) + data
+
+
+def _encode_numbers(values: FloatArray) -> bytes:
+    """Shape first, then little-endian doubles in row order: two arrays of different
+    shapes never share an encoding, whatever their numbers are."""
+    array = np.ascontiguousarray(values, dtype="<f8")
+    shape = b"".join(_length(size) for size in array.shape)
+    return b"A" + _length(array.ndim) + shape + array.tobytes()
+
 
 def _read_only_copy(values: FloatArray) -> FloatArray:
     copy = np.array(values, dtype=np.float64)
@@ -88,28 +107,45 @@ class Observations:
         )
         for name in ("measured_names", "measured_units", "input_names", "input_units"):
             object.__setattr__(self, name, tuple(getattr(self, name)))
+        labels = (self.plant, self.run, *self.measured_names, *self.measured_units)
+        labels += (*self.input_names, *self.input_units)
+        if not all(isinstance(label, str) for label in labels):
+            raise ValueError("plant, run, names and units must be strings")
 
     @property
     def n_samples(self) -> int:
         return len(self.times)
 
     def content_digest(self) -> str:
-        """SHA-256 of everything held here, labels, numbers and instrument
-        specification, for comparing two generations of the same run. It depends on
-        the values, not on a file format. Equal digests mean equal content; across
-        machines or library versions the last bits of a simulated state may differ,
-        and the digest with them."""
+        """SHA-256 of the canonical encoding ``observations/v1`` of everything held here:
+        labels, instrument specification and numbers, each with its name, its kind and
+        its lengths (``docs/data_contract.md``). It identifies content independently of a
+        file format. Equal digests mean equal content; across machines or library
+        versions the last bits of a simulated state may differ, and the digest with them.
+        """
         digest = hashlib.sha256()
-        labels = (
-            self.plant,
-            self.run,
-            *self.measured_names,
-            *self.measured_units,
-            *self.input_names,
-            *self.input_units,
+        digest.update(f"process-transfer/{CONTENT_ENCODING}\n".encode("ascii"))
+        fields: tuple[tuple[str, object], ...] = (
+            ("plant", self.plant),
+            ("run", self.run),
+            ("measured_names", self.measured_names),
+            ("measured_units", self.measured_units),
+            ("input_names", self.input_names),
+            ("input_units", self.input_units),
+            ("sample_period", np.array([self.sample_period], dtype=np.float64)),
+            ("noise_std", np.array(self.noise_std, dtype=np.float64)),
+            ("times", self.times),
+            ("measured", self.measured),
+            ("inputs", self.inputs),
         )
-        digest.update("\x1f".join(labels).encode("utf-8"))
-        specification = np.array([self.sample_period, *self.noise_std], dtype=np.float64)
-        for values in (self.times, self.measured, self.inputs, specification):
-            digest.update(np.ascontiguousarray(values, dtype="<f8").tobytes())
+        for name, value in fields:
+            digest.update(_encode_string(name))
+            if isinstance(value, str):
+                digest.update(_encode_string(value))
+            elif isinstance(value, tuple):
+                digest.update(b"L" + _length(len(value)))
+                for item in value:
+                    digest.update(_encode_string(item))
+            else:
+                digest.update(_encode_numbers(value))
         return digest.hexdigest()
