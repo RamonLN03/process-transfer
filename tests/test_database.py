@@ -361,3 +361,25 @@ def test_the_database_holds_the_five_tables_and_nothing_else() -> None:
         catalogue + "'VIEW' AND table_schema = 'main' ORDER BY ALL"
     ).fetchall()
     assert views == [("main", "aligned_series"), ("main", "lagged_measurements")]
+
+
+def test_what_is_wrong_only_between_plants_is_caught_with_the_run_in_the_database(
+    plants: list[PlantRecord],
+) -> None:
+    """Regression. Staging holds one run of one plant, so one variable in two units on two
+    plants could not be seen there, and the second plant went in. Each data set below is
+    valid on its own. The database as a whole is now checked inside the transaction."""
+    source, target = plants
+    connection = connect()
+    ingest_dataset(connection, published([source], runs()[:1], name="db-units-source"))
+    before = counts(connection)
+
+    in_kelvin = Observations(**{**vars(runs()[2]), "measured_units": ("K", "K")})  # C_A in K
+    other = published([target], [in_kelvin], name="db-units-target")
+    with pytest.raises(IngestionQualityError, match="the database with the run in it") as caught:
+        ingest_dataset(connection, other)
+    (finding,) = caught.value.findings["q05_metadata"]
+    assert finding["problem"] == "one variable with different units on different plants"
+    assert finding["detail"] == "K against mol/m^3"
+    assert counts(connection) == before  # the plant, its channels and its run are all gone
+    assert counts(connection, "staging") == dict.fromkeys(database.TABLES, 0)

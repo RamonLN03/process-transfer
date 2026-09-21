@@ -193,6 +193,14 @@ class DatasetWriter:
         idle = sorted(set(self.plants) - set(self._sensors))
         if idle:
             raise DatasetError(f"no run was added for the plants {idle}")
+        units: dict[str, set[str]] = {}
+        for rows in self._sensors.values():
+            for row in rows:
+                units.setdefault(str(row["variable_name"]), set()).add(str(row["unit"]))
+        mixed = {name: sorted(found) for name, found in units.items() if len(found) > 1}
+        if mixed:
+            # one variable, one unit: otherwise the plants of a data set cannot be compared
+            raise DatasetError(f"a variable has different units on different plants: {mixed}")
 
         tables = {
             "plants": table_from_rows(

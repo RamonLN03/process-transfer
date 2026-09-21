@@ -9,9 +9,10 @@ the queries are the readable files under ``sql/``, and this module only runs the
 Ingestion of one run is one transaction. The rows of the run are loaded from the files
 named in the manifest, never from a wildcard, into the staging schema; the quality
 queries must return nothing; the content rebuilt from the staged rows must have the hash
-recorded for the run; and only then are the rows inserted into the main schema. Anything
-that fails rolls the whole transaction back, so a run is in the database entirely or not
-at all.
+recorded for the run; the rows are inserted into the main schema; and the quality queries
+are run once more on the database as a whole, since what is wrong only between runs or
+between plants cannot be seen in the staged rows of one run. Anything that fails rolls the
+whole transaction back, so a run is in the database entirely or not at all.
 
 The policy on repetition is that of the data sets. A run that is already there with the
 same content is accepted and changes nothing. The same identity with other content, for
@@ -49,16 +50,23 @@ class IngestionConflictError(DatabaseError):
 
 
 class IngestionQualityError(DatabaseError):
-    """The staged rows of a run failed the quality queries. Nothing was ingested."""
+    """The quality queries found something, in the staged rows of a run or in the
+    database with the run in it. Nothing was ingested."""
 
-    def __init__(self, run_id: str, findings: Mapping[str, list[dict[str, object]]]) -> None:
+    def __init__(
+        self,
+        run_id: str,
+        findings: Mapping[str, list[dict[str, object]]],
+        where: str = "the staged rows of the run",
+    ) -> None:
         self.run_id = run_id
         self.findings = dict(findings)
+        self.where = where
         lines = [
             f"  {name}: {len(rows)} finding(s), first: {rows[0]}" for name, rows in findings.items()
         ]
         super().__init__(
-            f"the run {run_id!r} failed the quality checks and was not ingested:\n"
+            f"{where} failed the quality checks, and the run {run_id!r} was not ingested:\n"
             + "\n".join(lines)
         )
 
@@ -138,9 +146,13 @@ def _clear_staging(connection: duckdb.DuckDBPyConnection) -> None:
         connection.execute(f"DELETE FROM staging.{table}")
 
 
-def _stage(connection: duckdb.DuckDBPyConnection, dataset: Dataset, run_id: str) -> str:
-    """Load the rows of one run, and of its plant, into the empty staging schema. Every
-    file is named explicitly, from the manifest; columns are listed, never ``*``."""
+def stage_run(connection: duckdb.DuckDBPyConnection, dataset: Dataset, run_id: str) -> str:
+    """Load the rows of one run, and of its plant, into the emptied staging schema, and
+    return its plant. Every file is named explicitly, from the manifest; columns are
+    listed, never ``*``. ``ingest_run`` does this inside its transaction. Called on its
+    own, it lets a run be examined with the quality queries, or a defect be put into a
+    copy of it, without touching the main schema; wrap it in a transaction and roll it
+    back to leave staging as it was."""
     _clear_staging(connection)
     runs = [run for run in dataset.manifest["runs"] if run["run_id"] == run_id]  # type: ignore[union-attr]
     if len(runs) != 1:
@@ -218,7 +230,7 @@ def ingest_run(connection: duckdb.DuckDBPyConnection, dataset: Dataset, run_id: 
 def _ingest_within_transaction(
     connection: duckdb.DuckDBPyConnection, dataset: Dataset, run_id: str
 ) -> str:
-    plant_id = _stage(connection, dataset, run_id)
+    plant_id = stage_run(connection, dataset, run_id)
 
     findings = failed_checks(quality_report(connection, "staging"))
     if findings:
@@ -272,6 +284,14 @@ def _ingest_within_transaction(
     ).fetchone()[0]
     if stored != expected:
         raise DatabaseError(f"{stored} rows of {run_id!r} were stored where {expected} were staged")
+    # Staging holds one run of one plant, so what is wrong only between runs or between
+    # plants cannot be seen there: one variable in two units, for one. The database as a
+    # whole is therefore checked with the run in it, still inside the transaction. Every
+    # query reads the whole database, so ingesting n runs costs of the order of n squared.
+    # That is nothing at the sizes of M0 and would need another plan at much larger ones.
+    findings = failed_checks(quality_report(connection, "main"))
+    if findings:
+        raise IngestionQualityError(run_id, findings, "the database with the run in it")
     _clear_staging(connection)  # within the same transaction: staging is empty between runs
     return "ingested"
 

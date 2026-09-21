@@ -457,3 +457,13 @@ def test_reading_needs_nothing_but_the_data_set_itself(
         == four_runs()[2].content_digest()
     )
     assert not (tmp_path / "handed-over" / "private").exists()  # and reading did not create it
+
+
+def test_one_variable_has_one_unit_on_every_plant_of_a_data_set(plants: list[PlantRecord]) -> None:
+    source_run = synthetic_observations("source", "source.p3.e0.x1.n0")
+    in_kelvin = with_changes(measured_units=("K", "K"))  # the target says that C_A is in kelvin
+    with DatasetWriter(DATASET, plants, ATTEMPT) as writer:
+        writer.add_run(source_run, RECORD)
+        writer.add_run(in_kelvin, RECORD)
+        with pytest.raises(DatasetError, match="different units on different plants.*'C_A'"):
+            writer.publish()
