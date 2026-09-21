@@ -353,6 +353,7 @@ def part_c_transitions(plants: dict[str, Plant]) -> tuple[dict, dict[str, np.nda
             for variant in ("120 s dwell from nominal", "settled at corner i"):
                 peaks = np.full((16, 16), np.nan)
                 rejected = 0
+                rejected_pairs: list[tuple[np.ndarray, np.ndarray]] = []
                 for (i, first), (j, second) in itertools.product(enumerate(corners), repeat=2):
                     if i == j:
                         continue
@@ -366,6 +367,8 @@ def part_c_transitions(plants: dict[str, Plant]) -> tuple[dict, dict[str, np.nda
                     check = check_trajectory(trajectory, plant.parameters)
                     peaks[i, j] = check.refined_peak_temperature
                     rejected += not check.accepted
+                    if not check.accepted:
+                        rejected_pairs.append((first, second))
                 i, j = np.unravel_index(np.nanargmax(peaks), peaks.shape)
                 key = f"{label}/{plant.name}/{variant}"
                 matrices[key] = peaks
@@ -374,28 +377,55 @@ def part_c_transitions(plants: dict[str, Plant]) -> tuple[dict, dict[str, np.nda
                     "worst_transition": f"{sign_string(corners[i])} -> {sign_string(corners[j])}",
                     "rejected": int(rejected),
                     "of": 240,
+                    "rejected_transitions": [
+                        f"{sign_string(a)} -> {sign_string(b)}" for a, b in rejected_pairs
+                    ],
+                    # reporting added after the first run: which input rises in the rejected ones
+                    "rejected_with_t_c_rising": int(
+                        sum(a[3] < 0 < b[3] for a, b in rejected_pairs)
+                    ),
+                    "rejected_with_t_f_rising": int(
+                        sum(a[2] < 0 < b[2] for a, b in rejected_pairs)
+                    ),
+                    "rejected_ending_with_q_and_c_af_high": int(
+                        sum(b[0] > 0 and b[1] > 0 for _, b in rejected_pairs)
+                    ),
                 }
                 print(
                     f"  {label:16s} {plant.name:6s} {variant:26s} worst {peaks[i, j]:.2f} K on "
                     f"{sign_string(corners[i])} -> {sign_string(corners[j])} "
                     f"(order q, C_Af, T_f, T_c); rejected {rejected} of 240"
                 )
+                if rejected_pairs:
+                    print(
+                        f"      of the rejected: T_c rises in "
+                        f"{results[key]['rejected_with_t_c_rising']}, T_f rises in "
+                        f"{results[key]['rejected_with_t_f_rising']}, end with q and C_Af high in "
+                        f"{results[key]['rejected_ending_with_q_and_c_af_high']}"
+                    )
     return results, matrices
 
 
 def part_d_seeded_sequences(plants: dict[str, Plant]) -> tuple[dict, dict[str, list[float]]]:
+    """Seeded sequences. The excited ranges and the mismatch they expose are reporting
+    added after the first run; protocols, seeds and acceptance criteria are unchanged."""
     print(f"\n== D. Seeded sequences: {len(SEEDS)} seeds, {SEQUENCE_DURATION / 3600:.0f} h each ==")
     results: dict[str, object] = {}
     peaks_by_key: dict[str, list[float]] = {}
     for protocol in PROTOCOLS:
         for plant in plants.values():
-            checks = [
-                check_trajectory(
-                    run(plant, plant.nominal_state, segments_for(protocol, plant, seed)),
-                    plant.parameters,
-                )
-                for seed in SEEDS
-            ]
+            checks, pooled = [], []
+            for seed in SEEDS:
+                trajectory = run(plant, plant.nominal_state, segments_for(protocol, plant, seed))
+                checks.append(check_trajectory(trajectory, plant.parameters))
+                pooled.append(trajectory.states[::10])  # one sample per second is enough here
+            states = np.concatenate(pooled)
+            c_a_90 = np.percentile(states[:, 0], [5.0, 95.0])
+            t_90 = np.percentile(states[:, 1], [5.0, 95.0])
+            p = plant.parameters
+            kinetic = 2.0 / (1.0 + p.saturation_constant * c_a_90)  # r_true / r_model, D-006
+            conductance = 1.0 + p.alpha * (t_90 - p.t_ref)  # UA(T) / UA_ref, D-007
+
             peaks = [check.refined_peak_temperature for check in checks]
             failed = [seed for seed, check in zip(SEEDS, checks, strict=True) if not check.accepted]
             not_physical = [s for s, c in zip(SEEDS, checks, strict=True) if not c.states_physical]
@@ -410,11 +440,27 @@ def part_d_seeded_sequences(plants: dict[str, Plant]) -> tuple[dict, dict[str, l
                 "open_balance_seeds": open_balances,
                 "worst_seed": int(SEEDS[int(np.argmax(peaks))]),
                 "max_seconds_above_limit": round(max(c.seconds_above_limit for c in checks), 1),
+                "max_relative_mass_residual": max(c.relative_mass_residual for c in checks),
+                "max_relative_energy_residual": max(c.relative_energy_residual for c in checks),
+                "c_a_central_90": [round(float(v), 1) for v in c_a_90],
+                "t_central_90": [round(float(v), 2) for v in t_90],
+                "kinetic_mismatch_ratio_central_90": [round(float(v), 3) for v in kinetic],
+                "conductance_ratio_central_90": [round(float(v), 4) for v in conductance],
             }
             print(
                 f"  {protocol.key} {plant.name:6s} peak over seeds: min {min(peaks):.2f}, "
                 f"median {np.median(peaks):.2f}, max {max(peaks):.2f} K; rejected "
                 f"{len(failed)} of {len(SEEDS)} seeds {failed if failed else ''}"
+            )
+            worst_residual = max(
+                max(c.relative_mass_residual for c in checks),
+                max(c.relative_energy_residual for c in checks),
+            )
+            print(
+                f"            central 90 %: C_A {c_a_90[0]:.0f} to {c_a_90[1]:.0f} mol/m^3 "
+                f"(r_true/r_model {kinetic[0]:.2f} to {kinetic[1]:.2f}), T {t_90[0]:.1f} to "
+                f"{t_90[1]:.1f} K (UA/UA_ref {conductance[0]:.3f} to {conductance[1]:.3f}); "
+                f"worst balance residual {worst_residual:.1e}"
             )
     return results, peaks_by_key
 
@@ -506,6 +552,14 @@ def verdicts(transitions: dict, seeded: dict, ramps: dict) -> dict:
 # Figures
 # =========================================================================== #
 
+PROTOCOL_LABEL = {
+    "P0": "A10\nbinary",
+    "P1": "thermal ±2.5 K\nbinary",
+    "P2": "A10\none level per tick",
+    "P3": "A10\nseparated excursions",
+    "P4": "thermal ±2.5 K\none level per tick",
+}
+
 
 def style_axes(ax: plt.Axes) -> None:
     ax.set_facecolor(SURFACE)
@@ -519,7 +573,7 @@ def style_axes(ax: plt.Axes) -> None:
     ax.set_axisbelow(True)
 
 
-def draw_limit(ax: plt.Axes, x_text: float) -> None:
+def draw_limit(ax: plt.Axes, x_text: float, ha: str = "left") -> None:
     limit = TEMPERATURE_ENVELOPE[1]
     ax.axhline(limit, color=LIMIT_COLOR, linewidth=1.0)
     ax.annotate(
@@ -529,12 +583,12 @@ def draw_limit(ax: plt.Axes, x_text: float) -> None:
         textcoords="offset points",
         fontsize=8,
         color=INK,
-        ha="left",
+        ha=ha,
         va="bottom",
     )
 
 
-def figure_counterexample(trajectories: dict[str, Trajectory], directory) -> None:
+def figure_counterexample(trajectories: dict[str, Trajectory], directory) -> None:  # noqa: ANN001
     fig, axes = plt.subplots(3, 1, figsize=(7.2, 7.4), sharex=True, facecolor=SURFACE)
     target = trajectories["target"]
     for ax in axes:
@@ -554,6 +608,15 @@ def figure_counterexample(trajectories: dict[str, Trajectory], directory) -> Non
             color=INK,
             ha="right",
         )
+    axes[0].annotate(
+        "input change at 120 s",
+        (CLOCK, 337.5),
+        xytext=(5, 0),
+        textcoords="offset points",
+        fontsize=8,
+        color=INK_SECONDARY,
+        va="center",
+    )
     axes[0].set_ylabel("input temperature, K", fontsize=9, color=INK_SECONDARY)
     axes[0].set_title(
         "A cold stage stores reactant; heating then releases its heat at once",
@@ -604,25 +667,19 @@ def figure_counterexample(trajectories: dict[str, Trajectory], directory) -> Non
     axes[2].set_xlabel("time, s", fontsize=9, color=INK_SECONDARY)
     draw_limit(axes[2], 2.0)
     axes[1].legend(frameon=False, fontsize=8, labelcolor=INK, loc="upper right")
-    axes[1].annotate(
-        "input change",
-        (CLOCK, axes[1].get_ylim()[1]),
-        xytext=(4, -10),
-        textcoords="offset points",
-        fontsize=8,
-        color=INK_SECONDARY,
-    )
     fig.tight_layout()
     fig.savefig(directory / "fig1_counterexample.png", dpi=200, facecolor=SURFACE)
     plt.close(fig)
 
 
-def figure_ramps(trajectories: dict[str, Trajectory], directory) -> None:
-    fig, axes = plt.subplots(1, len(PROTOCOLS), figsize=(13.5, 3.6), sharey=True, facecolor=SURFACE)
+def figure_ramps(trajectories: dict[str, Trajectory], directory) -> None:  # noqa: ANN001
+    fig, axes = plt.subplots(1, len(PROTOCOLS), figsize=(13.5, 3.7), sharey=True, facecolor=SURFACE)
     for ax, protocol in zip(axes, PROTOCOLS, strict=True):
         style_axes(ax)
+        end = 0.0
         for plant_name in PLANTS:
             trajectory = trajectories[f"{protocol.key}/{plant_name}"]
+            end = max(end, trajectory.duration)
             ax.plot(
                 trajectory.times,
                 trajectory.states[:, 1],
@@ -630,10 +687,9 @@ def figure_ramps(trajectories: dict[str, Trajectory], directory) -> None:
                 linewidth=1.6,
                 label=plant_name,
             )
-        draw_limit(ax, 0.0)
-        ax.set_title(
-            f"{protocol.key}: {protocol.description}", fontsize=8, color=INK, loc="left", wrap=True
-        )
+        draw_limit(ax, end, ha="right")
+        label = PROTOCOL_LABEL[protocol.key].replace("\n", ", ")
+        ax.set_title(f"{protocol.key}\n{label}", fontsize=8.5, color=INK, loc="left")
         ax.set_xlabel("time, s", fontsize=8, color=INK_SECONDARY)
     axes[0].set_ylabel("reactor temperature T, K", fontsize=9, color=INK_SECONDARY)
     axes[0].legend(frameon=False, fontsize=8, labelcolor=INK, loc="lower right")
@@ -642,15 +698,16 @@ def figure_ramps(trajectories: dict[str, Trajectory], directory) -> None:
         fontsize=11,
         color=INK,
         x=0.01,
+        y=0.98,
         ha="left",
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
     fig.savefig(directory / "fig2_adversarial_ramps.png", dpi=200, facecolor=SURFACE)
     plt.close(fig)
 
 
-def figure_seed_peaks(peaks_by_key: dict[str, list[float]], directory) -> None:
-    fig, ax = plt.subplots(figsize=(8.4, 4.2), facecolor=SURFACE)
+def figure_seed_peaks(peaks_by_key: dict[str, list[float]], directory) -> None:  # noqa: ANN001
+    fig, ax = plt.subplots(figsize=(8.6, 4.4), facecolor=SURFACE)
     style_axes(ax)
     rng = np.random.default_rng(0)  # horizontal jitter only, so that equal peaks do not overlap
     for position, protocol in enumerate(PROTOCOLS):
@@ -668,7 +725,11 @@ def figure_seed_peaks(peaks_by_key: dict[str, list[float]], directory) -> None:
                 label=plant_name if position == 0 else None,
             )
     draw_limit(ax, -0.45)
-    ax.set_xticks(range(len(PROTOCOLS)), [protocol.key for protocol in PROTOCOLS])
+    ax.set_xticks(
+        range(len(PROTOCOLS)),
+        [f"{protocol.key}\n{PROTOCOL_LABEL[protocol.key]}" for protocol in PROTOCOLS],
+    )
+    ax.tick_params(axis="x", labelsize=7.5)
     ax.set_xlim(-0.5, len(PROTOCOLS) - 0.5)
     ax.set_ylabel("peak temperature of the sequence, K", fontsize=9, color=INK_SECONDARY)
     ax.set_title(
@@ -683,7 +744,7 @@ def figure_seed_peaks(peaks_by_key: dict[str, list[float]], directory) -> None:
     plt.close(fig)
 
 
-def figure_transitions(matrices: dict[str, np.ndarray], directory) -> None:
+def figure_transitions(matrices: dict[str, np.ndarray], directory) -> None:  # noqa: ANN001
     diverging = LinearSegmentedColormap.from_list(
         "blue_gray_red", ["#184f95", "#6da7ec", "#f0efec", "#ee8f8e", "#b3262a"]
     )
@@ -694,20 +755,17 @@ def figure_transitions(matrices: dict[str, np.ndarray], directory) -> None:
     )
     highest = max(float(np.nanmax(matrices[key])) for key in keys)
     lowest = min(float(np.nanmin(matrices[key])) for key in keys)
-    norm = TwoSlopeNorm(
-        vmin=min(lowest, limit - 1.0), vcenter=limit, vmax=max(highest, limit + 1.0)
-    )
+    norm = TwoSlopeNorm(vmin=min(lowest, limit - 1.0), vcenter=limit, vmax=max(highest, limit + 1))
     labels = [sign_string(corner) for corner in corner_levels()]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.4, 6.0), facecolor=SURFACE)
-    for ax, key, title in zip(
-        axes, keys, ("A10 amplitudes", "thermal inputs +-2.5 K"), strict=True
-    ):
-        image = ax.imshow(matrices[key], cmap=diverging, norm=norm)
-        ax.set_xticks(
-            range(16), labels, rotation=90, fontsize=7, color=INK_SECONDARY, family="monospace"
-        )
-        ax.set_yticks(range(16), labels, fontsize=7, color=INK_SECONDARY, family="monospace")
+    fig, axes = plt.subplots(1, 2, figsize=(12.6, 6.3), facecolor=SURFACE)
+    fig.subplots_adjust(left=0.06, right=0.9, top=0.86, bottom=0.1, wspace=0.16)
+    titles = ("A10 amplitudes", "thermal inputs ±2.5 K")
+    for ax, key, title in zip(axes, keys, titles, strict=True):
+        matrix = matrices[key]
+        image = ax.imshow(matrix, cmap=diverging, norm=norm)
+        ax.set_xticks(range(16), labels, fontsize=6.5, color=INK_SECONDARY, family="monospace")
+        ax.set_yticks(range(16), labels, fontsize=6.5, color=INK_SECONDARY, family="monospace")
         ax.set_xlabel("second corner, held 600 s", fontsize=9, color=INK_SECONDARY)
         ax.set_ylabel("first corner, held 120 s", fontsize=9, color=INK_SECONDARY)
         ax.set_title(title, fontsize=10, color=INK, loc="left")
@@ -718,23 +776,41 @@ def figure_transitions(matrices: dict[str, np.ndarray], directory) -> None:
         ax.set_yticks(np.arange(-0.5, 16, 1), minor=True)
         ax.grid(which="minor", color=SURFACE, linewidth=1.5)  # surface gap between cells
         ax.tick_params(which="both", length=0)
-    bar = fig.colorbar(image, ax=axes, shrink=0.8, pad=0.02)
+        ax.plot(range(16), range(16), ".", color=AXIS, markersize=3)  # diagonal: no change
+        for i, j in zip(*np.where(matrix > limit), strict=True):  # label only the violations
+            ax.text(
+                j,
+                i,
+                f"{matrix[i, j]:.0f}",
+                ha="center",
+                va="center",
+                fontsize=6,
+                color="#ffffff" if matrix[i, j] > limit + 8.0 else INK,
+            )
+    bar = fig.colorbar(image, cax=fig.add_axes([0.92, 0.2, 0.012, 0.56]))
     bar.set_label(
-        f"peak temperature, K (neutral at the {limit:.0f} K limit)", fontsize=9, color=INK_SECONDARY
+        f"peak temperature, K (neutral at the {limit:.0f} K limit)",
+        fontsize=9,
+        color=INK_SECONDARY,
     )
     bar.ax.tick_params(labelsize=8, colors=INK_SECONDARY)
     bar.outline.set_visible(False)
-    fig.suptitle(
-        "Target plant: peak temperature after a change from one corner to another "
-        "(signs of q, C_Af, T_f, T_c)",
+    fig.text(
+        0.01,
+        0.95,
+        "Target plant: peak temperature after a change from one corner of the input box to another",
         fontsize=11,
         color=INK,
-        x=0.01,
-        ha="left",
     )
-    fig.savefig(
-        directory / "fig4_transitions_target.png", dpi=200, facecolor=SURFACE, bbox_inches="tight"
+    fig.text(
+        0.01,
+        0.915,
+        "Corner signs in the order q, C_Af, T_f, T_c. Numbers mark the transitions that exceed "
+        "the limit. Dots on the diagonal: no change.",
+        fontsize=8,
+        color=INK_SECONDARY,
     )
+    fig.savefig(directory / "fig4_transitions_target.png", dpi=200, facecolor=SURFACE)
     plt.close(fig)
 
 
