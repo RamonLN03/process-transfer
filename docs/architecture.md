@@ -9,6 +9,7 @@ The package is organised so that these remain logically distinct (AGENTS.md):
 | Simulation truth: true plants, hidden physics, noise-free states | `process_transfer.simulation` | M0 |
 | Modeller physics: the simplified equations an engineer would write | `process_transfer.modeller` | M0 (equations only) |
 | Measurement: sensors, and the observations that modelling is given | `process_transfer.measurement` | M0 |
+| Generation: from configuration files to a verified data set; the truth side of the data path | `process_transfer.generation` | M0 |
 | Data infrastructure: Parquet, DuckDB, SQL, paths | `process_transfer.data` | M0 |
 | Configuration and units | `process_transfer.config`, `process_transfer.units` | M0 |
 | Models (black box, hybrid) | `process_transfer.models` | M1 |
@@ -44,8 +45,8 @@ A row of observations holds an instant, the readings of the state at that instan
     .github/workflows/ci.yml    ruff and pytest on every push
     src/process_transfer/       reusable code
     tests/                      pytest, including physical-behaviour tests
-    configs/                    plant, modeller and excitation configurations (YAML)
-    sql/                        schema and readable data-quality queries
+    configs/                    plant, modeller and sensor configurations, and data set definitions (YAML)
+    sql/                        schema, data-quality queries, views and analyses (sql/README.md)
     experiments/                numbered scripts that generate data and run experiments
     docs/                       this documentation
     notebooks/                  exploration only, never primary implementation
@@ -94,7 +95,18 @@ Experiment and model tables (`model_runs`, `metrics`, `transfer_actions`) arrive
 
 Generated data paths respect the `PT_DATA_DIR` environment variable and are never committed.
 
-What is ready for this layer, and what is not. `Observations` is the input of the writer to come: one run of one plant, times in seconds, readings and inputs in SI with their names and units, which maps onto `measurements` rows in long format (plant, sensor, run, timestamp, value) and onto the `sensors` table through names, units, sampling period and noise level; its content digest identifies a run independently of any file format. `configs/sensors_cstr.yaml` and the known part of the plant configurations feed `sensors`, `plants` and `process_parameters`. `RunTruth` must go to a separate location that the training path cannot read. Not decided yet: run identifiers and the rule that gives every run its own noise stream, the quality flag, how inputs are stored, since they are known exactly and have no sensor, and the on-disk layout. No Parquet or DuckDB code exists yet.
+How the layer is built (M0-E05). `generation` builds the plants, verifies their starting points, simulates, validates the truth, observes, and hands `Observations` and known plant records to `data`. `data/parquet_store.py` writes an immutable data set by staging and rename and verifies it on reading; `data/database.py` ingests a run in one transaction behind a staging schema and the queries of `sql/quality/`, and checks the database as a whole before committing; `data/export.py` writes aligned series taken from the SQL view `aligned_series` and verified against the stored content; `generation/leak_scan.py` reads the result the way a model would and looks for anything hidden. The writers are never handed the truth: their signatures take `Observations` and a `PlantSpec`, and tests on the import graph keep `data` and `measurement` from importing `simulation`.
+
+    PT_DATA_DIR/available/datasets/<id>/    Parquet and manifest.json, written once
+    PT_DATA_DIR/available/databases/        DuckDB, derived, can be rebuilt
+    PT_DATA_DIR/available/exports/<id>/     aligned series for models
+    PT_DATA_DIR/private/datasets/<id>/      seeds, streams, full configurations, truth checks
+
+One command runs the whole path and returns a non-zero code if a mandatory check fails:
+
+    python -m process_transfer.generation configs/datasets/m0_e05.yaml
+
+The SQL is described in `sql/README.md`, and what M0 has and has not delivered in `docs/m0_audit.md`.
 
 Experiments write to `PT_DATA_DIR/experiments/<experiment>/<run id>/`, one directory per run, never reused: figures, a `summary.json` with a provenance block, and copies of the configuration files. These are diagnostic artefacts of the simulator. They may contain hidden parameters, since the true-plant configurations are copied in full, and they stay apart from the data that will later be made available for training or adaptation, which never carries ground truth.
 

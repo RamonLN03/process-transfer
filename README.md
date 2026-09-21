@@ -31,9 +31,23 @@ ruff check .
 
 Continuous integration runs both on every push.
 
+### Generating a data set
+
+One command goes from the configuration files to a verified data set, a DuckDB database and an export of aligned series, and returns a non-zero exit code if any mandatory check fails:
+
+```
+python -m process_transfer.generation configs/datasets/m0_e05.yaml
+```
+
+From PyCharm, create a Python run configuration with *module name* `process_transfer.generation` and the path of the definition as its parameter. The working directory does not matter: a relative path is looked for under the repository root, and generated files go under `PT_DATA_DIR`. Experiments are plain scripts, for example `experiments/05_full_data_path.py`, and can be run the same way as *script path*.
+
+The data contract is `docs/data_contract.md`, the SQL is described in `sql/README.md`, and `docs/m0_audit.md` says what the first milestone has and has not delivered.
+
 ### Generated data
 
-Generated data never goes into git. The `PT_DATA_DIR` environment variable sets where Parquet files and the DuckDB database are written (default `data/`, resolved against the repository root). See `.env.example`.
+Generated data never goes into git. The `PT_DATA_DIR` environment variable sets where Parquet files and the DuckDB database are written (default `data/`, resolved against the repository root). See `.env.example`. If the repository lives in a synchronised folder, point `PT_DATA_DIR` outside it: a database file can be damaged by a synchronisation client while it is open.
+
+Under it, `available/` holds everything a model may read, data sets, databases and exports, and `private/` holds what is needed to regenerate and diagnose them, seeds and full configurations included. This is a separation of content and code paths, not a permission of the operating system.
 
 ## Layout
 
