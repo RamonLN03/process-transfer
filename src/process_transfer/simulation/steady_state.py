@@ -30,6 +30,7 @@ given grid, not a proof of uniqueness.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -38,6 +39,7 @@ from numpy.typing import NDArray
 from scipy.optimize import brentq, root
 
 from process_transfer.cstr_variables import FloatArray
+from process_transfer.validation import require_finite, require_positive
 
 BoundRightHandSide = Callable[[FloatArray], FloatArray]
 
@@ -68,8 +70,15 @@ class SteadyState:
 def numerical_jacobian(
     f: BoundRightHandSide, x: FloatArray, rel_step: float = 1.0e-6
 ) -> FloatArray:
-    """Jacobian df/dx by central differences, with a step scaled to each state."""
+    """Jacobian df/dx by central differences, with a step scaled to each state.
+
+    The step is ``rel_step * max(|x_i|, 1)`` and is therefore never zero. A
+    right-hand side that is not finite around ``x`` is an error, not a Jacobian of
+    NaN."""
+    rel_step = require_positive("rel_step", rel_step)
     x = np.asarray(x, dtype=np.float64)
+    if not np.all(np.isfinite(x)):
+        raise ValueError(f"the state must be finite, got {x!r}")
     n = x.size
     jacobian = np.empty((n, n), dtype=np.float64)
     for j in range(n):
@@ -77,7 +86,11 @@ def numerical_jacobian(
         forward, backward = x.copy(), x.copy()
         forward[j] += step
         backward[j] -= step
-        jacobian[:, j] = (f(forward) - f(backward)) / (2.0 * step)
+        ahead, behind = f(forward), f(backward)
+        if not (np.all(np.isfinite(ahead)) and np.all(np.isfinite(behind))):
+            # checked before subtracting, so that no arithmetic is done on infinities
+            raise ValueError(f"the right-hand side is not finite around the state {x!r}")
+        jacobian[:, j] = (ahead - behind) / (2.0 * step)
     return jacobian
 
 
@@ -101,19 +114,40 @@ def find_steady_states(
     concentration is the natural choice, since the reaction only consumes A.
     """
 
+    c_a_upper = require_positive("c_a_upper", c_a_upper)
+    low = require_positive("the lower end of temperature_range", temperature_range[0])
+    high = require_finite("the upper end of temperature_range", temperature_range[1])
+    if not low < high:
+        raise ValueError(f"temperature_range must be increasing, got {temperature_range!r}")
+    if n_grid != int(n_grid) or n_grid < 2:
+        raise ValueError(f"n_grid must be an integer of at least 2, got {n_grid!r}")
+
     def c_a_on_mass_balance(temperature: float) -> float:
         """C_A in [0, c_a_upper] that closes the mass balance at this temperature."""
 
         def mass_residual(c_a: float) -> float:
             return float(f(np.array([c_a, temperature]))[0])
 
+        at_zero, at_upper = mass_residual(0.0), mass_residual(c_a_upper)
+        if not (math.isfinite(at_zero) and math.isfinite(at_upper)):
+            raise ValueError(f"the right-hand side is not finite at T = {temperature} K")
+        if at_zero * at_upper > 0.0:
+            raise ValueError(
+                f"at T = {temperature} K the mass balance does not change sign for C_A in "
+                f"[0, {c_a_upper}]; c_a_upper must bound the steady-state concentration, "
+                "the feed concentration being the natural choice"
+            )
         return float(brentq(mass_residual, 0.0, c_a_upper, xtol=1e-12, rtol=1e-14))
 
     def energy_residual(temperature: float) -> float:
         c_a = c_a_on_mass_balance(temperature)
-        return float(f(np.array([c_a, temperature]))[1])
+        residual = float(f(np.array([c_a, temperature]))[1])
+        if not math.isfinite(residual):
+            # A NaN never changes sign, so it would otherwise read as "no steady state".
+            raise ValueError(f"the right-hand side is not finite at T = {temperature} K")
+        return residual
 
-    grid = np.linspace(temperature_range[0], temperature_range[1], n_grid)
+    grid = np.linspace(low, high, int(n_grid))
     residuals = np.array([energy_residual(t) for t in grid])
 
     # Roots that fall exactly on a grid point, both ends of the range included, and
