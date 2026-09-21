@@ -47,6 +47,14 @@ def test_simulation_never_imports_the_modeller() -> None:
     _assert_never_imports("simulation", "process_transfer.modeller")
 
 
+def test_measurement_never_imports_simulation_truth_or_the_modeller() -> None:
+    """A sensor is handed the values it measures. It has no need of the rate law, of a
+    true parameter or of the simulator, and models will read ``Observations`` from this
+    package, so an import of the truth here would carry it to them."""
+    _assert_never_imports("measurement", "process_transfer.simulation")
+    _assert_never_imports("measurement", "process_transfer.modeller")
+
+
 def test_shared_variable_definitions_import_no_physics() -> None:
     modules, has_relative = _imports(PACKAGE_ROOT / "cstr_variables.py")
     assert not has_relative
