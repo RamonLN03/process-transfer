@@ -203,6 +203,22 @@ Internal numerical simulation should use plain SI floating-point values.
 
 Do not pass unit-wrapped objects through the ODE right-hand side.
 
+## Numerical Robustness
+
+For every new or modified numerical interface, identify its valid domain, its limit cases and its scales before writing it.
+
+Examine, where they apply: denominators, exponentials, roots, interpolations, empty sets and the generation of grids. A finite input does not guarantee a finite result, so check the outcome of conversions and products as well as their inputs.
+
+Distinguish a valid physical limit from an invalid input. Resolve valid limits explicitly. Reject invalid inputs at the boundary where they enter, with a message that names the argument and its value.
+
+Do not hide an error by clipping, by an arbitrary epsilon, by substituting zero or by catching exceptions indiscriminately.
+
+Add a regression test for every confirmed defect.
+
+Do not repeat a validation inside every evaluation of a right-hand side when it can be done once at the boundary.
+
+The record of what has been examined, and of what remains open, is `docs/numerical_robustness.md`.
+
 ## Data
 
 Initial storage:

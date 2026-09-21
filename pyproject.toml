@@ -29,6 +29,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# A division by zero or an invalid operation inside numpy only warns and carries on
+# with inf or NaN. In the test suite that is a failure (docs/numerical_robustness.md).
+filterwarnings = ["error::RuntimeWarning"]
 
 [tool.ruff]
 line-length = 100
