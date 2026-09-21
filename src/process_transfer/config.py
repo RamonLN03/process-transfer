@@ -307,6 +307,45 @@ class SensorsConfig(StrictModel):
 
 
 # --------------------------------------------------------------------------- #
+# Definition of a data set to generate (generation side; it holds a private seed)
+# --------------------------------------------------------------------------- #
+
+
+class DatasetDefinitionConfig(StrictModel):
+    """What a data set is made of: plants, instruments, protocol, excitation seeds and
+    the realisation of the noise. It is read by the generator only.
+
+    ``sensor_master_seed`` is private. It is recorded in the private provenance of the
+    data set and never in the available branch, because with it the noise could be
+    regenerated and subtracted. Every run is one plant under one excitation seed; both
+    plants receive the same excitation sequences, and their noise is independent,
+    because the noise stream of a run follows from its identity.
+    """
+
+    dataset_id: str
+    description: str
+    plants: tuple[str, ...]  # configuration files of the plants, relative to this file
+    sensors: str  # configuration file of the instruments, relative to this file
+    protocol: Literal["p3"]
+    n_excursions: int = Field(ge=1, le=1000)
+    excitation_seeds: tuple[int, ...]
+    noise_realisation: int = Field(ge=0)
+    sensor_master_seed: int = Field(ge=0)
+    simulation_period: Duration
+
+    @model_validator(mode="after")
+    def _runs_must_be_distinct(self) -> DatasetDefinitionConfig:
+        if len(self.plants) == 0 or len(set(self.plants)) != len(self.plants):
+            raise ValueError(f"plants must be one or more distinct files, got {self.plants}")
+        seeds = self.excitation_seeds
+        if len(seeds) == 0 or len(set(seeds)) != len(seeds) or min(seeds) < 0:
+            raise ValueError(
+                f"excitation_seeds must be one or more distinct non-negative integers, got {seeds}"
+            )
+        return self
+
+
+# --------------------------------------------------------------------------- #
 # Loading
 # --------------------------------------------------------------------------- #
 
@@ -333,3 +372,8 @@ def load_modeller(path: str | Path) -> ModellerConfig:
 def load_sensors(path: str | Path) -> SensorsConfig:
     """Load the instrument specification shared by the plants of a process."""
     return SensorsConfig.model_validate(load_yaml(path))
+
+
+def load_dataset_definition(path: str | Path) -> DatasetDefinitionConfig:
+    """Load the definition of a data set to generate."""
+    return DatasetDefinitionConfig.model_validate(load_yaml(path))
