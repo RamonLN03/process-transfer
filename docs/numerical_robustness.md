@@ -198,3 +198,29 @@ Scope. The interfaces added for storage: `canonical`, `sampling_clock`, `data/id
 * `aligned_series` names the six variables of the CSTR. Another process family needs its own view.
 * The database has no protection against two processes writing at once beyond what DuckDB itself gives, which is a single writer per file.
 * `PT_DATA_DIR` defaults to a directory inside the repository, which may be a synchronised folder. A database file there can be corrupted by the synchronisation client while it is open; the variable exists to point elsewhere.
+
+## Review of 2026-09-22, sixth: generation, export and the scan for hidden information
+
+Scope. `generation/plants`, `generation/pipeline`, `generation/leak_scan`, `data/export`, and one defect of `data/database` found while preparing M0-E05.
+
+### Defect found and fixed
+
+| Where | Input | What happened | Silent | Resolution | Commit |
+|---|---|---|---|---|---|
+| `database.ingest_run` | a second plant whose C_A channel is in another SI unit, in a data set that is valid on its own | it was ingested: the quality gate looks at the staged rows of one run of one plant, where a defect that exists only between plants cannot be seen | yes | the quality queries are run once more inside the transaction, on the database as a whole with the run in it; the writer applies the same rule within a data set | `b409f14` |
+
+It was found because a defect chosen for M0-E05, a concentration channel in mol/L, could not be detected in the staging of one run. That defect was replaced, before the experiment was registered, by one that a single run can show.
+
+### Domain and limits
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `plants.load_virtual_plant` | a plant whose nominal inputs give one steady state in the scanned range, stable with the margin of D-017, with the balances closed there | none | no steady state or several; a largest real part not below -0.5 1/min; a residual above 1e-9 of the feed terms. The residuals found are of the order of 1e-16 of them, so the criterion separates a polished root from a point that is not a steady state and sits seven orders of magnitude from what it judges. Two configurations that must be refused were found by computation and are tested |
+| `config.DatasetDefinitionConfig` | one or more distinct plants and excitation seeds, at least one excursion, a non-negative master seed, a simulation period that is a time | none | duplicates, empty lists, negative seeds, another protocol than P3, unknown fields |
+| `pipeline.run_pipeline` | a definition whose files exist | a data set that is already there: every stage reports it as such and touches nothing | a truth that is not accepted, which raises and leaves a report and no data set |
+| `export.export_dataset` | a data set the database holds, complete | an export that is already there with the same content | a run whose aligned rows are not all complete, never trimmed; content that differs from the recorded hash; another export under the same name |
+| `leak_scan.scan_available` | hidden values that are finite and not zero | nulls in a column hold no value and are skipped | a hidden value of zero, which cannot be searched for; nothing to scan; a file that is neither Parquet, JSON nor the database is itself a finding |
+
+### What the scan cannot do, stated in the code and here
+
+It compares names and numbers. A hidden value that was scaled, rounded or combined with another would not be found, nor would information carried by the order or the presence of rows. A hidden value that equals a known one is left out on purpose: T_ref is 350 K, which is also the known feed temperature. It is a check against accidents, and the separation it checks is built into the interfaces, where the writers are never handed the truth.
