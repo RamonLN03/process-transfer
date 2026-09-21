@@ -1,9 +1,9 @@
 """Acceptance checks for a simulated true-plant trajectory.
 
 A trajectory is accepted when the integrator succeeded (``simulate_piecewise``
-raises otherwise), the states are physical, the temperature stays inside the
-documented envelope and the integrated balances close. Nothing is clipped or
-repaired: a violation is reported as a violation.
+raises otherwise), every time, state and input is finite, the states are physical,
+the temperature stays inside the documented envelope and the integrated balances
+close. Nothing is clipped or repaired: a violation is reported as a violation.
 
 Physical-state rules, for a reactor that only consumes A:
 
@@ -11,11 +11,12 @@ Physical-state rules, for a reactor that only consumes A:
 * C_A never exceeds the richest feed applied so far (or its own initial value);
 * for an exothermic reaction, T never falls below the coldest of the feed and the
   coolant applied so far (or its own initial value), because the reaction can only
-  add heat. The rule is skipped for an endothermic reaction.
+  add heat. The rule is skipped when the reaction enthalpy is zero or positive.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,7 +26,8 @@ from process_transfer.simulation.cstr_true import TrueCSTRParameters
 from process_transfer.simulation.integration import Trajectory
 
 TEMPERATURE_ENVELOPE = (335.0, 380.0)  # K, docs/assumptions.md
-BALANCE_TOLERANCE = 1.0e-6  # relative, against the amount reacted / the adiabatic heating
+# Fraction of the traffic through a balance that may be unaccounted for; see balances.py.
+BALANCE_TOLERANCE = 1.0e-6
 
 
 @dataclass(frozen=True)
@@ -40,13 +42,28 @@ class TrajectoryCheck:
     seconds_above_limit: float  # s spent above the upper temperature limit
     relative_mass_residual: float
     relative_energy_residual: float
+    values_finite: bool
     states_physical: bool
     inside_envelope: bool
     balances_close: bool
 
     @property
     def accepted(self) -> bool:
-        return self.states_physical and self.inside_envelope and self.balances_close
+        return (
+            self.values_finite
+            and self.states_physical
+            and self.inside_envelope
+            and self.balances_close
+        )
+
+
+def _values_are_finite(trajectory: Trajectory) -> bool:
+    return all(
+        np.all(np.isfinite(segment.times))
+        and np.all(np.isfinite(segment.states))
+        and np.all(np.isfinite(segment.inputs))
+        for segment in trajectory.segments
+    )
 
 
 def _states_are_physical(trajectory: Trajectory, p: TrueCSTRParameters) -> bool:
@@ -72,6 +89,24 @@ def check_trajectory(
     balance_tolerance: float = BALANCE_TOLERANCE,
 ) -> TrajectoryCheck:
     """Evaluate every acceptance criterion on ``trajectory``."""
+    if not _values_are_finite(trajectory):
+        # Nothing can be measured on a trajectory with non-finite values; every verdict
+        # is negative and the extremes are reported as not-a-number rather than invented.
+        return TrajectoryCheck(
+            peak_temperature=math.nan,
+            refined_peak_temperature=math.nan,
+            peak_time=math.nan,
+            min_temperature=math.nan,
+            c_a_range=(math.nan, math.nan),
+            seconds_above_limit=math.nan,
+            relative_mass_residual=math.nan,
+            relative_energy_residual=math.nan,
+            values_finite=False,
+            states_physical=False,
+            inside_envelope=False,
+            balances_close=False,
+        )
+
     times, temperature = trajectory.times, trajectory.states[:, 1]
     peak, peak_time = trajectory.peak(1)
     refined_peak, _ = trajectory.refined_peak(1)
@@ -93,10 +128,8 @@ def check_trajectory(
         seconds_above_limit=seconds_above,
         relative_mass_residual=balances.relative_mass_residual,
         relative_energy_residual=balances.relative_energy_residual,
+        values_finite=True,
         states_physical=_states_are_physical(trajectory, p),
         inside_envelope=bool(inside),
-        balances_close=(
-            balances.relative_mass_residual < balance_tolerance
-            and balances.relative_energy_residual < balance_tolerance
-        ),
+        balances_close=balances.closes(balance_tolerance),
     )
