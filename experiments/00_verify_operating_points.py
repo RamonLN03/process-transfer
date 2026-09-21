@@ -1,8 +1,15 @@
 """M0-E01: steady states, local stability and operating envelope of source and target.
 
 Reproduces, with repository code, the preliminary numbers first quoted in
-docs/assumptions.md, and extends them to every corner of the input box.
-Prints a plain-text report; writes nothing.
+docs/assumptions.md, and extends them to 24 input cases: 8 single-input excursions
+and the 16 corners of the input box. Prints a plain-text report; writes nothing.
+
+Historical conditions, kept on purpose. This script uses the ORIGINAL amplitudes of
+D-010 (q and C_Af +-20 %), under which the target leaves the envelope. D-018 later
+chose +-10 % (A10); the amplitudes here are not updated, so that M0-E01 stays
+reproducible as it was run. Scope: single steps from the nominal steady state at 24
+input cases. It says nothing about the rest of the input box or about chained input
+changes (see M0-E03, experiments/02_sequential_excitation.py).
 
 Run from the repository root:
 
@@ -26,7 +33,8 @@ from process_transfer.simulation.steady_state import SteadyState, find_steady_st
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 PER_MINUTE = 60.0
 
-# Planned excitation amplitudes (docs/decisions.md D-010)
+# ORIGINAL excitation amplitudes of D-010, kept for the reproducibility of M0-E01.
+# D-018 superseded the values for q and C_Af (now +-10 %).
 RELATIVE_DEVIATION = {"q": 0.20, "C_Af": 0.20}
 ABSOLUTE_DEVIATION = {"T_f": 5.0, "T_c": 5.0}  # K
 
@@ -81,7 +89,7 @@ def report(plant_name: str) -> None:
 
     cases = input_cases(u_nominal, deviations_for(u_nominal))
 
-    print("local stability on the boundary of the input box:")
+    print("local stability at the 24 tested input cases (8 single-input, 16 corners):")
     least_stable: tuple[float, str] | None = None
     for label, u in cases:
         found = steady_states_at(u, p, fine=False)

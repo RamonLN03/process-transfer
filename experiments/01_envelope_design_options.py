@@ -6,6 +6,12 @@ script evaluates the candidate remedies with the same repository functions, so
 that the decision rests on reproducible numbers. It changes no configuration
 file; every variation is applied in memory.
 
+Outcome and limit of this experiment. The project owner chose option A at +-10 %
+(A10, D-018). Every option here is judged on single steps from the nominal steady
+state at 24 input cases. M0-E03 later showed that this is not enough: with chained
+input changes A10 takes the target well above the limit. The conditions below are
+left as they were run.
+
 Run from the repository root:
 
     python experiments/01_envelope_design_options.py
