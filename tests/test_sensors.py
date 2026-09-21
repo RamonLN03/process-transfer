@@ -21,6 +21,8 @@ from process_transfer.measurement.sensors import (
     SensorSpec,
     channel_generator,
     measure,
+    noise_key,
+    noise_stream,
 )
 
 Z_LIMIT = 4.0
@@ -220,3 +222,57 @@ def test_the_diagnostics_are_calibrated_through_the_sensors_over_many_seeds() ->
         assert len(values) == 1000
         assert abs(np.mean(values)) < 0.15, name  # 4.7 standard errors of the mean
         assert 0.90 < np.std(values) < 1.10, name  # 4.5 standard errors of the deviation
+
+
+def test_a_key_of_two_to_the_thirty_two_would_be_the_noise_of_another_stream() -> None:
+    """Regression. numpy splits a key of 2**32 or more into several 32-bit words, so the
+    stream (2**32,) became the words of the stream (0, 1) and replayed its noise exactly.
+    Stream elements and channels must fit one word; the seed is not affected."""
+    zeros = np.zeros((50, 2))
+    with pytest.raises(ValueError, match="must be below 4294967296"):
+        measure(zeros, (C_A, T), SEED, (2**32,))
+    with pytest.raises(ValueError, match="must be below 4294967296"):
+        channel_generator(SEED, (0,), channel=2**32)
+    largest = measure(zeros, (C_A, T), SEED, (2**32 - 1,))
+    assert not np.array_equal(largest, measure(zeros, (C_A, T), SEED, (2**32 - 1, 0)))
+    assert not np.array_equal(
+        measure(zeros, (C_A, T), 2**32, STREAM), measure(zeros, (C_A, T), 1, STREAM)
+    )
+
+
+def test_the_single_rule_for_noise_keys() -> None:
+    assert noise_key("seed", np.int64(7)) == 7 and type(noise_key("seed", np.int64(7))) is int
+    assert noise_stream((np.uint16(3), 0)) == (3, 0)
+    assert noise_stream([]) == ()
+    for bad in (0.9, 1.0, True, np.bool_(True), "0", None, -1, np.int64(-1), np.float64(2.0)):
+        with pytest.raises(ValueError):
+            noise_key("seed", bad)
+    for bad in ("01", b"01", 5, None, (0, 0.5), (0, "1"), (True, 0)):
+        with pytest.raises(ValueError, match="stream"):
+            noise_stream(bad)
+
+
+def test_the_channel_of_a_sensor_can_be_its_own_identity() -> None:
+    """By default the channel is the position. With explicit channels a sensor keeps its
+    noise when it is measured alone or in another order."""
+    zeros = np.zeros((100, 2))
+    both = measure(zeros, (C_A, T), SEED, STREAM)
+    np.testing.assert_array_equal(measure(zeros, (C_A, T), SEED, STREAM, channels=(0, 1)), both)
+    alone = measure(zeros[:, :1], (T,), SEED, STREAM, channels=(1,))
+    np.testing.assert_array_equal(alone[:, 0], both[:, 1])
+    swapped = measure(zeros, (T, C_A), SEED, STREAM, channels=(1, 0))
+    np.testing.assert_array_equal(swapped[:, ::-1], both)
+    for bad in ((0, 0), (0,), (0, 1, 2), (0, 0.5), (0, 2**32)):
+        with pytest.raises(ValueError, match="channel"):
+            measure(zeros, (C_A, T), SEED, STREAM, channels=bad)
+
+
+def test_a_sensor_is_specified_in_si() -> None:
+    assert SensorSpec("C_A", "mol/m^3", 5.0).unit == "mol/m^3"
+    assert SensorSpec("pH", "-", 0.1).unit == "-"
+    for unit in ("mol/L", "L", "1/min", "min"):
+        with pytest.raises(ValueError, match="which is not SI"):
+            SensorSpec("x", unit, 1.0)
+    for unit in ("degC", "", None, 5):
+        with pytest.raises(ValueError, match="is not known"):
+            SensorSpec("x", unit, 1.0)

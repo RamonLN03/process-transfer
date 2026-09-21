@@ -132,3 +132,29 @@ A sensor instant and a stored sample are the same instant computed by two routes
 * The z-scores use large-sample approximations: a normal law for the mean and the correlations, Wilson-Hilferty for the spread, a binomial normal law for the tail fractions. They were checked to be standard normal at n = 1201 over thousands of replicates, not at small n, and the functions refuse fewer than 100 samples.
 * Nothing prevents two runs from being given the same seed and stream, in which case they share their noise sample for sample. The convention is one stream per run; the storage layer will need to enforce it.
 * `RunTruth` keeps the whole true trajectory in memory, about 1.2 MB per two-hour run.
+
+## Review of 2026-09-21, fourth: noise keys and units where sensors meet the states
+
+Scope. Two defects found in the review of `7bc3e6a`, both reproduced through `observe_trajectory` before anything was changed, and two more of the same kind found while fixing them.
+
+### Failures reproduced and fixed
+
+| Module | Input | What happened | Silent | Resolution |
+|---|---|---|---|---|
+| `operating_run.observe_trajectory` | a stream of `(0.9, 0.9)`, `(False, False)`, `("0", "0")` or `(-0.9, 0)` | `int()` was applied to every element before the strict rule saw it, so all four were taken for `(0, 0)` and replayed its noise, also with exact sensors | yes | seed and stream are validated as given, first, by the one rule of `measurement.sensors`; nothing is rounded or converted into a valid key |
+| `measurement.sensors` | a stream element of 2**32 or more | numpy splits such a key into several 32-bit words, so the stream `(2**32,)` became the words of `(0, 1)` and replayed its noise exactly | yes | stream elements and channels must be below 2**32, one word each; the seed is a plain integer of any size and is not affected |
+| `operating_run.observe_trajectory` | `SensorSpec("C_A", "mol/L", 0.005)` | 0.005 was added to states held in mol/m^3, a noise a thousand times too small, and the observations were labelled mol/m^3 | yes | a `SensorSpec` is in SI or it is not built; the configuration loader remains the one place that converts |
+| `operating_run.observe_trajectory` | a sensor of T with a unit of concentration | accepted, and the observations came back labelled in kelvin | yes | where a generic sensor meets the states of the CSTR, its unit must be the SI unit in which the simulation holds that state; the generic noise component knows nothing of the CSTR |
+| `measurement.sensors.measure` | T measured alone, or listed before C_A | the noise channel was the position of the sensor, so T measured alone received the noise that C_A has when both are measured: two different channels of one run sharing one noise | yes | the channel of a sensor is the index of its state; `measure` takes explicit, distinct channels. Unchanged for C_A then T, so the digests of M0-E04 do not move |
+
+### The one rule for noise keys
+
+`noise_key` and `noise_stream` in `measurement/sensors.py`, used by `measure`, `channel_generator` and `observe_trajectory`. A key is a non-negative integer, Python or numpy, given explicitly. Refused: fractions, including a float that happens to be whole, booleans of Python and of numpy, strings, `None`, negative numbers, and for stream elements and channels anything that does not fit 32 bits. A stream must be a sequence, and a string is not one for this purpose. The rule runs on the values as given, before any conversion and whether or not a sensor draws anything.
+
+### Valid cases, kept valid
+
+* numpy integers of any width, stored afterwards as plain integers;
+* the largest stream element, 2**32 - 1, and a seed of any size;
+* a subset of the sensors, and any order of them, each variable keeping its own noise;
+* the configuration file in engineering units, converted by the loader as before;
+* an exact sensor, which still has its keys and its unit checked.

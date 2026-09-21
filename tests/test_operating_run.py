@@ -384,3 +384,170 @@ def test_both_plants_carry_the_same_absolute_noise(
     pairs += [(source[:, i], target[:, j]) for i in range(2) for j in range(2)]
     for a, b in pairs:
         assert abs(correlation(a, b)[1]) <= Z_LIMIT
+
+
+# --------------------------------------------------------------------------- #
+# Noise keys and units at the boundary (defects found in the review of 7bc3e6a)
+# --------------------------------------------------------------------------- #
+
+NOISY = MeasurementSpec(6.0, (SensorSpec("C_A", "mol/m^3", 5.0), SensorSpec("T", "K", 0.5)))
+EXACT = MeasurementSpec(6.0, (SensorSpec("C_A", "mol/m^3", 0.0), SensorSpec("T", "K", 0.0)))
+
+
+@pytest.fixture(scope="module")
+def at_rest(true_plants: dict[str, PlantUnderTest]) -> Trajectory:
+    plant = true_plants["target"]
+    return simulate_piecewise(
+        plant.f, plant.nominal_state, [InputSegment(600.0, plant.nominal_inputs)]
+    )
+
+
+def observe(
+    trajectory: Trajectory,
+    plant: PlantUnderTest,
+    spec: MeasurementSpec,
+    stream: object = (1, 0),
+    seed: object = SENSOR_SEED,
+) -> OperatingRun:
+    return observe_trajectory(
+        trajectory,
+        plant.parameters,
+        spec,
+        plant="target",
+        run="x",
+        sensor_seed=seed,
+        sensor_stream=stream,
+    )
+
+
+@pytest.mark.parametrize("spec", [NOISY, EXACT], ids=["noisy", "exact"])
+@pytest.mark.parametrize(
+    "stream",
+    [
+        (0.9, 0.9),
+        (False, False),
+        ("0", "0"),
+        (-0.9, 0),
+        (np.float64(1.0), 0),
+        (np.bool_(False), 0),
+        (-1, 0),
+        (2**32, 0),
+        (None, 0),
+        "00",
+        7,
+        None,
+    ],
+    ids=repr,
+)
+def test_a_stream_that_is_not_a_valid_key_is_refused_not_rounded(
+    stream: object,
+    spec: MeasurementSpec,
+    at_rest: Trajectory,
+    true_plants: dict[str, PlantUnderTest],
+) -> None:
+    """Regression. ``observe_trajectory`` applied ``int()`` to every element before the
+    strict rule saw it, so (0.9, 0.9), (False, False), ("0", "0") and (-0.9, 0) were all
+    taken for (0, 0) and replayed its noise. The rule now sees the values as given, and it
+    runs whether or not a sensor draws anything."""
+    with pytest.raises(ValueError, match="stream"):
+        observe(at_rest, true_plants["target"], spec, stream=stream)
+
+
+@pytest.mark.parametrize("spec", [NOISY, EXACT], ids=["noisy", "exact"])
+@pytest.mark.parametrize("seed", [0.9, True, "11", -1, None, np.float64(11.0)], ids=repr)
+def test_a_seed_that_is_not_a_valid_key_is_refused(
+    seed: object,
+    spec: MeasurementSpec,
+    at_rest: Trajectory,
+    true_plants: dict[str, PlantUnderTest],
+) -> None:
+    with pytest.raises(ValueError, match="sensor_seed"):
+        observe(at_rest, true_plants["target"], spec, seed=seed)
+
+
+def test_numpy_integers_are_valid_keys_and_are_stored_as_plain_integers(
+    at_rest: Trajectory, true_plants: dict[str, PlantUnderTest]
+) -> None:
+    plant = true_plants["target"]
+    reference = observe(at_rest, plant, NOISY, stream=(1, 0), seed=11)
+    found = observe(at_rest, plant, NOISY, stream=(np.int64(1), np.uint8(0)), seed=np.int32(11))
+    np.testing.assert_array_equal(found.observations.measured, reference.observations.measured)
+    assert found.truth.sensor_stream == (1, 0) and found.truth.sensor_seed == 11
+    assert all(type(element) is int for element in found.truth.sensor_stream)
+    assert type(found.truth.sensor_seed) is int
+    largest = observe(at_rest, plant, NOISY, stream=(2**32 - 1, 0))
+    assert largest.truth.sensor_stream[0] == 2**32 - 1
+
+
+@pytest.mark.parametrize(
+    ("sensors", "message"),
+    [
+        ((SensorSpec("C_A", "K", 5.0),), "the C_A sensor is specified in 'K'"),
+        ((SensorSpec("T", "mol/m^3", 0.5),), r"the T sensor is specified in 'mol/m\^3'"),
+        (
+            (SensorSpec("C_A", "mol/m^3", 5.0), SensorSpec("T", "-", 0.5)),
+            "the T sensor is specified",
+        ),
+        (
+            (SensorSpec("C_A", "mol/m^3", 0.0), SensorSpec("T", "s", 0.0)),
+            "the T sensor is specified",
+        ),
+    ],
+)
+def test_a_sensor_whose_unit_is_not_that_of_its_state_is_refused(
+    sensors: tuple[SensorSpec, ...],
+    message: str,
+    at_rest: Trajectory,
+    true_plants: dict[str, PlantUnderTest],
+) -> None:
+    """Regression. A sensor of T given in a unit of concentration was accepted, and the
+    observations came back labelled in kelvin. The check is made where the generic
+    sensor meets the states of the CSTR, also for exact sensors."""
+    with pytest.raises(ValueError, match=message):
+        observe(at_rest, true_plants["target"], MeasurementSpec(6.0, sensors))
+
+
+def test_an_engineering_unit_that_was_not_converted_cannot_reach_the_simulation() -> None:
+    """Regression. ``SensorSpec("C_A", "mol/L", 0.005)`` was accepted, 0.005 was added to
+    states held in mol/m^3, a noise a thousand times too small, and the result was
+    labelled mol/m^3. A specification built directly is in SI or it is not built."""
+    with pytest.raises(ValueError, match=r"'mol/L', which is not SI.*'mol/m\^3'"):
+        SensorSpec("C_A", "mol/L", 0.005)
+    with pytest.raises(ValueError, match="is not known"):
+        SensorSpec("T", "degC", 0.5)
+
+
+def test_the_configuration_file_in_engineering_units_is_still_converted(
+    at_rest: Trajectory, true_plants: dict[str, PlantUnderTest], measurement: MeasurementSpec
+) -> None:
+    """The YAML says 0.005 mol/L; the loader makes it 5 mol/m^3 and the boundary accepts it."""
+    found = observe(at_rest, true_plants["target"], measurement)
+    assert found.observations.measured_units == ("mol/m^3", "K")
+    assert found.observations.noise_std == (pytest.approx(5.0), 0.5)
+    assert 3.5 < np.sqrt(np.mean(found.truth.errors[:, 0] ** 2)) < 6.5  # of the order of 5
+
+
+def test_a_subset_of_the_sensors_in_any_order_is_valid_and_keeps_each_noise(
+    at_rest: Trajectory, true_plants: dict[str, PlantUnderTest]
+) -> None:
+    """Measured alone, or listed first, T reads the temperature, is labelled in kelvin and
+    carries the very noise it carries when both variables are measured. The channel of a
+    sensor is the index of its state, not its position: by position, T measured alone
+    would have received the noise of C_A."""
+    plant = true_plants["target"]
+    c_a, t = NOISY.sensors
+    both = observe(at_rest, plant, NOISY).observations
+    only_t = observe(at_rest, plant, MeasurementSpec(6.0, (t,)))
+    swapped = observe(at_rest, plant, MeasurementSpec(6.0, (t, c_a))).observations
+
+    assert only_t.observations.measured_names == ("T",)
+    assert only_t.observations.measured_units == ("K",)
+    assert only_t.observations.noise_std == (0.5,)
+    np.testing.assert_array_equal(only_t.truth.exact[:, 0], at_rest.states[::60, 1])
+    np.testing.assert_array_equal(only_t.observations.measured[:, 0], both.measured[:, 1])
+
+    assert swapped.measured_names == ("T", "C_A")
+    assert swapped.measured_units == ("K", "mol/m^3")
+    assert swapped.noise_std == (0.5, 5.0)
+    np.testing.assert_array_equal(swapped.measured[:, ::-1], both.measured)
+    np.testing.assert_array_equal(swapped.inputs, both.inputs)

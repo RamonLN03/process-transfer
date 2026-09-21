@@ -24,32 +24,61 @@ Two runs that share seed and stream replay the same noise, sample for sample. Th
 what makes a run reproducible, and it is a mistake when the runs are meant to be
 different: every run must have its own stream. The convention is
 ``stream = (plant index, run index)``.
+
+Keys. A seed, every element of a stream and a channel are plain non-negative integers,
+Python or numpy, given explicitly. Fractions, booleans, strings and negative numbers
+are refused and never rounded or converted: ``0.9`` silently read as ``0`` would hand
+one run the noise of another. Stream elements and channels must also be below 2**32.
+numpy splits a larger key into several 32-bit words, and ``(2**32,)`` then becomes the
+same words as ``(0, 1)``: two different keys, one noise. There is one rule,
+``noise_key`` and ``noise_stream``, and every entry point uses it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
 from process_transfer.config import SensorsConfig
 from process_transfer.cstr_variables import FloatArray
+from process_transfer.units import UnknownUnitError, si_unit_of
 from process_transfer.validation import require_non_negative, require_positive
 
 
 @dataclass(frozen=True)
 class SensorSpec:
-    """One sensor, in SI: the variable it measures and the standard deviation of its
-    noise. Zero is a valid limit, an exact sensor."""
+    """One sensor, in SI: the variable it measures, the SI unit of its readings and of
+    its noise, and the standard deviation of that noise. Zero is a valid limit, an exact
+    sensor.
+
+    ``unit`` must be an SI unit known to ``process_transfer.units``. A noise level in
+    engineering units is refused, not converted: the number and its unit would disagree
+    by a factor that nothing downstream can see. ``MeasurementSpec.from_config`` is the
+    place where a configuration in engineering units is converted.
+    """
 
     variable: str
     unit: str
     noise_std: float
 
     def __post_init__(self) -> None:
-        if not self.variable:
+        if not isinstance(self.variable, str) or not self.variable:
             raise ValueError("a sensor must name the variable it measures")
+        try:
+            si_unit = si_unit_of(self.unit)
+        except (UnknownUnitError, TypeError) as error:
+            raise ValueError(
+                f"the unit of the {self.variable} sensor is not known: {error}"
+            ) from None
+        if si_unit != self.unit:
+            raise ValueError(
+                f"the {self.variable} sensor is given in {self.unit!r}, which is not SI. Inside "
+                f"the simulation and the measurement everything is SI, here {si_unit!r}. Convert "
+                "the noise level, or load the specification with MeasurementSpec.from_config; "
+                "nothing is converted or relabelled here"
+            )
         object.__setattr__(
             self, "noise_std", require_non_negative(f"noise_std of {self.variable}", self.noise_std)
         )
@@ -95,30 +124,53 @@ class MeasurementSpec:
         return tuple(sensor.noise_std for sensor in self.sensors)
 
 
-def _require_key(name: str, value: object) -> int:
-    """A seed or a stream index: a plain non-negative integer, given explicitly."""
-    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+STREAM_KEY_LIMIT = 2**32  # a stream element or a channel must fit one 32-bit word
+
+
+def noise_key(name: str, value: object, limit: int | None = None) -> int:
+    """``value`` as a plain ``int`` if it is a valid noise key, ``ValueError`` otherwise.
+
+    Valid: a non-negative Python or numpy integer, below ``limit`` when one is given.
+    Nothing is rounded or converted: ``0.9``, ``False``, ``"0"`` and ``-1`` are refused.
+    This is the only place where that is decided.
+    """
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer)):
         raise ValueError(
             f"{name} must be an explicit non-negative integer, got {value!r}; a run is "
             "reproducible only if its randomness is named"
         )
     if value < 0:
         raise ValueError(f"{name} must not be negative, got {value!r}")
+    if limit is not None and value >= limit:
+        raise ValueError(
+            f"{name} must be below {limit}, got {value!r}: a larger key is split into "
+            "several words and would collide with a different, longer key"
+        )
     return int(value)
+
+
+def noise_stream(stream: object) -> tuple[int, ...]:
+    """``stream`` as a tuple of plain ``int``, every element a valid key below 2**32."""
+    if isinstance(stream, (str, bytes)) or not isinstance(stream, Iterable):
+        raise ValueError(f"stream must be a sequence of non-negative integers, got {stream!r}")
+    return tuple(
+        noise_key("every element of stream", element, STREAM_KEY_LIMIT) for element in stream
+    )
 
 
 def channel_generator(seed: int, stream: Sequence[int], channel: int) -> np.random.Generator:
     """The generator of one noise channel: a function of its three arguments only."""
-    key = (
-        *(_require_key("every element of stream", element) for element in stream),
-        _require_key("channel", channel),
-    )
-    sequence = np.random.SeedSequence(entropy=_require_key("seed", seed), spawn_key=key)
+    key = (*noise_stream(stream), noise_key("channel", channel, STREAM_KEY_LIMIT))
+    sequence = np.random.SeedSequence(entropy=noise_key("seed", seed), spawn_key=key)
     return np.random.default_rng(sequence)
 
 
 def measure(
-    clean: FloatArray, sensors: Sequence[SensorSpec], seed: int, stream: Sequence[int]
+    clean: FloatArray,
+    sensors: Sequence[SensorSpec],
+    seed: int,
+    stream: Sequence[int],
+    channels: Sequence[int] | None = None,
 ) -> FloatArray:
     """Readings of ``clean``, one column per sensor: ``clean + noise_std * z`` with ``z``
     standard normal, independent between rows and between columns.
@@ -127,6 +179,12 @@ def measure(
     ``noise_std = 0`` returns its column exactly, without drawing anything. The result
     is checked for finiteness, since a finite value plus finite noise can overflow.
     Nothing is clipped.
+
+    ``channels`` gives the noise channel of each sensor, distinct keys below 2**32. By
+    default a sensor's channel is its position. A caller for whom a sensor has an
+    identity of its own passes that instead, so that the noise of a variable does not
+    depend on which other variables are measured or in what order: measured alone, T
+    must not receive the noise that C_A has when both are measured.
     """
     values = np.asarray(clean, dtype=np.float64)
     if values.ndim != 2 or values.shape[1] != len(sensors):
@@ -138,17 +196,25 @@ def measure(
         raise ValueError("a sensor cannot measure a non-finite value")
     # checked here and not only where a generator is built, so that a wrong seed or
     # stream is refused even when every sensor is exact and nothing is drawn
-    seed = _require_key("seed", seed)
-    stream = tuple(_require_key("every element of stream", element) for element in stream)
+    seed = noise_key("seed", seed)
+    stream = noise_stream(stream)
+    if channels is None:
+        channels = range(len(sensors))
+    keys = [noise_key("every channel", channel, STREAM_KEY_LIMIT) for channel in channels]
+    if len(keys) != len(sensors) or len(set(keys)) != len(keys):
+        raise ValueError(
+            f"channels must be {len(sensors)} distinct keys, one per sensor, got "
+            f"{list(channels)!r}; two sensors on one channel would share their noise"
+        )
 
     readings = values.copy()
-    for channel, sensor in enumerate(sensors):
+    for column, (channel, sensor) in enumerate(zip(keys, sensors, strict=True)):
         if sensor.noise_std == 0.0:
             continue  # an exact sensor: the reading is the value, bit for bit
         generator = channel_generator(seed, stream, channel)
         # an overflow is resolved just below, as an error; numpy need not warn about it
         with np.errstate(over="ignore"):
-            readings[:, channel] += sensor.noise_std * generator.standard_normal(len(values))
+            readings[:, column] += sensor.noise_std * generator.standard_normal(len(values))
     if not np.all(np.isfinite(readings)):
         raise ValueError("a reading is not finite: the value plus its noise overflows")
     return readings

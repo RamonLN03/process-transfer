@@ -37,7 +37,12 @@ from process_transfer.cstr_variables import (
     FloatArray,
 )
 from process_transfer.measurement.observations import Observations
-from process_transfer.measurement.sensors import MeasurementSpec, measure
+from process_transfer.measurement.sensors import (
+    MeasurementSpec,
+    measure,
+    noise_key,
+    noise_stream,
+)
 from process_transfer.simulation.checks import TrajectoryCheck, check_trajectory
 from process_transfer.simulation.cstr_true import TrueCSTRParameters
 from process_transfer.simulation.integration import Trajectory
@@ -146,6 +151,33 @@ class OperatingRun:
     truth: RunTruth
 
 
+def state_columns(measurement: MeasurementSpec) -> list[int]:
+    """The column of the state vector that each sensor reads, in the order of the sensors.
+
+    This is where a generic sensor meets the states of the CSTR, so this is where the
+    two are checked against each other: a sensor must name a state, and its unit must be
+    the SI unit in which the simulation holds that state. A subset of the states, in any
+    order, is valid. A mismatch is an error. Applying a noise level of 0.005, meant in
+    mol/L, to a state held in mol/m^3, and labelling the result mol/m^3, is what this
+    prevents; no number is converted or relabelled to make a specification fit.
+    """
+    columns = []
+    for sensor in measurement.sensors:
+        if sensor.variable not in STATE_NAMES:
+            raise ValueError(
+                f"no state is called {sensor.variable!r}; the states are {list(STATE_NAMES)}"
+            )
+        column = STATE_NAMES.index(sensor.variable)
+        if sensor.unit != STATE_UNITS[column]:
+            raise ValueError(
+                f"the {sensor.variable} sensor is specified in {sensor.unit!r}, but the "
+                f"simulation holds {sensor.variable} in {STATE_UNITS[column]!r}. The noise level "
+                "must be given in that unit; nothing is converted or relabelled here"
+            )
+        columns.append(column)
+    return columns
+
+
 def observe_trajectory(
     trajectory: Trajectory,
     parameters: TrueCSTRParameters,
@@ -162,20 +194,24 @@ def observe_trajectory(
     :class:`TrajectoryNotAcceptedError` and is not observed. The acceptance criteria of
     true states, physical bounds and closed balances, are applied to the truth only.
     The readings are returned as the sensors gave them, unchecked and uncorrected.
+
+    The seed and the stream are validated as they were given, by the one rule of
+    ``measurement.sensors``, before anything is computed and whatever the noise levels
+    are. They are never rounded or converted into valid keys.
     """
+    seed = noise_key("sensor_seed", sensor_seed)
+    stream = noise_stream(sensor_stream)
+    columns = state_columns(measurement)
+
     check = check_trajectory(trajectory, parameters)
     if not check.accepted:
         raise TrajectoryNotAcceptedError(check)
 
-    unknown = [name for name in measurement.variables if name not in STATE_NAMES]
-    if unknown:
-        raise ValueError(f"no state is called {unknown}; the states are {list(STATE_NAMES)}")
-    columns = [STATE_NAMES.index(name) for name in measurement.variables]
-
     indices = sensor_sample_indices(trajectory, measurement.sample_period)
     exact = trajectory.states[indices][:, columns]
-    stream = tuple(int(element) for element in sensor_stream)
-    readings = measure(exact, measurement.sensors, sensor_seed, stream)
+    # the noise channel of a sensor is the index of its state, not its position among the
+    # sensors, so a variable keeps its noise whatever else is measured, in whatever order
+    readings = measure(exact, measurement.sensors, seed, stream, channels=columns)
 
     observations = Observations(
         plant=plant,
@@ -184,7 +220,7 @@ def observe_trajectory(
         measured=readings,
         inputs=trajectory.inputs[indices],
         measured_names=measurement.variables,
-        measured_units=tuple(STATE_UNITS[column] for column in columns),
+        measured_units=tuple(sensor.unit for sensor in measurement.sensors),
         input_names=INPUT_NAMES,
         input_units=INPUT_UNITS,
         sample_period=measurement.sample_period,
@@ -201,7 +237,7 @@ def observe_trajectory(
         sample_indices=indices,
         exact=exact_copy,
         errors=errors,
-        sensor_seed=int(sensor_seed),
+        sensor_seed=seed,
         sensor_stream=stream,
     )
     return OperatingRun(observations=observations, truth=truth)
