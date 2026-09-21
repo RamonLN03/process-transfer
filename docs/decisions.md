@@ -44,9 +44,13 @@ Same nominal inputs as the source; the target differs only in hidden heat-transf
 
 All steady states of the true plant for nominal inputs are found by continuation in temperature with Newton refinement; the Jacobian is evaluated by finite differences and checked against the analytical Jacobian of the first-order case; eigenvalues must have real part below a margin; the steady state must be unique in the scanned range; every corner of the excitation range is simulated from the nominal point and must stay inside the documented envelope.
 
+Update, 2026-09-21. Two limits of this criterion, both found after it was accepted. The steady-state search reports the roots it can see in the scanned range, under the limitations stated in `simulation/steady_state.py`; a count of one is not a proof of uniqueness. And single steps from the nominal point are a necessary test of an excitation, not a sufficient one: M0-E03 showed that chained changes reach temperatures that no step from nominal reaches. The check on sequences is `simulation/checks.py`; the protocol it has to be applied to is open (D-019).
+
 ## D-010 Excitation (2026-09-16, accepted)
 
 Open loop, zero-order-hold inputs. Amplitudes: Tc +-5 K, T_f +-5 K, q +-20 %, C_Af +-20 %. Three operating runs per plant: steady operation with noise only; single-input step tests with 10 min holds; multi-level random binary sequences on all four inputs with a 2 min clock. Sampling every 0.1 min. Gaussian measurement noise, sigma_T = 0.5 K, sigma_CA = 2 % of the nominal concentration, independent, no bias, no drift. Steps of +-10 K were rejected after simulated peaks of 380 to 400 K.
+
+Update, 2026-09-21. The amplitudes of q and C_Af are superseded by D-018 and are now +-10 %. The protocol for chained changes is open again (D-019): M0-E03 showed that random binary levels on a 2 min clock take the target far above 380 K even at the reduced amplitudes. The noise level of the C_A sensor is ambiguous between this entry and `docs/assumptions.md` (D-020). The text above is kept as it was accepted.
 
 ## D-011 Target data budget lives in the experimental layer (2026-09-16, accepted)
 
@@ -74,11 +78,11 @@ Commit messages carry no `Co-Authored-By` trailers naming AI agents. The four in
 
 ## D-017 Stability margin at the nominal point (2026-09-18, accepted)
 
-At the nominal inputs every eigenvalue must have real part below -0.5 1/min (-8.33e-3 1/s), so that disturbances decay with a time constant of at most two minutes. The value was part of the M0 design proposal accepted on 2026-09-16 and is recorded here because D-009 left it unstated. On the boundary of the input box the requirement is a unique, locally stable steady state for every input case, without a margin, in addition to the envelope of D-009.
+At the nominal inputs every eigenvalue must have real part below -0.5 1/min (-8.33e-3 1/s), so that disturbances decay with a time constant of at most two minutes. The value was part of the M0 design proposal accepted on 2026-09-16 and is recorded here because D-009 left it unstated. At each tested input case, 8 single-input excursions and the 16 corners of the input box, the requirement is a unique, locally stable steady state in the scanned range, without a margin, in addition to the envelope of D-009. This is a check at 24 points; it is not a statement about the rest of the input box.
 
-## D-018 Target leaves the temperature envelope under the D-010 amplitudes (2026-09-18, proposed)
+## D-018 Target leaves the temperature envelope under the D-010 amplitudes (2026-09-18; A10 chosen 2026-09-21; sequence safety not settled)
 
-M0-E01 found that the target peaks at 385.3 K on the all-plus corner of the input box, 5.3 K above the documented limit, while every input case keeps a unique stable steady state. M0-E02 evaluated the remedies (target plant):
+M0-E01 found that the target peaks at 385.3 K on the all-plus corner of the input box, 5.3 K above the documented limit, while each of the 24 tested input cases keeps a unique stable steady state. M0-E02 evaluated the remedies (target plant):
 
 | Option | Change | T range, K | Least stable case, 1/min | r_true / r_model | Envelope |
 |---|---|---|---|---|---|
@@ -91,3 +95,35 @@ M0-E01 found that the target peaks at 385.3 K on the all-plus corner of the inpu
 Considerations. A10 changes only the excitation (D-010) and keeps the accepted plant design and the source-target shift; it costs little visibility of the kinetic mismatch, because the temperature inputs drive most of the concentration excursion. B changes the plant design (D-005), moves the target's operating point closer to the source's (216 mol/m^3 and 352.9 K instead of 190 mol/m^3 and 355.2 K) and implies the larger heat-transfer area that D-005 already judged less plausible, in exchange for the strongest damping. C does not solve the problem. Raising the 380 K limit is possible, since the limit is a convention, but it would fit the criterion to the result.
 
 Recommendation of the implementation agent: A10. The decision belongs to the project owner. Until it is taken, the target envelope test is a strict expected failure and no data are generated.
+
+Decision, 2026-09-21. The project owner chose A10: q and C_Af +-10 %, T_f and T_c +-5 K. The strict expected failure was removed; the original +-20 % conditions stay under test as a historical regression of M0-E01.
+
+Limitation, found in the review of `f6c5781` and confirmed by M0-E03. Every option above, A10 included, was judged on single steps from the nominal steady state at 24 input cases. That is what A10 satisfies, and nothing more. When input changes are chained the state at each change depends on the history: a cold stage of 120 s at the A10 levels followed by a hot one takes the target to 395.6 K, and with random binary levels every one of 20 seeded sequences leaves the envelope. A10 therefore fixes the amplitudes for steps from nominal. It does not satisfy the requirement that open-loop excitation stays inside the envelope (D-009) for sequences, and that requirement is not closed by the change of amplitudes. It continues as D-019. No data are generated until D-019 is decided.
+
+## D-019 Protocol for chained input changes (2026-09-21, proposed)
+
+Open requirement: open-loop excitation must keep both plants inside the documented envelope (D-009) when input changes are chained, not only for steps from the nominal steady state. D-018 does not settle it. M0-E03 evaluated five protocols on a 120 s clock, with 20 seeds of 2 h each, adversarial ramps and, for binary protocols, all two-stage corner transitions. Target plant, the binding one:
+
+| Protocol | Worst peak found, K | Margin to 380 K | r_true / r_model excited | Verdict on tested cases |
+|---|---|---|---|---|
+| P0: A10, binary levels | 396.57 | none, 20 of 20 seeds rejected | 1.49 to 0.87 | fails |
+| P1: thermal inputs +-2.5 K, binary levels | 378.06 | 1.9 K | 1.35 to 0.97 | passes |
+| P2: A10, three levels, one level per tick | 376.99 | 3.0 K | 1.40 to 0.90 | passes |
+| P3: A10, 120 s excursions separated by 600 s at nominal | 376.19 | 3.8 K | 1.33 to 0.99 | passes |
+| P4: thermal +-2.5 K, three levels, one level per tick | 369.14 | 10.9 K | 1.29 to 1.00 | passes |
+
+What the evidence supports. P0 must not be used. P1 to P4 passed every case that was simulated, which is evidence about those cases and not a guarantee over all sequences. For P1 and P2 the worst seeded peak exceeded the designed worst case, by 0.75 K and 4.4 K, so histories longer than two stages matter and their margins, 1.9 K and 3.0 K, are of the same size as that effect. P3 has a structural argument on top of the tested sequences: after a rest of about ten time constants each excursion starts practically at the nominal steady state, its responses reduce to the 16 corner steps, which are enumerated exhaustively, and its worst peak equals the step reference. P4 has by far the largest margin and the narrowest excitation.
+
+Recommendation of the implementation agent, not a decision. Use P3 as the default sequential protocol. Its safety rests on the enumerated steps and not on a sample of random sequences, and its excursions are countable tests, which is the unit in which D-011 already measures the adaptation budget. Where continuous excitation is wanted, use P4 and accept the narrower range. Treat P1 and P2 as not sufficiently supported until a wider study, with more seeds or a search for worst-case histories, shows otherwise. Do not enlarge the 380 K limit or change the physical design to admit a protocol.
+
+Still open after this entry: the protocol itself, the length of the rest in P3 (600 s was tried, nothing else), whether single-input excursions are added to the corner excursions, and whether the 2 min clock of D-010 stands.
+
+## D-020 Two readings of the noise level of the C_A sensor (2026-09-21, proposed)
+
+D-010 gives sigma_CA as 2 % of the nominal concentration. `docs/assumptions.md` gives 0.005 mol/L. The two agree for the source, whose nominal C_A is 0.2500 mol/L, and not for the target, whose nominal C_A is 0.1897 mol/L: 2 % of that is 0.0038 mol/L. No sensor is implemented yet, so nothing depends on the choice so far.
+
+Reading 1, absolute. sigma_CA = 0.005 mol/L on both plants. The noise is a property of the analyser, which is the same instrument on both plants in M0. Relative to its own nominal concentration the target is then noisier, 2.6 % against 2.0 %.
+
+Reading 2, relative to each plant. sigma_CA = 2 % of that plant's nominal C_A: 0.0050 mol/L on the source and 0.0038 mol/L on the target. The signal-to-noise ratio at the nominal point is equal on both plants.
+
+Recommendation, not a decision: reading 1. Sensor noise belongs to the instrument and not to the operating point, and differences between sensors are deferred in M0, so both plants should carry the same analyser. Reading 2 would also make a sensor specification depend on the target's nominal steady state, which is fixed by hidden physics: ground truth would leak into something the modeller is supposed to know. If reading 1 is accepted, D-010 should say 0.005 mol/L and drop the percentage.

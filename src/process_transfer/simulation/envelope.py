@@ -2,9 +2,15 @@
 
 Local eigenvalues say nothing about large steps, so stability verification
 (docs/decisions.md D-009) also simulates the plant from its nominal steady state
-under every combination of extreme inputs and records the range the states
-visit. Open-loop excitation is only accepted if all of these stay inside the
-documented envelope (docs/assumptions.md).
+under single-input excursions and under every corner of the input box, and
+records the range the states visit.
+
+This is a necessary check of an excitation, not a sufficient one. It covers
+single steps, from the nominal steady state, at 24 input cases. It says nothing
+about the interior of the input box or about chained input changes, where the
+state at each change depends on the history: M0-E03 found sequences at amplitudes
+that pass this check and still leave the envelope by more than 15 K. Sequences
+are checked with ``simulation/checks.py``.
 """
 
 from __future__ import annotations

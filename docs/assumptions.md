@@ -68,26 +68,48 @@ Computed by `experiments/00_verify_operating_points.py`; see `docs/experiment_lo
 
 The source is designed for 250 mol/m^3 at 350 K (D-005). The book's k0 and E/R give k(350 K) = 0.99993 1/min rather than exactly 1, so the computed point differs from the design values by 0.02 mol/m^3 and 0.8 mK.
 
-## Envelope under the D-010 amplitudes (M0-E01)
+## Operating envelope
 
-Documented envelope for M0: T in [335, 380] K, C_A in (0, 1.2 C_Af]. The temperature limits are a convention of this study, not a property of the fluid.
+Documented envelope for M0: T in [335, 380] K, C_A in (0, 1.2 C_Af]. The temperature limits are a convention of this study, not a property of the fluid. They have not been changed to admit any result.
 
-Each of the 24 input cases (8 single-input excursions, 16 corners of the input box) has a unique, locally stable steady state on both plants, and every 40 min step response converges to it. The hottest case is the all-plus corner, with q, C_Af, T_f and T_c all high: more flow of a richer feed brings more reactant and therefore more heat.
+Three kinds of evidence exist, and they must not be confused.
+
+### Steps from the nominal steady state, original D-010 amplitudes (historical, M0-E01)
+
+q and C_Af +-20 %, T_f and T_c +-5 K; 8 single-input excursions and the 16 corners of the input box, each applied as a 40 min step from the nominal steady state.
 
 | | Source | Target |
 |---|---|---|
-| Temperature range over all cases | 339.67 to 372.44 K | 341.19 to 385.29 K |
+| Temperature range over the 24 cases | 339.67 to 372.44 K | 341.19 to 385.29 K |
 | Concentration range | 110 to 440 mol/m^3 | 46 to 392 mol/m^3 |
 | Least stable case, max real part | -0.896 1/min | -0.381 1/min |
 | Inside the documented envelope | yes | no, by 5.3 K on the all-plus corner |
 
-The target does not meet the D-009 criterion with the D-010 amplitudes. The remedy is the open decision D-018, with options evaluated in M0-E02; no data are generated until it is taken. The first version of this file quoted a narrower range from a scratch calculation that simulated four cases and assumed the hot corner had low flow. That assumption was wrong.
+Each of the 24 tested input cases has one steady state in the scanned range, locally stable, on both plants, and every step response converges to it. The hottest case is the all-plus corner, with q, C_Af, T_f and T_c all high: more flow of a richer feed brings more reactant and therefore more heat. The first version of this file quoted a narrower range from a scratch calculation that simulated four cases and assumed the hot corner had low flow; that assumption was wrong. These conditions are no longer the planned ones, and are kept under test only so that M0-E01 stays reproducible.
+
+### Steps from the nominal steady state, A10 amplitudes (current, D-018)
+
+q and C_Af +-10 %, T_f and T_c +-5 K; the same 24 cases.
+
+| | Source | Target |
+|---|---|---|
+| Temperature range over the 24 cases | 340.42 to 365.75 K | 342.37 to 376.19 K |
+| Inside the documented envelope | yes | yes |
+
+This is all that A10 has been shown to satisfy: single steps, from the nominal steady state, at 24 input cases. It says nothing about the interior of the input box, about the rest of its boundary, or about what happens when one change follows another.
+
+### Chained input changes (M0-E03): the requirement is open
+
+When changes are chained, the state at each change depends on the history. From the nominal steady state of the target, 120 s at q = 110 L/min, C_Af = 0.55 mol/L, T_f = 345 K and T_c = 332.5 K raise C_A from 190 to 347 mol/m^3; raising T_f to 355 K and T_c to 342.5 K then takes the reactor to 395.63 K, 42.6 s later. With random binary levels at the A10 amplitudes on a 120 s clock, every one of 20 seeded sequences of 2 h leaves the envelope on the target, with peaks between 381.5 and 396.6 K. The source stays inside in every case tested.
+
+Four alternative protocols passed every case that was simulated (D-019). That is evidence about the sequences tested, not a guarantee over all the sequences a protocol can generate. The requirement that open-loop excitation stays inside the envelope (D-009) is therefore not satisfied for sequences at present, the excitation protocol is an open decision, and no plant data are generated until it is taken.
 
 ## Measurement
 
 * Measured variables: C_A and T. Inputs q, C_Af, T_f and Tc are known exactly (set or measured without error).
 * Sampling every 0.1 min for all variables.
 * Additive, independent, zero-mean Gaussian noise: sigma_T = 0.5 K, sigma_CA = 0.005 mol/L. No bias, no drift, no delay, no missing values (all deferred).
+* Open ambiguity (D-020). D-010 states sigma_CA as 2 % of the nominal concentration, which equals 0.005 mol/L on the source (nominal 0.2500 mol/L) but 0.0038 mol/L on the target (nominal 0.1897 mol/L). Whether the noise is an absolute property of the analyser, the same on both plants, or relative to each plant's nominal concentration is not decided. No sensor is implemented yet.
 
 ## Sources
 
