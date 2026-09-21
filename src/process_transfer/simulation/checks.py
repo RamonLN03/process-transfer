@@ -33,7 +33,7 @@ class TrajectoryCheck:
     """Extremes of a trajectory and the verdict of each acceptance criterion."""
 
     peak_temperature: float  # K, largest sample
-    refined_peak_temperature: float  # K, parabolic estimate of the true maximum
+    refined_peak_temperature: float  # K, parabolic estimate of the maximum, not a bound
     peak_time: float  # s
     min_temperature: float  # K
     c_a_range: tuple[float, float]  # mol/m^3
@@ -79,8 +79,10 @@ def check_trajectory(
     seconds_above = float(np.sum(0.5 * (above[1:] + above[:-1]) * np.diff(times)))
 
     balances = integrated_balances(trajectory, p)
-    # The envelope is judged on the refined maximum, which can only be larger than the
-    # largest sample, so that coarse sampling cannot hide a violation.
+    # The upper limit is judged on the refined maximum, which is never below the largest
+    # sample. It is an estimate, not a bound: it reduces the error made by sampling but a
+    # peak much narrower than the sampling period can still go unseen. Critical cases are
+    # therefore also recomputed with finer sampling and a second integrator.
     inside = temperature.min() >= envelope[0] and max(peak, refined_peak) <= envelope[1]
     return TrajectoryCheck(
         peak_temperature=peak,

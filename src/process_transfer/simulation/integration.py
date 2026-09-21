@@ -104,30 +104,88 @@ class Trajectory:
         values = self.states[:, index]
         return float(values.min()), float(values.max())
 
+    def _finite_column(self, index: int) -> None:
+        if not np.all(np.isfinite(self.states[:, index])) or not np.all(np.isfinite(self.times)):
+            raise ValueError("the trajectory contains non-finite times or states")
+
     def peak(self, index: int) -> tuple[float, float]:
         """Maximum of one state over the samples and the time at which it occurs."""
+        self._finite_column(index)
         values = self.states[:, index]
         position = int(np.argmax(values))
         return float(values[position]), float(self.times[position])
 
     def refined_peak(self, index: int) -> tuple[float, float]:
-        """Maximum of one state, refined by a parabola through the largest sample and
-        its two neighbours inside the same segment.
+        """Estimate of the maximum of one state between samples, and its time.
 
-        Sampling can only underestimate a maximum. The refinement estimates by how
-        much; it is not applied when the largest sample sits on a segment end, where
-        the derivative is discontinuous and a parabola would be meaningless.
+        Every segment is examined, and inside it every run of three consecutive
+        samples: where the parabola through them is concave and its vertex falls in
+        the part of the segment that the triple is responsible for, the vertex is a
+        candidate. The result is the largest candidate, or the largest sample when no
+        candidate exceeds it. No parabola is ever fitted across a change of inputs,
+        where the derivative is discontinuous; the segment ends are samples already.
+
+        This is an estimate, not a bound. It is never smaller than the largest
+        sample, but a peak much narrower than the sampling period leaves no trace in
+        the samples and cannot be recovered. Critical cases must also be recomputed
+        with a finer sampling period.
         """
-        best = max(self.segments, key=lambda segment: float(segment.states[:, index].max()))
-        values, times = best.states[:, index], best.times
-        i = int(np.argmax(values))
-        if i == 0 or i == len(values) - 1:
-            return float(values[i]), float(times[i])
-        coefficients = np.polyfit(times[i - 1 : i + 2] - times[i], values[i - 1 : i + 2], 2)
-        if coefficients[0] >= 0.0:
-            return float(values[i]), float(times[i])
-        shift = -coefficients[1] / (2.0 * coefficients[0])
-        return float(np.polyval(coefficients, shift)), float(times[i] + shift)
+        self._finite_column(index)
+        best = self.peak(index)
+        for segment in self.segments:
+            candidate = _largest_parabolic_vertex(segment.times, segment.states[:, index])
+            if candidate is not None and candidate[0] > best[0]:
+                best = candidate
+        return best
+
+
+def _largest_parabolic_vertex(times: FloatArray, values: FloatArray) -> tuple[float, float] | None:
+    """Largest valid vertex among the parabolas through consecutive sample triples.
+
+    A triple centred on sample i answers for the interval from the midpoint with
+    its left neighbour to the midpoint with its right neighbour; the first and last
+    triples also answer for the rest of the segment up to its ends. A vertex outside
+    that interval is ignored, because a parabola is only trustworthy near its centre
+    and the neighbouring triple covers the rest. Works for unevenly spaced samples.
+    Returns ``None`` when there is nothing to refine: fewer than three samples,
+    repeated sampling instants, flat or convex data (plateaus included).
+    """
+    if len(values) < 3:
+        return None
+    t0, t1, t2 = times[:-2], times[1:-1], times[2:]
+    y0, y1, y2 = values[:-2], values[1:-1], values[2:]
+
+    lower, upper = 0.5 * (t0 + t1), 0.5 * (t1 + t2)
+    lower[0], upper[-1] = t0[0], t2[-1]
+
+    spaced = (t1 > t0) & (t2 > t1)  # a parabola needs three distinct instants
+    if not np.any(spaced):
+        return None
+    t0, t1, t2, y0, y1, y2 = (a[spaced] for a in (t0, t1, t2, y0, y1, y2))
+    lower, upper = lower[spaced], upper[spaced]
+
+    slope_left = (y1 - y0) / (t1 - t0)
+    slope_right = (y2 - y1) / (t2 - t1)
+    curvature = (slope_right - slope_left) / (t2 - t0)  # leading coefficient
+
+    concave = curvature < 0.0  # flat and convex triples have no interior maximum
+    if not np.any(concave):
+        return None
+    t0, t1, y0, slope_left, curvature = (a[concave] for a in (t0, t1, y0, slope_left, curvature))
+    lower, upper = lower[concave], upper[concave]
+
+    vertex_time = 0.5 * (t0 + t1) - slope_left / (2.0 * curvature)
+    inside = (vertex_time >= lower) & (vertex_time <= upper)
+    if not np.any(inside):
+        return None
+    t0, t1, y0, slope_left, curvature, vertex_time = (
+        a[inside] for a in (t0, t1, y0, slope_left, curvature, vertex_time)
+    )
+    vertex_value = (
+        y0 + slope_left * (vertex_time - t0) + curvature * (vertex_time - t0) * (vertex_time - t1)
+    )
+    position = int(np.argmax(vertex_value))
+    return float(vertex_value[position]), float(vertex_time[position])
 
 
 def simulate_piecewise(
