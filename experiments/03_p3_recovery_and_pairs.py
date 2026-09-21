@@ -18,15 +18,20 @@ depend on its results. The reviewer's numbers for both checks were known beforeh
 the tolerances were not derived from them.
 
 * recovery, temperature: 0.005 K, one hundredth of the planned sensor noise sigma_T
-  = 0.5 K. A residual a hundred times below what the sensor resolves cannot be told
-  from an exact restart in any data generated later;
+  = 0.5 K. A residual a hundred times below the noise of one reading is small against
+  everything else in the data of this study. That is a practical criterion, not a
+  statistical guarantee (corrected on 2026-09-21: this line first said that such a
+  residual "cannot be told from an exact restart in any data generated later", which
+  is false for a large enough data set; see simulation/protocols.py);
 * recovery, concentration: 0.038 mol/m^3, one hundredth of the smaller of the two
   readings of sigma_CA still open in D-020 (2 % of the target's nominal C_A, 3.8
   mol/m^3; the other reading is 5 mol/m^3). The stricter one is used so that the
-  check does not depend on that decision;
+  check does not depend on that decision. D-020 has since chosen 5 mol/m^3; the
+  tolerance stays at the value that was verified;
 * agreement of peaks: 0.05 K, a tenth of sigma_T and about 1 % of the 3.8 K that
   separate the worst step from nominal (376.19 K) from the 380 K limit. Below it the
-  carried state can neither be seen by the sensor nor erode the margin materially.
+  carried state is small against the noise of a reading and does not erode the margin
+  materially.
 
 Scope. The present source and target, A10 amplitudes, corner excursions of 120 s, a
 rest of 600 s, pairs of excursions. It is evidence about these conditions, not a

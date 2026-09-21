@@ -52,6 +52,8 @@ Open loop, zero-order-hold inputs. Amplitudes: Tc +-5 K, T_f +-5 K, q +-20 %, C_
 
 Update, 2026-09-21. The amplitudes of q and C_Af are superseded by D-018 and are now +-10 %. The protocol for chained changes is open again (D-019): M0-E03 showed that random binary levels on a 2 min clock take the target far above 380 K even at the reduced amplitudes. The noise level of the C_A sensor is ambiguous between this entry and `docs/assumptions.md` (D-020). The text above is kept as it was accepted.
 
+Update, 2026-09-21, after D-020. The noise of the C_A sensor is sigma_CA = 0.005 mol/L, 5 mol/m^3, on both plants; the "2 % of the nominal concentration" above is superseded and the percentage is dropped. Both sigmas are standard deviations of additive zero-mean Gaussian noise, not limits of the error. The measurement specification in force is D-020 and `configs/sensors_cstr.yaml`.
+
 ## D-011 Target data budget lives in the experimental layer (2026-09-16, accepted)
 
 The target plant generates truth and evaluation data comparable in amount to the source. The simulator is never restricted. Adaptation budgets (initially about 2 h; later 30 min, 1 h, 2 h, 4 h, 8 h) are applied by the experiment code on top of the same target record and the same fixed evaluation set.
@@ -124,7 +126,9 @@ Scope of the acceptance. P3 stands for the plants and conditions that were verif
 
 Not decided here: the rest time has been measured, not optimised (on the target 600 s meets the recovery tolerance by a factor of about four); single-input excursions are not part of P3; P1, P2 and P4 remain unsupported or unused; the noise level of the C_A sensor is still open (D-020).
 
-## D-020 Two readings of the noise level of the C_A sensor (2026-09-21, proposed)
+Update, 2026-09-21. D-020 was accepted later the same day, with sigma_CA = 5 mol/m^3. The recovery tolerances of P3 were derived while both readings were open, from the stricter one, and they stay as they were verified: 0.005 K and 0.038 mol/m^3. The second is now 1/132 of sigma_CA instead of 1/100. The decision is not a reason to relax them. They are a practical criterion, not a statistical guarantee: see the note on the tolerances in `simulation/protocols.py`.
+
+## D-020 Measurement noise; two readings of the noise level of the C_A sensor (2026-09-21, reading 1 accepted)
 
 D-010 gives sigma_CA as 2 % of the nominal concentration. `docs/assumptions.md` gives 0.005 mol/L. The two agree for the source, whose nominal C_A is 0.2500 mol/L, and not for the target, whose nominal C_A is 0.1897 mol/L: 2 % of that is 0.0038 mol/L. No sensor is implemented yet, so nothing depends on the choice so far.
 
@@ -133,3 +137,19 @@ Reading 1, absolute. sigma_CA = 0.005 mol/L on both plants. The noise is a prope
 Reading 2, relative to each plant. sigma_CA = 2 % of that plant's nominal C_A: 0.0050 mol/L on the source and 0.0038 mol/L on the target. The signal-to-noise ratio at the nominal point is equal on both plants.
 
 Recommendation, not a decision: reading 1. Sensor noise belongs to the instrument and not to the operating point, and differences between sensors are deferred in M0, so both plants should carry the same analyser. Reading 2 would also make a sensor specification depend on the target's nominal steady state, which is fixed by hidden physics: ground truth would leak into something the modeller is supposed to know. If reading 1 is accepted, D-010 should say 0.005 mol/L and drop the percentage.
+
+Decision, 2026-09-21. The project owner chose reading 1: the same absolute noise on source and target.
+
+* sigma_CA = 0.005 mol/L = 5 mol/m^3.
+* sigma_T = 0.5 K.
+* Additive Gaussian noise of zero mean, independent between the two channels and between samples.
+* No bias, no drift, no delay and no missing values.
+* The inputs q, C_Af, T_f and T_c remain known without error.
+
+Reason: one instrument specification common to both plants. In M0 source and target carry the same analyser and the same thermometer, and differences between sensors are deferred. The specification is written once, in `configs/sensors_cstr.yaml`; there is no per-plant sensor file.
+
+sigma is a standard deviation, not a limit of the error. For Gaussian noise about 32 % of the readings lie further than one sigma from the true value, 4.6 % further than two and 0.27 % further than three. Readings are never clipped or truncated to stay within +-sigma, or inside any physical range; a reading is what the sensor said, and no criterion written for true states (positivity, closed balances) is applied to it.
+
+Correction to the recommendation above. It argued that reading 2 would leak ground truth, because the nominal steady state of the target is fixed by hidden physics. That was overstated and is withdrawn as a reason. The concentration at which a plant normally runs is something its engineers observe, and an error stated as a percentage of reading or of span is an ordinary instrument specification. A relative noise level is not by itself a leak of ground truth; whether it would be one depends on where the number comes from and who is given it. The decision rests on the common instrument specification and on nothing else.
+
+Consequences. Relative to its own nominal concentration the target is noisier than the source, 2.6 % against 2.0 %, which is accepted as part of the scenario. Why two readings existed is kept above: D-010 wrote the noise as a percentage, `docs/assumptions.md` as an absolute value, and the two agree on the source only. The recovery tolerances of P3 are unchanged (D-019).

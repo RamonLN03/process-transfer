@@ -112,8 +112,9 @@ This satisfies the requirement of D-009 for P3 on the present source and target,
 
 * Measured variables: C_A and T. Inputs q, C_Af, T_f and Tc are known exactly (set or measured without error).
 * Sampling every 0.1 min for all variables.
-* Additive, independent, zero-mean Gaussian noise: sigma_T = 0.5 K, sigma_CA = 0.005 mol/L. No bias, no drift, no delay, no missing values (all deferred).
-* Open ambiguity (D-020). D-010 states sigma_CA as 2 % of the nominal concentration, which equals 0.005 mol/L on the source (nominal 0.2500 mol/L) but 0.0038 mol/L on the target (nominal 0.1897 mol/L). Whether the noise is an absolute property of the analyser, the same on both plants, or relative to each plant's nominal concentration is not decided. No sensor is implemented yet.
+* Additive, zero-mean Gaussian noise, independent between the two sensors and between samples: sigma_T = 0.5 K and sigma_CA = 0.005 mol/L (5 mol/m^3), the same on source and target (D-020, `configs/sensors_cstr.yaml`). No bias, no drift, no delay, no missing values (all deferred).
+* sigma is the standard deviation of the noise, not a limit of the error. About 32 % of the readings lie further than one sigma from the true value, 4.6 % further than two, 0.27 % further than three. Readings are not clipped or truncated, to +-sigma or to any physical range, and the criteria written for true states, positivity and closed balances, are not applied to them. The lowest concentration reached by a P3 corner excursion from nominal is 67 mol/m^3 on the target and 134 mol/m^3 on the source, so a negative reading would need an error of more than thirteen sigma; it is not forbidden, only improbable.
+* History (D-020). D-010 stated sigma_CA as 2 % of the nominal concentration, which equals 0.005 mol/L on the source (nominal 0.2500 mol/L) but 0.0038 mol/L on the target (nominal 0.1897 mol/L). The project owner chose the absolute value, one instrument specification common to both plants. Relative to its own nominal concentration the target is therefore noisier, 2.6 % against 2.0 %.
 
 ## Sources
 

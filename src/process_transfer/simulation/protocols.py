@@ -31,11 +31,20 @@ A10_COOLANT_TEMPERATURE = 5.0  # K
 P3_HOLD = 120.0  # s spent at a corner
 P3_REST = 600.0  # s spent at the nominal inputs afterwards
 
-# What "back at the nominal steady state" means for P3. One hundredth of the planned
-# sensor noise: sigma_T = 0.5 K, and for C_A the stricter of the two readings still open
-# in D-020 (3.8 mol/m^3, against 5 mol/m^3), so that the criterion does not depend on
-# that decision. A residual a hundred times below what a sensor resolves cannot be told
-# from an exact restart in any data generated later.
+# What "back at the nominal steady state" means for P3. One hundredth of the sensor
+# noise as it stood when the values were fixed: sigma_T = 0.5 K, and for C_A the stricter
+# of the two readings then open in D-020, 3.8 mol/m^3 against 5 mol/m^3, so that the
+# criterion did not depend on that decision. D-020 has since chosen 5 mol/m^3; the
+# tolerance was verified at 0.038 and stays there, now 1/132 of sigma_CA. The decision is
+# not a reason to relax it.
+#
+# This is a practical criterion, not a statistical guarantee. A residual far below the
+# noise of one reading is not thereby invisible in every data set: averaging N
+# independent readings resolves an offset of about 2 sigma / sqrt(N), so a constant
+# offset of sigma / 100 would show after some 40 000 readings, 67 h at one reading every
+# 6 s. What the criterion says is that the carried state is small against everything
+# else in the data of this study. The residual is not constant either: it keeps
+# decaying, and M0-E03b measured it at less than a third of the tolerance.
 P3_RECOVERY_TOLERANCE_T = 0.005  # K
 P3_RECOVERY_TOLERANCE_CA = 0.038  # mol/m^3
 # How closely an excursion started from the carried state must reproduce the peak of the
