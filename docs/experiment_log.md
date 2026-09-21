@@ -283,3 +283,11 @@ These are results about software, as the registration said. They are evidence fo
 Two things found while preparing the experiment, before its registration, and corrected then. A defect that exists only between plants, one variable in two units, could not be seen by the quality gate of an ingestion, which looks at one run of one plant; the database as a whole is now checked inside the transaction (`b409f14`). And one of the defects first chosen for H4, a concentration channel in mol/L, turned out to be of that kind and was replaced before registration by one that a single run can show.
 
 Limitations. The run time of ingestion grows with the square of the number of runs, because the whole database is checked after each. The content hashes are those of one machine and one set of library versions. `aligned_series` names the six variables of the CSTR. The data set lives by default under the repository, in a synchronised folder; `PT_DATA_DIR` exists to move it.
+
+### Re-runs at the end of the iteration of 2026-09-22
+
+Selection. Between `7bc3e6a` and `a58afe8` the only module of `simulation/` that changed is `operating_run.py`, together with `measurement/` and the new `sampling_clock.py`, `data/` and `generation/`. Of the experiments, M0-E04 and M0-E05 use them; M0-E01, M0-E02, M0-E03 and M0-E03b use `integration`, `checks`, `balances`, `steady_state`, `envelope`, `excitation` and `protocols`, none of which was touched, so they were not run again.
+
+M0-E04, run `20260921T221811Z_a58afe8`, clean working tree: the four hypotheses hold, the largest of the 64 scores is 2.31 as in the registered run, and the digests are those recorded under `observations/v1`, `a8508ef8a442ba5f...` and `bab51b85b4b95ba6...`.
+
+M0-E05, run `20260921T221817Z_a58afe8`, clean working tree: the nine hypotheses hold and the exit code is 0. The data set `m0-e05` was already there, so this run exercised the path of repetition from its first step: the generator reported the data set, the ingestion and the export as already present, touched no file of the available branch, and gave the six content hashes of the registered run. Run time 14.4 s.
