@@ -6,12 +6,26 @@ The state is x = [C_A, T] in SI.
 
 Method (docs/decisions.md D-009): continuation in temperature. For each
 temperature on a grid, the mass balance is solved for C_A; the energy-balance
-residual along that curve is scanned for sign changes; each bracketed root is
-refined and then polished on the full two-dimensional system. Every steady
-state in the scanned range is returned, because multiplicity is the information
-that matters for open-loop operation. A tangency of the energy residual with
-zero (a fold exactly at the nominal inputs) produces no sign change and would be
-missed; the grid is fine enough that this is a measure-zero case, not a risk.
+residual along that curve is scanned for zeros at the grid points, both ends of
+the range included, and for sign changes between them; each root is refined and
+then polished on the full two-dimensional system.
+
+Limitations of a sign-change scan. It is a verification aid for the operating
+points of this study, not a bifurcation tool:
+
+* a root of even multiplicity (a tangency, as at a fold) changes no sign and is
+  missed unless it falls exactly on a grid point;
+* two roots inside one grid cell cancel each other and are both missed;
+* a root that lies within rounding error of an end of the range, without being
+  exactly zero there, may be missed: choose a range that strictly contains the
+  temperatures of interest;
+* nothing outside ``temperature_range`` is seen;
+* the mass balance is assumed to have exactly one root for C_A in
+  ``[0, c_a_upper]`` at each temperature, which holds when the rate increases
+  with C_A.
+
+A count of steady states is therefore a statement about the scanned range at the
+given grid, not a proof of uniqueness.
 """
 
 from __future__ import annotations
@@ -102,16 +116,16 @@ def find_steady_states(
     grid = np.linspace(temperature_range[0], temperature_range[1], n_grid)
     residuals = np.array([energy_residual(t) for t in grid])
 
-    steady_states: list[SteadyState] = []
+    # Roots that fall exactly on a grid point, both ends of the range included, and
+    # strict sign changes between neighbouring points that are both non-zero. A root
+    # on a grid point is therefore found once, never again through its two intervals.
+    candidates = [float(grid[i]) for i in range(n_grid) if residuals[i] == 0.0]
     for i in range(n_grid - 1):
-        left, right = residuals[i], residuals[i + 1]
-        if left == 0.0:
-            bracketed = float(grid[i])
-        elif left * right < 0.0:
-            bracketed = float(brentq(energy_residual, grid[i], grid[i + 1], xtol=1e-11))
-        else:
-            continue
+        if residuals[i] * residuals[i + 1] < 0.0:
+            candidates.append(float(brentq(energy_residual, grid[i], grid[i + 1], xtol=1e-11)))
 
+    steady_states: list[SteadyState] = []
+    for bracketed in sorted(candidates):
         guess = np.array([c_a_on_mass_balance(bracketed), bracketed])
         polished = root(f, guess, method="hybr", tol=1e-14)
         spacing = grid[1] - grid[0]
