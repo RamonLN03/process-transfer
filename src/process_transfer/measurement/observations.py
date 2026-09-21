@@ -24,27 +24,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from process_transfer.canonical import encode_list, encode_numbers, encode_string
 from process_transfer.cstr_variables import FloatArray
 from process_transfer.validation import require_non_negative, require_positive
 
 CONTENT_ENCODING = "observations/v1"
-
-
-def _length(value: int) -> bytes:
-    return int(value).to_bytes(8, "big")
-
-
-def _encode_string(value: str) -> bytes:
-    data = value.encode("utf-8")
-    return b"S" + _length(len(data)) + data
-
-
-def _encode_numbers(values: FloatArray) -> bytes:
-    """Shape first, then little-endian doubles in row order: two arrays of different
-    shapes never share an encoding, whatever their numbers are."""
-    array = np.ascontiguousarray(values, dtype="<f8")
-    shape = b"".join(_length(size) for size in array.shape)
-    return b"A" + _length(array.ndim) + shape + array.tobytes()
 
 
 def _read_only_copy(values: FloatArray) -> FloatArray:
@@ -139,13 +123,11 @@ class Observations:
             ("inputs", self.inputs),
         )
         for name, value in fields:
-            digest.update(_encode_string(name))
+            digest.update(encode_string(name))
             if isinstance(value, str):
-                digest.update(_encode_string(value))
+                digest.update(encode_string(value))
             elif isinstance(value, tuple):
-                digest.update(b"L" + _length(len(value)))
-                for item in value:
-                    digest.update(_encode_string(item))
+                digest.update(encode_list([encode_string(item) for item in value]))
             else:
-                digest.update(_encode_numbers(value))
+                digest.update(encode_numbers(value))
         return digest.hexdigest()
