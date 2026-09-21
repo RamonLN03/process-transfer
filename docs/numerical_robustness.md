@@ -102,3 +102,33 @@ The first review listed arrays that a caller can mutate after handing them over.
 * A non-finite state inside a segment is still accepted when a trajectory is built, and reported afterwards by `check_trajectory` and by the peak functions. At a junction it is rejected, because it cannot be shown to be continuous.
 * `git_state` does not limit how long git may take; a git that hangs would hang the run.
 * The fingerprint of local changes covers tracked files only. Untracked files are listed by name and not hashed.
+
+## Review of 2026-09-21, third: the measurement interfaces
+
+Scope. The numerical interfaces added for M0-E04: `measurement/sensors.py`, `measurement/noise_statistics.py`, `measurement/observations.py` and `simulation/operating_run.py`. They were written with the rule in hand, so this section records domains and limits, not defects found in committed code. Two problems were caught by their own tests before the code was committed and are listed for the record.
+
+### Domain and limits of each interface
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `SensorSpec`, `MeasurementSpec` | noise level finite and not negative; sampling period finite and positive; one sensor per variable | a noise level of zero is an exact sensor | negative or non-finite noise, a period of zero, no sensor, two sensors for one variable |
+| `measure` | finite values, shape (n, sensors); seed and stream explicit non-negative integers | zero noise returns the value bit for bit and draws nothing; no rows returns no rows | non-finite values; a reading that overflows; a missing, negative, fractional or boolean seed or stream element, also when every sensor is exact and nothing is drawn |
+| `noise_statistics` | at least 100 finite errors, none beyond 1e100; sigma finite and positive | errors all exactly zero: the lag-one score is set to zero without dividing, and the spread and tail scores report the defect | sigma of zero, which is a valid sensor but has no distribution to test; too few samples; an error more than 1e100 times sigma, whose square would overflow |
+| `correlation` | two finite series of equal length, at least 100 samples | none | a constant series, which has no correlation rather than a correlation of zero; unequal lengths |
+| `Observations` | finite values, instants strictly increasing, one row per instant and one column per name | none | duplicates or disorder in the instants, non-finite values, shapes that do not match the names |
+| `sensor_sample_indices` | a sensor period that is a whole multiple of the sampling of the truth; input changes on sensor instants | a trajectory that does not start at zero; a tail shorter than one period, which simply has no reading | a sensor instant that is not a stored sample, never interpolated; two stored samples on one sensor instant; an input change between two readings |
+
+### Caught before commit
+
+* `measure` checked the readings for finiteness after adding the noise, but numpy warned about the overflow first, and the test suite turns that warning into an error of its own. The addition now runs under `numpy.errstate(over="ignore")` because the outcome is checked on the next line and raised as a `ValueError` that names the cause. This is the one place where a numpy warning is silenced, and it is silenced only to be replaced by an error.
+* The stream was validated only where a generator was built, so a wrong stream passed unnoticed when every sensor was exact. Seed and stream are now validated on entry.
+
+### One resolution that is not an arbitrary epsilon, stated as such
+
+A sensor instant and a stored sample are the same instant computed by two routes, `start + period * k` on the sensor clock and `start + h * j` on the grid of the simulation. Each is a product and a sum, each rounded to half a unit in the last place, so they can differ in the last bits: 0.1 * 3 is 0.30000000000000004. They are recognised as the same instant when they agree to four units in the last place of their magnitude. That is the resolution of the arithmetic, of the order of 1e-13 s at two hours, against a spacing of 0.1 s between stored samples; it cannot make a wrong sample pass for the right one. The instant stored in the observations is the stored sample of the truth, so that truth and observations carry identical instants. This differs from the junctions of a trajectory, where the comparison is exact, because there the two numbers are copies of one another and not two computations.
+
+### Open limitations
+
+* The z-scores use large-sample approximations: a normal law for the mean and the correlations, Wilson-Hilferty for the spread, a binomial normal law for the tail fractions. They were checked to be standard normal at n = 1201 over thousands of replicates, not at small n, and the functions refuse fewer than 100 samples.
+* Nothing prevents two runs from being given the same seed and stream, in which case they share their noise sample for sample. The convention is one stream per run; the storage layer will need to enforce it.
+* `RunTruth` keeps the whole true trajectory in memory, about 1.2 MB per two-hour run.
