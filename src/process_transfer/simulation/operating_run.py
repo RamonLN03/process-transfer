@@ -43,15 +43,11 @@ from process_transfer.measurement.sensors import (
     noise_key,
     noise_stream,
 )
+from process_transfer.sampling_clock import nearest_ticks
 from process_transfer.simulation.checks import TrajectoryCheck, check_trajectory
 from process_transfer.simulation.cstr_true import TrueCSTRParameters
 from process_transfer.simulation.integration import Trajectory
 from process_transfer.validation import require_positive
-
-# Two floating-point routes to the same instant, start + period * k, each one product and
-# one sum, each rounded by at most half a unit in the last place. They agree to within a
-# few such units. This is the resolution of the arithmetic, not a tolerance on the data.
-_UNITS_IN_THE_LAST_PLACE = 4.0
 
 
 class TrajectoryNotAcceptedError(ValueError):
@@ -81,12 +77,9 @@ def sensor_sample_indices(trajectory: Trajectory, sample_period: float) -> NDArr
     times = trajectory.times
     start = times[0]
 
-    count = np.rint((times - start) / period)
-    nearest = start + count * period
-    resolution = _UNITS_IN_THE_LAST_PLACE * np.spacing(np.maximum(np.abs(times), np.abs(nearest)))
-    on_the_clock = np.abs(times - nearest) <= resolution
+    count, on_the_clock = nearest_ticks(times, start, period)  # process_transfer.sampling_clock
     indices = np.flatnonzero(on_the_clock)
-    ticks = count[indices].astype(np.int64)
+    ticks = count[indices]
 
     if np.any(ticks[1:] == ticks[:-1]):
         repeated = int(ticks[1:][ticks[1:] == ticks[:-1]][0])
