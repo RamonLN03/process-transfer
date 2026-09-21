@@ -1,5 +1,7 @@
 """Generated files respect PT_DATA_DIR and never land in tracked directories."""
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -41,3 +43,22 @@ def test_data_dir_does_not_create_anything(monkeypatch: pytest.MonkeyPatch, tmp_
     monkeypatch.setenv("PT_DATA_DIR", str(target))
     assert data_dir() == target
     assert not target.exists()
+
+
+def _is_ignored(relative_path: str) -> bool:
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", relative_path], cwd=repository_root(), check=False
+    )
+    return result.returncode == 0
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not available")
+def test_generated_data_is_ignored_but_the_data_package_is_not() -> None:
+    """Regression: an unanchored ``data/`` pattern once ignored the source package
+    ``src/process_transfer/data`` together with the generated files."""
+    if not (repository_root() / ".git").exists():
+        pytest.skip("not a git checkout")
+    assert _is_ignored("data/m0_e03/summary.json")
+    assert _is_ignored("data/raw/source.parquet")
+    assert not _is_ignored("src/process_transfer/data/paths.py")
+    assert not _is_ignored("src/process_transfer/data/__init__.py")
