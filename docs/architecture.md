@@ -76,13 +76,19 @@ Configuration files use engineering units, each quantity written as a value and 
 
 DuckDB is the initial database: lightweight, serverless, real SQL, strong Parquet integration, reproducible locally and suited to analytical workloads. A production system may later move to PostgreSQL. Raw numerical data are stored as Parquet, not only CSV.
 
-Measurements are stored in long format. The M0 schema has exactly five tables:
+Measurements are stored in long format. The M0 schema has exactly five tables, whose columns, identities, time convention and quality flag are fixed in `docs/data_contract.md` (D-021 to D-024):
 
-    plants               plant_id, name, process_type, created_at
+    plants               plant_id, name, process_type
     process_parameters   plant_id, parameter, value, unit   (known parameters only)
-    sensors              sensor_id, plant_id, variable_name, unit, sampling_period
-    measurements         plant_id, sensor_id, run_id, timestamp, value, quality_flag
-    operating_runs       run_id, plant_id, start_time, end_time, operating_mode, description
+    sensors              sensor_id, plant_id, variable_name, channel_kind, unit,
+                         sampling_period_s, noise_model, noise_std
+    operating_runs       run_id, plant_id, dataset_id, operating_mode, description,
+                         start_time_s, end_time_s, sampling_period_s, n_samples,
+                         content_sha256
+    measurements         plant_id, run_id, sensor_id, sample_index, time_s, value,
+                         quality_flag
+
+`sensors` describes channels: measured variables and the four known inputs, told apart by `channel_kind`. No table holds a wall-clock time; process time is relative seconds and an integer tick.
 
 Experiment and model tables (`model_runs`, `metrics`, `transfer_actions`) arrive with the milestones that need them. Important transformations (quality filtering, time alignment, resampling, window operations, lagged variables, source-target comparisons) are written as readable `.sql` files rather than hidden behind an ORM or replaced by Pandas.
 

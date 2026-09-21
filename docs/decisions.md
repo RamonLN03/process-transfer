@@ -153,3 +153,35 @@ sigma is a standard deviation, not a limit of the error. For Gaussian noise abou
 Correction to the recommendation above. It argued that reading 2 would leak ground truth, because the nominal steady state of the target is fixed by hidden physics. That was overstated and is withdrawn as a reason. The concentration at which a plant normally runs is something its engineers observe, and an error stated as a percentage of reading or of span is an ordinary instrument specification. A relative noise level is not by itself a leak of ground truth; whether it would be one depends on where the number comes from and who is given it. The decision rests on the common instrument specification and on nothing else.
 
 Consequences. Relative to its own nominal concentration the target is noisier than the source, 2.6 % against 2.0 %, which is accepted as part of the scenario. Why two readings existed is kept above: D-010 wrote the noise as a percentage, `docs/assumptions.md` as an absolute value, and the two agree on the source only. The recovery tolerances of P3 are unchanged (D-019).
+
+## D-021 Identity of stored runs, and noise streams derived from it (2026-09-21, decided by the implementation agent, technical and reversible)
+
+Taken under the authorisation of the project owner to settle reversible details of storage, identifiers, schema and queries. The full text is `docs/data_contract.md`.
+
+Three things are kept apart: the logical identity of a run, `run_id`, built from plant, protocol, excitation seed, number of excursions and noise realisation; the generation attempt, UTC time and commit; and the content hash, a SHA-256 of a versioned canonical encoding of the observations. The same identity with the same content is accepted and changes nothing; the same identity with different content is a conflict and an error. A published data set is never modified.
+
+The noise stream of a run is the first 128 bits of the SHA-256 of its `run_id`, as four 32-bit words, under one private master seed per data set. A repetition has the same identity and replays the same noise; a new realisation has a new `n<k>` and a new stream; two runs with one identity or one stream are refused when a data set is defined.
+
+Alternatives. A registry of small integers per plant and run, as M0-E04 used, (plant index, run index): simple, but the same pair means different runs in different data sets, so merging two data sets generated with one seed would share noise without a word. The content hash as the identity: it cannot be known before generating and does not say what a run is. A random identifier per attempt: it makes repetition undetectable. Python's `hash()`: salted per process, so not reproducible.
+
+M0-E04 keeps its own registered streams and is not affected.
+
+## D-022 Process time is relative seconds and an integer tick (2026-09-21, decided by the implementation agent, technical and reversible)
+
+`time_s` is process time in seconds on the clock of the run, a 64-bit float, identical to the instants of the simulation. `sample_index` is the integer tick of the sensor clock and is what joins, lags and gap detection use. No absolute timestamp is stored, and no table holds a time of creation: the virtual plants have no calendar, and a wall-clock column would make two generations of the same data differ. The time of generation is in the manifest of the data set.
+
+This refines the sketch of `docs/architecture.md`, which listed `timestamp`, `created_at`, `start_time` and `end_time`. Alternative set aside: timestamps from an arbitrary origin such as 2000-01-01 UTC, which would add a time zone and a conversion, and would invite confusing the date of a file with the time of the process.
+
+## D-023 Known inputs are channels of the long table; the quality flag describes a record (2026-09-21, decided by the implementation agent, technical and reversible)
+
+The four inputs are stored with their full history in `measurements`, and `sensors` describes channels, with `channel_kind` equal to `measured` or `input`. An input has null noise fields, not zero ones, and is never presented as a noisy sensor. This widens the meaning of `sensors` and keeps the five entities. Alternatives set aside: input columns on `operating_runs`, which lose the history; extra tables; storing only the switching instants, which turns every alignment into a range join and hides a missing row.
+
+`quality_flag` is 0 for a record whose value is present and finite, whose instant is finite and on the sampling clock, and whose channel is declared with a known unit. The writer refuses anything else, so version 1 of the contract holds no other value. It is distinct from the acceptance of the simulated truth, which is decided before anything is observed and whose diagnostics stay private, and from the selection of data, which is a query. No physical criterion is applied to readings.
+
+## D-024 What is available to a model, and where it lives (2026-09-21, decided by the implementation agent, technical and reversible)
+
+Everything a model may read is under `PT_DATA_DIR/available/`: immutable Parquet data sets, the DuckDB databases derived from them, and the exports derived from those. What is needed to regenerate and diagnose, seeds, noise streams, full configurations and the checks of the truth, is under `PT_DATA_DIR/private/`. The branches are siblings, no reader crosses from one to the other, and reading and exporting work without `private/`. It is a separation of content and code paths, not a permission of the operating system.
+
+Known plant parameters are exported through an explicit list of fields of `PlantSpec`: volume, density, heat capacity, heat of reaction and the four nominal inputs. Configuration files are never copied to the available branch. The nominal values of the modeller's simplified model, k0, E/R and UA, are not known plant parameters and are not exported as such; whether E/R is known remains open and belongs to M1. Initial states and the nominal steady state, which come from the true model, are not exported.
+
+DuckDB is a derived store: it is built from published data sets and can be rebuilt. Alternative set aside: DuckDB as the store of record, which would make the database file, inside a synchronised folder by default, the only copy of the data.
