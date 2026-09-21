@@ -18,15 +18,22 @@ Run from the repository root (about five minutes):
 
     python experiments/02_sequential_excitation.py
 
-Figures and a JSON summary are written under PT_DATA_DIR/m0_e03 (git-ignored).
+Every run writes its figures, a copy of the configurations and summary.json, with a
+provenance block, to its own directory PT_DATA_DIR/experiments/m0_e03/<run id>
+(git-ignored). No run overwrites another. These are diagnostic artefacts of the
+simulator and may contain hidden parameters; they are not training data.
 """
 
 from __future__ import annotations
 
+import dataclasses
+import inspect
 import itertools
 import json
+import sys
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import matplotlib
 
@@ -38,9 +45,16 @@ from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm  # noqa: E40
 from process_transfer import __version__  # noqa: E402
 from process_transfer.config import load_true_plant  # noqa: E402
 from process_transfer.cstr_variables import nominal_inputs  # noqa: E402
-from process_transfer.data.paths import output_dir, repository_root  # noqa: E402
+from process_transfer.data.paths import repository_root  # noqa: E402
+from process_transfer.data.provenance import (  # noqa: E402
+    copy_with_fingerprints,
+    environment,
+    git_state,
+    new_run_directory,
+)
 from process_transfer.simulation import cstr_true  # noqa: E402
 from process_transfer.simulation.checks import (  # noqa: E402
+    BALANCE_TOLERANCE,
     TEMPERATURE_ENVELOPE,
     TrajectoryCheck,
     check_trajectory,
@@ -817,15 +831,70 @@ def figure_transitions(matrices: dict[str, np.ndarray], directory) -> None:  # n
 # =========================================================================== #
 
 
+def provenance(directory, state: dict[str, object]) -> dict[str, object]:  # noqa: ANN001
+    """What is needed to reconstruct this run. Hidden parameters are included, through
+    the copied true-plant configurations: this is a diagnostic artefact of the simulator."""
+    defaults = inspect.signature(simulate_piecewise).parameters
+    configurations = [repository_root() / "configs" / f"{name}_cstr.yaml" for name in PLANTS]
+    return {
+        "experiment": "M0-E03",
+        "run_id": directory.name,
+        "started_utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        "command": " ".join(sys.argv),
+        "git": state,
+        "configurations": copy_with_fingerprints(configurations, directory / "configs"),
+        "environment": environment(),
+        "protocols": [dataclasses.asdict(protocol) for protocol in PROTOCOLS],
+        "amplitude_sets": {"A10": A10, "reduced_thermal": REDUCED_THERMAL},
+        "amplitude_order": ["relative q", "relative C_Af", "kelvin T_f", "kelvin T_c"],
+        "durations_s": {
+            "clock": CLOCK,
+            "sequence": SEQUENCE_DURATION,
+            "step_from_nominal": STEP_DURATION,
+            "second_stage": SECOND_STAGE,
+            "settling_before_transition": SETTLING_TIME,
+            "cold_dwells": list(COLD_DWELLS),
+            "rest": REST,
+        },
+        "seeds": list(SEEDS),
+        "criteria": {
+            "temperature_envelope_K": list(TEMPERATURE_ENVELOPE),
+            "balance_tolerance": BALANCE_TOLERANCE,
+            "definition": "process_transfer.simulation.checks.check_trajectory",
+        },
+        "integration": {
+            "method": defaults["method"].default,
+            "rtol": defaults["rtol"].default,
+            "atol": defaults["atol"].default,
+            "sample_period_s": SAMPLE_PERIOD,
+            "restart": "one solver call per input segment",
+        },
+        "cross_checks": {
+            "method": "DOP853",
+            "rtol": 1e-12,
+            "atol": 1e-12,
+            "fine_sample_period_s": 0.01,
+        },
+        "contains_hidden_parameters": True,
+    }
+
+
 def main() -> None:
     plt.rcParams["font.family"] = ["Segoe UI", "DejaVu Sans", "sans-serif"]
     started = time.perf_counter()
     print(f"process_transfer {__version__}; M0-E03 sequential excitation")
     plants = {name: load_plant(name) for name in PLANTS}
-    directory = output_dir("m0_e03")
+    state = git_state()
+    directory = new_run_directory("m0_e03", state)
+    if not state["code_identified"]:
+        print(f"  NOTE: the code of this run is not fully identified: {state['reason']}")
 
     timings: dict[str, float] = {}
-    summary: dict[str, object] = {"version": __version__, "seeds": list(SEEDS)}
+    summary: dict[str, object] = {
+        "version": __version__,
+        "seeds": list(SEEDS),
+        "provenance": provenance(directory, state),
+    }
 
     def timed(label: str, function, *args):  # noqa: ANN001, ANN202
         tick = time.perf_counter()
