@@ -1,5 +1,18 @@
-"""D-009 across the input box: corner stability and the range the states visit
-under the excitation amplitudes of D-010."""
+"""Step responses from the nominal steady state at 24 input cases.
+
+Two amplitude sets are kept apart on purpose:
+
+* the ORIGINAL D-010 amplitudes (q and C_Af +-20 %), the conditions of M0-E01, kept
+  as a historical regression of its finding that the target leaves the envelope;
+* the A10 amplitudes chosen in D-018 (q and C_Af +-10 %), the current verification.
+
+Scope of every statement below: single steps applied from the nominal steady state,
+at 8 single-input excursions and the 16 corners of the input box. Nothing here speaks
+for the interior of the box, for the rest of its boundary, or for chained input
+changes. M0-E03 shows that A10 does NOT keep the target inside the envelope when
+changes are chained (tests/test_checks.py pins that counterexample), so passing these
+tests does not establish that an excitation sequence is safe.
+"""
 
 from pathlib import Path
 
@@ -16,10 +29,11 @@ from process_transfer.simulation.steady_state import SteadyState, find_steady_st
 TEMPERATURE_ENVELOPE = (335.0, 380.0)  # K, docs/assumptions.md
 ALL_PLUS = "q+ C_Af+ T_f+ T_c+"
 
-
-def d010_deviations(u_nominal: np.ndarray) -> np.ndarray:
-    """q and C_Af +-20 % of nominal, T_f and T_c +-5 K (docs/decisions.md D-010)."""
-    return np.array([0.20 * u_nominal[0], 0.20 * u_nominal[1], 5.0, 5.0])
+# (relative q, relative C_Af, kelvin T_f, kelvin T_c)
+AMPLITUDE_SETS = {
+    "original D-010": (0.20, 0.20, 5.0, 5.0),  # historical, M0-E01
+    "A10": (0.10, 0.10, 5.0, 5.0),  # current, D-018
+}
 
 
 def test_input_cases_are_eight_singles_and_sixteen_corners() -> None:
@@ -42,8 +56,8 @@ Verification = tuple[np.ndarray, list[EnvelopeCase], dict[str, list[SteadyState]
 
 
 @pytest.fixture(scope="module")
-def verification(configs_dir: Path) -> dict[str, Verification]:
-    result: dict[str, Verification] = {}
+def verification(configs_dir: Path) -> dict[tuple[str, str], Verification]:
+    result: dict[tuple[str, str], Verification] = {}
     for name in ("source", "target"):
         cfg = load_true_plant(configs_dir / f"{name}_cstr.yaml")
         p, u = TrueCSTRParameters.from_config(cfg), nominal_inputs(cfg.plant)
@@ -57,75 +71,108 @@ def verification(configs_dir: Path) -> dict[str, Verification]:
             )
 
         (nominal,) = steady_states_at(u)
-        cases = input_cases(u, d010_deviations(u))
-        envelope = simulate_envelope(
-            lambda x, inputs, p=p: cstr_true.rhs(0.0, x, inputs, p), nominal.state, cases
-        )
-        corners = {label: steady_states_at(inputs) for label, inputs in cases}
-        result[name] = (u, envelope, corners)
+        for label, (rel_q, rel_c, kelvin_f, kelvin_c) in AMPLITUDE_SETS.items():
+            deviations = np.array([rel_q * u[0], rel_c * u[1], kelvin_f, kelvin_c])
+            cases = input_cases(u, deviations)
+            envelope = simulate_envelope(
+                lambda x, inputs, p=p: cstr_true.rhs(0.0, x, inputs, p), nominal.state, cases
+            )
+            steady = {case_label: steady_states_at(inputs) for case_label, inputs in cases}
+            result[(label, name)] = (u, envelope, steady)
     return result
 
 
-@pytest.mark.parametrize("name", ["source", "target"])
-def test_every_input_case_has_a_unique_stable_steady_state(
-    name: str, verification: dict[str, Verification]
+ALL_KEYS = [(label, name) for label in AMPLITUDE_SETS for name in ("source", "target")]
+
+
+def temperature_range(envelope: list[EnvelopeCase]) -> tuple[float, float]:
+    return (
+        min(case.temperature_range[0] for case in envelope),
+        max(case.temperature_range[1] for case in envelope),
+    )
+
+
+@pytest.mark.parametrize("key", ALL_KEYS)
+def test_each_tested_input_case_has_one_stable_steady_state_in_the_scanned_range(
+    key: tuple[str, str], verification: dict[tuple[str, str], Verification]
 ) -> None:
-    """No fold and no Hopf bifurcation anywhere on the boundary of the input box."""
-    for label, steady_states in verification[name][2].items():
+    """At each of the 24 tested input cases, between 300 and 460 K on a 0.5 K grid. This
+    is a statement about those 24 points, not about the whole input box."""
+    for label, steady_states in verification[key][2].items():
         assert len(steady_states) == 1, label
         assert steady_states[0].is_stable(), label
 
 
-@pytest.mark.parametrize("name", ["source", "target"])
+@pytest.mark.parametrize("key", ALL_KEYS)
 def test_every_step_response_converges_to_the_steady_state_of_its_inputs(
-    name: str, verification: dict[str, Verification]
+    key: tuple[str, str], verification: dict[tuple[str, str], Verification]
 ) -> None:
-    """After 40 min every case sits on the unique steady state of its inputs: no
-    runaway and no sustained oscillation."""
-    _, envelope, corners = verification[name]
+    _, envelope, steady = verification[key]
     for case in envelope:
-        (steady,) = corners[case.label]
-        np.testing.assert_allclose(case.final_state, steady.state, rtol=1e-6, err_msg=case.label)
+        (state,) = steady[case.label]
+        np.testing.assert_allclose(case.final_state, state.state, rtol=1e-6, err_msg=case.label)
 
 
-@pytest.mark.parametrize("name", ["source", "target"])
-def test_concentration_stays_physical(name: str, verification: dict[str, Verification]) -> None:
-    u, envelope, _ = verification[name]
+@pytest.mark.parametrize("key", ALL_KEYS)
+def test_concentration_stays_physical(
+    key: tuple[str, str], verification: dict[tuple[str, str], Verification]
+) -> None:
+    u, envelope, _ = verification[key]
     for case in envelope:
         assert case.c_a_range[0] > 0.0, case.label
         assert case.c_a_range[1] <= 1.2 * u[1], case.label
 
 
-@pytest.mark.parametrize("name", ["source", "target"])
-def test_hottest_case_is_the_all_plus_corner(
-    name: str, verification: dict[str, Verification]
+@pytest.mark.parametrize("key", ALL_KEYS)
+def test_hottest_step_is_the_all_plus_corner(
+    key: tuple[str, str], verification: dict[tuple[str, str], Verification]
 ) -> None:
-    """More flow of a richer feed brings more reactant, hence more heat: the hottest
-    corner has q up, not down. The preliminary scratch calculation assumed the
-    opposite and therefore underestimated the peak temperature."""
-    hottest = max(verification[name][1], key=lambda case: case.temperature_range[1])
+    """More flow of a richer feed brings more reactant, hence more heat: among single
+    steps from nominal the hottest corner has q up, not down. The first scratch
+    calculation assumed the opposite and underestimated the peak."""
+    hottest = max(verification[key][1], key=lambda case: case.temperature_range[1])
     assert hottest.label == ALL_PLUS
 
 
-def test_source_stays_inside_the_temperature_envelope(
-    verification: dict[str, Verification],
+# --------------------------------------------------------------------------- #
+# Historical: the original D-010 amplitudes, as run in M0-E01
+# --------------------------------------------------------------------------- #
+
+
+def test_historical_original_amplitudes_keep_the_source_inside_the_envelope(
+    verification: dict[tuple[str, str], Verification],
 ) -> None:
-    for case in verification["source"][1]:
-        assert case.temperature_range[0] >= TEMPERATURE_ENVELOPE[0], case.label
-        assert case.temperature_range[1] <= TEMPERATURE_ENVELOPE[1], case.label
+    low, high = temperature_range(verification[("original D-010", "source")][1])
+    assert (low, high) == pytest.approx((339.67, 372.44), abs=0.01)
+    assert TEMPERATURE_ENVELOPE[0] <= low and high <= TEMPERATURE_ENVELOPE[1]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M0-E01: under the D-010 amplitudes the target peaks at about 385 K on the "
-        "all-plus corner, above the documented 380 K limit. Open decision D-018; "
-        "this marker must be removed when the design or the amplitudes change."
-    ),
+def test_historical_original_amplitudes_take_the_target_outside_the_envelope(
+    verification: dict[tuple[str, str], Verification],
+) -> None:
+    """The finding of M0-E01 that led to D-018, kept reproducible: 385.29 K on the
+    all-plus corner, 5.3 K above the limit."""
+    envelope = verification[("original D-010", "target")][1]
+    low, high = temperature_range(envelope)
+    assert (low, high) == pytest.approx((341.19, 385.29), abs=0.01)
+    assert high > TEMPERATURE_ENVELOPE[1]
+    too_hot = [case.label for case in envelope if case.temperature_range[1] > 380.0]
+    assert ALL_PLUS in too_hot
+
+
+# --------------------------------------------------------------------------- #
+# Current: the A10 amplitudes chosen in D-018
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"), [("source", (340.42, 365.75)), ("target", (342.37, 376.19))]
 )
-def test_target_stays_inside_the_temperature_envelope(
-    verification: dict[str, Verification],
+def test_a10_steps_from_the_nominal_steady_state_stay_inside_the_envelope(
+    name: str, expected: tuple[float, float], verification: dict[tuple[str, str], Verification]
 ) -> None:
-    for case in verification["target"][1]:
-        assert case.temperature_range[0] >= TEMPERATURE_ENVELOPE[0], case.label
-        assert case.temperature_range[1] <= TEMPERATURE_ENVELOPE[1], case.label
+    """What D-018 established, and no more: single steps from nominal. Sequential
+    excitation with the same amplitudes fails on the target (M0-E03)."""
+    low, high = temperature_range(verification[("A10", name)][1])
+    assert (low, high) == pytest.approx(expected, abs=0.01)
+    assert TEMPERATURE_ENVELOPE[0] <= low and high <= TEMPERATURE_ENVELOPE[1]
