@@ -13,14 +13,16 @@ full. It must stay apart from the data that will later be made available for
 training or adaptation, which never carries ground truth (``AGENTS.md``).
 
 A run is only as well identified as the information available. When git is missing,
-or the working tree has uncommitted changes, that is recorded as such: no commit is
-invented and the run is not presented as fully identified.
+a git query fails, or the working tree has uncommitted changes, that is recorded as
+such: no commit is invented, a failed query is never read as a clean answer, and the
+run is not presented as fully identified.
 """
 
 from __future__ import annotations
 
 import hashlib
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -37,14 +39,32 @@ def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
     return subprocess.run(["git", *arguments], cwd=root, capture_output=True, check=False)
 
 
+def _failure(query: str, result: subprocess.CompletedProcess[bytes]) -> str:
+    """One line saying which query failed, with its exit code and git's own words."""
+    said = result.stderr.decode("utf-8", "replace").strip().splitlines()
+    detail = f": {said[0]}" if said else ""
+    return f"git {query} failed with exit code {result.returncode}{detail}"
+
+
+# A full object name: 40 hexadecimal digits with SHA-1, 64 with SHA-256.
+_OBJECT_NAME = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
+
+
 def git_state(root: Path | None = None) -> dict[str, object]:
-    """The commit and the state of the working tree, or an explicit statement that they
+    """The commit and the state of the working tree, or an explicit statement of what
     could not be determined.
 
-    ``code_identified`` is true only when the commit is known and nothing is modified
-    or untracked, so that the commit alone reproduces the code. With local changes the
-    commit, the list of changed files and a hash of ``git diff HEAD`` are recorded, but
-    the run is not claimed to be reproducible from the commit.
+    ``code_identified`` is true only when the commit is known and git has answered that
+    nothing is modified or untracked, so that the commit alone reproduces the code. With
+    local changes the commit, the list of changed files and a hash of ``git diff HEAD``
+    are recorded, but the run is not claimed to be reproducible from the commit. That
+    hash covers tracked files only: untracked files are listed, not fingerprinted.
+
+    A query that fails is not an answer. Every exit code is checked, and an empty output
+    is read as "nothing to report" only from a query that succeeded. When the working
+    tree cannot be read, ``dirty`` is ``None``, which means unknown, not clean; when the
+    changes cannot be hashed, ``diff_sha256`` is ``None``. What was obtained reliably,
+    such as the commit, is kept, and ``reason`` names the query that failed.
     """
     root = repository_root() if root is None else root
     unknown: dict[str, object] = {
@@ -59,26 +79,53 @@ def git_state(root: Path | None = None) -> dict[str, object]:
         return {**unknown, "reason": "the git executable was not found"}
     inside = _git(root, "rev-parse", "--is-inside-work-tree")
     if inside.returncode != 0 or inside.stdout.strip() != b"true":
-        return {**unknown, "reason": f"{root} is not a git checkout"}
+        said = inside.stderr.decode("utf-8", "replace").strip().splitlines()
+        detail = f" ({said[0]})" if said else ""
+        return {**unknown, "reason": f"{root} is not a git checkout{detail}"}
     head = _git(root, "rev-parse", "HEAD")
     if head.returncode != 0:
-        return {**unknown, "reason": "the checkout has no commit yet"}
+        # The usual cause is a checkout without a commit yet; git's words say which.
+        return {
+            **unknown,
+            "reason": f"{_failure('rev-parse HEAD', head)}; no commit identifies this checkout",
+        }
+    commit = head.stdout.decode("ascii", "replace").strip()
+    if _OBJECT_NAME.fullmatch(commit) is None:
+        return {**unknown, "reason": f"git rev-parse HEAD answered {commit!r}, not a commit"}
 
-    status = _git(root, "status", "--porcelain").stdout.decode("utf-8", "replace").splitlines()
-    dirty = len(status) > 0
-    diff = _git(root, "diff", "HEAD").stdout if dirty else b""
+    known: dict[str, object] = {**unknown, "available": True, "commit": commit}
+    status = _git(root, "status", "--porcelain")
+    if status.returncode != 0:
+        return {
+            **known,
+            "reason": _failure("status", status)
+            + "; whether the working tree matches the commit is unknown",
+        }
+    changed_files = status.stdout.decode("utf-8", "replace").splitlines()
+    if not changed_files:
+        return {
+            **known,
+            "dirty": False,
+            "changed_files": [],
+            "code_identified": True,
+            "reason": "clean working tree",
+        }
+
+    reason = "uncommitted or untracked changes: the commit alone does not identify the code"
+    diff = _git(root, "diff", "HEAD")
+    if diff.returncode != 0:
+        return {
+            **known,
+            "dirty": True,
+            "changed_files": changed_files,
+            "reason": f"{reason}; {_failure('diff', diff)}, so the changes have no fingerprint",
+        }
     return {
-        "available": True,
-        "commit": head.stdout.decode("ascii").strip(),
-        "dirty": dirty,
-        "changed_files": status,
-        "diff_sha256": hashlib.sha256(diff).hexdigest() if dirty else None,
-        "code_identified": not dirty,
-        "reason": (
-            "uncommitted or untracked changes: the commit alone does not identify the code"
-            if dirty
-            else "clean working tree"
-        ),
+        **known,
+        "dirty": True,
+        "changed_files": changed_files,
+        "diff_sha256": hashlib.sha256(diff.stdout).hexdigest(),
+        "reason": reason,
     }
 
 
@@ -119,12 +166,18 @@ def new_run_directory(experiment: str, state: dict[str, object] | None = None) -
     """A fresh directory ``experiments/<experiment>/<run id>`` that did not exist before.
 
     The run id is the UTC time to the second, the short commit (or ``nogit``) and a
-    ``-dirty`` mark. Two runs in the same second get a numeric suffix. An existing
-    directory is never reused, so a run never overwrites another.
+    mark: ``-dirty`` when the working tree has changes, ``-unverified`` when the commit
+    is known but the working tree could not be read. Only a working tree that git
+    reported as clean carries no mark. Two runs in the same second get a numeric
+    suffix. An existing directory is never reused, so a run never overwrites another.
     """
     state = git_state() if state is None else state
     commit = str(state["commit"])[:7] if state.get("commit") else "nogit"
-    mark = "-dirty" if state.get("dirty") else ""
+    dirty = state.get("dirty")
+    if dirty is None:  # unknown is not clean
+        mark = "-unverified" if state.get("commit") else ""
+    else:
+        mark = "-dirty" if dirty else ""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     parent = output_dir("experiments", experiment)
     attempt = 1
