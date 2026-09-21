@@ -78,20 +78,38 @@ from process_transfer.simulation.checks import (  # noqa: E402
 from process_transfer.simulation.cstr_true import TrueCSTRParameters  # noqa: E402
 from process_transfer.simulation.excitation import excursions_with_rest  # noqa: E402
 from process_transfer.simulation.integration import simulate_piecewise  # noqa: E402
+from process_transfer.simulation.protocols import (  # noqa: E402
+    A10_COOLANT_TEMPERATURE,
+    A10_FEED_TEMPERATURE,
+    A10_RELATIVE_FEED_CONCENTRATION,
+    A10_RELATIVE_FLOW,
+    P3_HOLD,
+    P3_PEAK_AGREEMENT,
+    P3_RECOVERY_TOLERANCE_CA,
+    P3_RECOVERY_TOLERANCE_T,
+    P3_REST,
+    a10_amplitudes,
+)
 from process_transfer.simulation.steady_state import find_steady_states  # noqa: E402
 
 # =========================================================================== #
 # Fixed before the sweep was run
 # =========================================================================== #
 
-A10 = (0.10, 0.10, 5.0, 5.0)  # relative q, relative C_Af, kelvin T_f, kelvin T_c (D-018)
-HOLD = 120.0  # s, excursion (D-019)
-REST = 600.0  # s at the nominal inputs (D-019)
+# The protocol and its tolerances live in process_transfer.simulation.protocols, the single
+# definition shared with the tests and with later data generation. Their values are those
+# this script first ran with: 120 s, 600 s, 0.005 K, 0.038 mol/m^3 and 0.05 K.
+HOLD, REST = P3_HOLD, P3_REST
 SAMPLE_PERIOD = 0.1  # s
-
-RECOVERY_TOLERANCE_T = 0.005  # K
-RECOVERY_TOLERANCE_CA = 0.038  # mol/m^3
-PEAK_AGREEMENT = 0.05  # K
+RECOVERY_TOLERANCE_T = P3_RECOVERY_TOLERANCE_T
+RECOVERY_TOLERANCE_CA = P3_RECOVERY_TOLERANCE_CA
+PEAK_AGREEMENT = P3_PEAK_AGREEMENT
+A10 = (
+    A10_RELATIVE_FLOW,
+    A10_RELATIVE_FEED_CONCENTRATION,
+    A10_FEED_TEMPERATURE,
+    A10_COOLANT_TEMPERATURE,
+)
 
 PLANTS = ("source", "target")
 INK, INK_SECONDARY = "#0b0b0b", "#52514e"
@@ -113,8 +131,7 @@ class Plant:
 
     @property
     def amplitudes(self) -> np.ndarray:
-        u = self.nominal_inputs
-        return np.array([A10[0] * u[0], A10[1] * u[1], A10[2], A10[3]])
+        return a10_amplitudes(self.nominal_inputs)
 
 
 def load_plant(name: str) -> Plant:
