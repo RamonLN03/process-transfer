@@ -25,6 +25,7 @@ from process_transfer.simulation.protocols import (
     a10_amplitudes,
     corner_label,
     corner_levels,
+    p3_corners,
     p3_segments,
 )
 
@@ -124,3 +125,26 @@ def test_a_seeded_p3_sequence_is_accepted(
     )
     assert check.accepted
     assert check.refined_peak_temperature < 380.0
+
+
+@pytest.mark.parametrize("name", ["source", "target"])
+def test_a_history_of_ten_excursions_behaves_like_ten_steps_from_nominal(
+    name: str, true_plants: dict[str, PlantUnderTest]
+) -> None:
+    """M0-E03b examined pairs and argued that residuals do not build up over longer
+    histories. Here is one such history, the sequence of excitation seed 0 that M0-E04
+    observes: every excursion starts within the recovery tolerance of the nominal steady
+    state and reproduces the peak of the same excursion started exactly there. The
+    tolerances are those verified for pairs, unchanged."""
+    plant = true_plants[name]
+    corners = p3_corners(10, seed=0)
+    whole = run(plant, corners)
+    assert check_trajectory(whole, plant.parameters).accepted
+    assert corner_label(corners[3]) == corner_label(corners[4]) == "++++"  # the hottest, twice
+
+    for k, corner in enumerate(corners):
+        start = np.abs(whole.segments[2 * k].states[0] - plant.nominal_state)
+        assert start[0] <= P3_RECOVERY_TOLERANCE_CA and start[1] <= P3_RECOVERY_TOLERANCE_T
+        piece = dataclasses.replace(whole, segments=whole.segments[2 * k : 2 * k + 2])
+        alone = run(plant, corner[np.newaxis, :])
+        assert abs(piece.refined_peak(1)[0] - alone.refined_peak(1)[0]) <= P3_PEAK_AGREEMENT

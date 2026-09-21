@@ -200,3 +200,23 @@ def test_channels_streams_and_seeds_are_uncorrelated() -> None:
     for label, (a, b) in pairs.items():
         r, z = correlation(a, b)
         assert abs(z) <= Z_LIMIT, (label, r, z)
+
+
+def test_the_diagnostics_are_calibrated_through_the_sensors_over_many_seeds() -> None:
+    """No seed is chosen here: seeds 0 to 249, two streams and two channels, a thousand
+    series of the 1201 readings of a two-hour run. Every family of z-scores has mean 0
+    and deviation 1, so a run whose scores lean to one side, as one realisation in
+    twenty does, is chance and not a bias of the sensors or of the statistics."""
+    zeros = np.zeros((1201, 2))
+    scores: dict[str, list[float]] = {}
+    for seed in range(250):
+        for plant in (0, 1):
+            errors = measure(zeros, (C_A, T), seed, (plant, 0))
+            for column, sensor in enumerate((C_A, T)):
+                found = noise_statistics(errors[:, column], sensor.noise_std)
+                for name, z in found.z_scores.items():
+                    scores.setdefault(name, []).append(z)
+    for name, values in scores.items():
+        assert len(values) == 1000
+        assert abs(np.mean(values)) < 0.15, name  # 4.7 standard errors of the mean
+        assert 0.90 < np.std(values) < 1.10, name  # 4.5 standard errors of the deviation
