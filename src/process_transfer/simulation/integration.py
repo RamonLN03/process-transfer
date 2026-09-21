@@ -259,7 +259,11 @@ def simulate_piecewise(
         )
         if not solution.success:
             raise IntegrationError(f"segment {index} ({method}): {solution.message}")
-        states = solution.y.T
+        states = solution.y.T.copy()
+        # The first sample of a segment is its initial condition, by definition. Taken
+        # from the solver's interpolant at t = 0 it can differ from it in the last bit,
+        # which would store the switching instant twice with two different states.
+        states[0] = state
         if not np.all(np.isfinite(states)):
             raise IntegrationError(f"segment {index} ({method}): non-finite state")
 

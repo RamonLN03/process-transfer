@@ -139,3 +139,25 @@ def test_refined_peak_is_not_applied_at_a_segment_end() -> None:
     trajectory = simulate_piecewise(lag, X0, SEGMENTS, sample_period=0.5)
     assert trajectory.refined_peak(0) == trajectory.peak(0)  # maximum at the final sample
     assert trajectory.refined_peak(1) == trajectory.peak(1)  # maximum at the first sample
+
+
+def test_the_stored_state_is_exactly_continuous_across_every_input_change() -> None:
+    """Regression: on a nonlinear system the first stored sample of a segment came from
+    the solver's interpolant at t = 0 and differed from the last sample of the previous
+    segment in the last bit, so a switching instant was stored with two states."""
+
+    def nonlinear(x: np.ndarray, u: np.ndarray) -> np.ndarray:
+        rate = 1.0e3 * np.exp(-3000.0 / x[1]) * x[0]
+        return np.array([0.02 * (u[1] - x[0]) - rate, 0.02 * (u[2] - x[1]) + 0.2 * rate])
+
+    segments = [
+        InputSegment(37.0, np.array([0.0, 500.0, 345.0, 0.0])),
+        InputSegment(41.0, np.array([0.0, 550.0, 355.0, 0.0])),
+        InputSegment(29.0, np.array([0.0, 450.0, 350.0, 0.0])),
+    ]
+    start = np.array([250.0, 350.0])
+    trajectory = simulate_piecewise(nonlinear, start, segments, sample_period=0.1)
+    np.testing.assert_array_equal(trajectory.segments[0].states[0], start)
+    for before, after in zip(trajectory.segments[:-1], trajectory.segments[1:], strict=True):
+        np.testing.assert_array_equal(after.states[0], before.states[-1])
+        assert after.times[0] == before.times[-1]
