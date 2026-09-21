@@ -13,6 +13,12 @@ that the trajectory as stored, with the inputs as recorded, satisfies the balanc
 A wrong input attached to a segment, a sample misaligned with a switching instant
 or a coarse sampling period all show up as a residual.
 
+The balances are closed inside each segment, so on their own they say nothing about
+what happens between two segments. That part rests on the structure of a
+``Trajectory``: every segment starts at the instant and in the state at which the
+previous one ended, checked exactly when the trajectory is built. A jump of the state
+at a junction therefore cannot reach this function.
+
 Units. Both balances are written per unit of reactor content. The mass residual is
 a concentration, mol/m^3. The energy residual is a temperature, K: energy divided by
 the thermal mass V rho cp.

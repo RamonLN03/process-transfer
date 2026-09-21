@@ -8,7 +8,11 @@ segment, or around another local maximum, was missed.
 import numpy as np
 import pytest
 
-from process_transfer.simulation.integration import SegmentTrajectory, Trajectory
+from process_transfer.simulation.integration import (
+    SegmentTrajectory,
+    Trajectory,
+    _largest_parabolic_vertex,
+)
 
 
 def segment(times: list[float], temperatures: list[float]) -> SegmentTrajectory:
@@ -79,8 +83,18 @@ def test_a_vertex_outside_the_segment_is_ignored() -> None:
 
 
 def test_repeated_sampling_instants_are_skipped_not_divided_by() -> None:
-    found = trajectory(segment([0, 1, 1, 2], [370.0, 380.0, 380.0, 370.0]))
-    assert found.refined_peak(1) == (380.0, 1.0)
+    """A segment with a repeated instant can no longer be built, so the function that
+    fits the parabolas is called on the arrays directly: it must not divide by the zero
+    spacing, whatever its caller guarantees."""
+    with pytest.raises(ValueError, match="strictly increasing"):
+        segment([0, 1, 1, 2], [370.0, 380.0, 380.0, 370.0])
+
+    times = np.array([0.0, 1.0, 1.0, 2.0])
+    assert _largest_parabolic_vertex(times, np.array([370.0, 380.0, 380.0, 370.0])) is None
+    # with one usable triple left, that triple is still refined
+    times = np.array([0.0, 1.0, 1.0, 2.0, 3.0])
+    value, when = _largest_parabolic_vertex(times, np.array([370.0, 375.0, 375.0, 380.0, 375.0]))
+    assert value == pytest.approx(380.0) and when == pytest.approx(2.0)
 
 
 def test_fewer_than_three_samples_return_the_largest_sample() -> None:
@@ -103,10 +117,10 @@ def test_the_estimate_is_never_below_the_largest_sample() -> None:
         first = np.sort(rng.uniform(0.0, 10.0, n_first))
         second = first[-1] + np.sort(rng.uniform(0.0, 10.0, n_second))
         second[0] = first[-1]
-        found = trajectory(
-            segment(list(first), list(rng.normal(360.0, 10.0, n_first))),
-            segment(list(second), list(rng.normal(360.0, 10.0, n_second))),
-        )
+        before = rng.normal(360.0, 10.0, n_first)
+        after = rng.normal(360.0, 10.0, n_second)
+        after[0] = before[-1]  # the state is continuous where the two segments meet
+        found = trajectory(segment(list(first), list(before)), segment(list(second), list(after)))
         value, when = found.refined_peak(1)
         assert np.isfinite(value) and np.isfinite(when)
         assert value >= found.peak(1)[0]

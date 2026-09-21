@@ -5,6 +5,12 @@ raises otherwise), every time, state and input is finite, the states are physica
 the temperature stays inside the documented envelope and the integrated balances
 close. Nothing is clipped or repaired: a violation is reported as a violation.
 
+These checks look at one segment at a time. That the segments form one continuous
+trajectory, without a gap, an overlap or a jump of the state where the inputs change,
+is a property of ``Trajectory`` itself, enforced when it is built and protected by
+read-only arrays afterwards (``simulation/integration.py``). Pieces simulated apart
+and put side by side are therefore rejected before they can be checked here.
+
 Physical rules, for a reactor that only consumes A:
 
 * the four inputs, feed flow and concentration, feed and coolant temperature, are

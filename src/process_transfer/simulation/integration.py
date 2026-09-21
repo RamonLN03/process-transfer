@@ -67,28 +67,76 @@ class InputSegment:
     inputs: FloatArray
 
 
+def _read_only_copy(values: FloatArray) -> FloatArray:
+    """A float64 copy that cannot be written to. What is validated when a trajectory is
+    built is then what every later reader sees: neither the caller's array nor an
+    assignment in place can change it afterwards."""
+    copy = np.array(values, dtype=np.float64)
+    copy.setflags(write=False)
+    return copy
+
+
 @dataclass(frozen=True)
 class SegmentTrajectory:
-    """Samples of one segment, both of its ends included."""
+    """Samples of one segment, both of its ends included.
+
+    The sampling instants are finite and strictly increasing, there is one row of
+    states per instant, and the inputs are one constant vector. Anything else is
+    rejected here, where the samples enter. The arrays are stored as read-only copies.
+    """
 
     times: FloatArray  # absolute time, s
     states: FloatArray  # shape (n_samples, n_states)
     inputs: FloatArray  # the constant input vector of the segment
 
     def __post_init__(self) -> None:
-        if self.times.ndim != 1 or len(self.times) < 2:
+        times, states, inputs = (
+            _read_only_copy(values) for values in (self.times, self.states, self.inputs)
+        )
+        if times.ndim != 1 or len(times) < 2:
             raise ValueError("a segment needs at least its two end samples")
-        if self.states.ndim != 2 or len(self.states) != len(self.times):
+        if states.ndim != 2 or len(states) != len(times):
             raise ValueError(
-                f"states must have one row per sample: {self.states.shape} against "
-                f"{len(self.times)} sampling instants"
+                f"states must have one row per sample: {states.shape} against "
+                f"{len(times)} sampling instants"
             )
+        if inputs.ndim != 1:
+            raise ValueError(
+                f"inputs must be the one constant vector of the segment, got shape {inputs.shape}"
+            )
+        if not np.all(np.isfinite(times)):
+            raise ValueError("sampling instants must be finite")
+        not_increasing = np.flatnonzero(times[1:] <= times[:-1])
+        if not_increasing.size:
+            first = int(not_increasing[0])
+            raise ValueError(
+                "sampling instants must be strictly increasing: sample "
+                f"{first + 1} is at {float(times[first + 1])!r} s, after {float(times[first])!r} s"
+            )
+        for name, values in (("times", times), ("states", states), ("inputs", inputs)):
+            object.__setattr__(self, name, values)
 
 
 @dataclass(frozen=True)
 class Trajectory:
     """A simulated trajectory, kept segment by segment so that quantities which are
-    discontinuous at the input changes can be integrated correctly."""
+    discontinuous at the input changes can be integrated correctly.
+
+    Structure, checked when the trajectory is built. Consecutive segments share their
+    switching instant: the next one starts at the instant and in the state at which the
+    previous one ended, so there is no gap, no overlap and no jump of the state. The
+    inputs may change discontinuously there, and usually do. A trajectory need not start
+    at t = 0, so a run of consecutive segments cut out of a longer one is valid.
+
+    The comparison at a junction is exact, not within a tolerance. The switching instant
+    is one instant and the state there is one state, stored twice; ``times`` and
+    ``states`` keep a single copy, which is only right if the two are the same number.
+    ``simulate_piecewise`` stores them identically by construction. A tolerance would
+    need an arbitrary scale, and would mean choosing between two values without saying
+    so. A junction that differs, even in the last bit, is rejected; it is never repaired,
+    interpolated or smoothed. Pieces computed separately are joined correctly by
+    starting each from the final state of the previous one.
+    """
 
     segments: tuple[SegmentTrajectory, ...]
     method: str
@@ -97,8 +145,35 @@ class Trajectory:
     n_rhs_evaluations: int
 
     def __post_init__(self) -> None:
-        if len(self.segments) == 0:
+        segments = tuple(self.segments)
+        if len(segments) == 0:
             raise ValueError("a trajectory needs at least one segment")
+        for index, (before, after) in enumerate(zip(segments[:-1], segments[1:], strict=True)):
+            pair = f"segments {index} and {index + 1}"
+            if (
+                before.states.shape[1] != after.states.shape[1]
+                or before.inputs.shape != after.inputs.shape
+            ):
+                raise ValueError(
+                    f"{pair} differ in the number of states or of inputs: states "
+                    f"{before.states.shape[1]} and {after.states.shape[1]}, inputs "
+                    f"{before.inputs.shape[0]} and {after.inputs.shape[0]}"
+                )
+            end, start = float(before.times[-1]), float(after.times[0])
+            if start != end:
+                kind = "a gap" if start > end else "an overlap"
+                raise ValueError(
+                    f"{pair} leave {kind} in time: one ends at {end!r} s and the next "
+                    f"starts at {start!r} s"
+                )
+            if not np.array_equal(after.states[0], before.states[-1]):
+                raise ValueError(
+                    f"the state jumps between {pair}, at t = {end!r} s: from "
+                    f"{before.states[-1].tolist()} to {after.states[0].tolist()}. A step in "
+                    "the inputs does not move the states instantaneously; the junction is "
+                    "rejected, not repaired"
+                )
+        object.__setattr__(self, "segments", segments)
 
     @property
     def times(self) -> FloatArray:
@@ -124,7 +199,9 @@ class Trajectory:
 
     @property
     def duration(self) -> float:
-        return float(self.segments[-1].times[-1])
+        """Seconds between the first and the last sample. It equals the final instant
+        only for a trajectory that starts at t = 0."""
+        return float(self.segments[-1].times[-1] - self.segments[0].times[0])
 
     def state_range(self, index: int) -> tuple[float, float]:
         """Minimum and maximum of one state over the sampled trajectory."""
