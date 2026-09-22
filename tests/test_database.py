@@ -261,6 +261,24 @@ def test_a_failure_half_way_leaves_nothing_of_the_run(
     assert database.failed_checks(quality_report(connection)) == {}
 
 
+def test_a_connection_reads_files_as_they_are_now_and_not_from_a_cache(tmp_path: Path) -> None:
+    """Regression, seen in CI on Linux and not on Windows. DuckDB served the rows of a
+    Parquet file that had been rewritten with the same size within the same second from
+    its external file cache, so the ingestion staged a run that was no longer on the disk
+    and the test below failed there. Every connection of this module turns that cache
+    off, the read-only ones included; the test below is its behavioural check."""
+    for connection in (connect(), connect(tmp_path / "a.duckdb")):
+        (value,) = connection.execute(
+            "SELECT current_setting('enable_external_file_cache')"
+        ).fetchone()
+        assert value is False
+        connection.close()
+    reader = connect(tmp_path / "a.duckdb", read_only=True)
+    (value,) = reader.execute("SELECT current_setting('enable_external_file_cache')").fetchone()
+    assert value is False
+    reader.close()
+
+
 def tampered(dataset: Dataset, run_id: str, change) -> None:  # noqa: ANN001
     """Alter the file of a run after the data set was opened and verified."""
     path = dataset.measurement_path(run_id)

@@ -99,8 +99,17 @@ def database_path(name: str) -> Path:
 
 def connect(path: Path | None = None, read_only: bool = False) -> duckdb.DuckDBPyConnection:
     """A connection with the schema and the views in place. ``None`` is a database in
-    memory. A read-only connection expects them to be there already."""
+    memory. A read-only connection expects them to be there already.
+
+    DuckDB keeps an in-memory cache of the external files it reads, Parquet included,
+    and validates an entry by the file's modification time, which the file system gives
+    in seconds. On Linux, a Parquet file rewritten with the same size within the same
+    second was served from that cache, and the ingestion staged rows of a file that was
+    no longer on the disk. Every connection made here turns the cache off: a data set is
+    read once, its files are small, and what is staged must be what is on the disk at
+    that moment."""
     connection = duckdb.connect(":memory:" if path is None else str(path), read_only=read_only)
+    connection.execute("SET enable_external_file_cache = false")
     if not read_only:
         for relative in (*sql_files("schema"), *sql_files("views")):
             connection.execute(read_sql(relative))
