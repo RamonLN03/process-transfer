@@ -255,3 +255,4 @@ A threshold on the size of a seed, below which it would not be searched for, is 
 
 * Verification on reading is by rules, not by signature. A data set edited consistently, tables and manifest digests together, is accepted when it follows the contract. The content hashes protect the numbers of a run, not the metadata around them.
 * `open_export_directory` rebuilds every run to check its hash, as `open_dataset_directory` does, so opening an export reads all of its rows. Nothing at the sizes of M0.
+* Content hashes across library versions, seen in practice while re-running M0-E05: under numpy 2.3.5 and scipy 1.16.3 all six runs have other hashes than under 2.5.3 and 1.18.1, on the same machine and commit, and the generation was refused as a conflict with the published data set. The hash identifies the numbers of one environment; the environment is recorded with every attempt.

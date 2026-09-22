@@ -63,7 +63,7 @@ Other items:
 
 * Linux. Identifiers are lower-case ASCII so that a path is the same file on both systems, separators go through `pathlib`, and the tests avoid Windows-only assumptions; none of it has run on Linux.
 * Python 3.12, which CI would cover.
-* Agreement of content hashes across machines. They are stated to hold on one machine and one set of library versions.
+* Agreement of content hashes across library versions: shown not to hold. On the development machine, at one commit, the six runs of M0-E05 have other hashes under numpy 2.3.5 and scipy 1.16.3 than under 2.5.3 and 1.18.1 (experiment log, re-run of 2026-09-22). A data set is reproduced bit for bit by its code, configuration, seeds and environment together, and the environment is recorded with every attempt.
 * Behaviour under a power cut during the rename that publishes a data set, and two writers on several machines.
 
 ## Questions for the project owner
