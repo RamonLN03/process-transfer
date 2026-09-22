@@ -256,3 +256,29 @@ A threshold on the size of a seed, below which it would not be searched for, is 
 * Verification on reading is by rules, not by signature. A data set edited consistently, tables and manifest digests together, is accepted when it follows the contract. The content hashes protect the numbers of a run, not the metadata around them.
 * `open_export_directory` rebuilds every run to check its hash, as `open_dataset_directory` does, so opening an export reads all of its rows. Nothing at the sizes of M0.
 * Content hashes across library versions, seen in practice while re-running M0-E05: under numpy 2.3.5 and scipy 1.16.3 all six runs have other hashes than under 2.5.3 and 1.18.1, on the same machine and commit, and the generation was refused as a conflict with the published data set. The hash identifies the numbers of one environment; the environment is recorded with every attempt.
+
+## Review of 2026-09-22, eighth: the first runs of continuous integration
+
+Scope. The history was pushed to the private remote on 2026-09-22 and CI ran for the first time, on Ubuntu with Python 3.12 and 3.13 and with the same numpy, scipy, pyarrow and duckdb as the project's environment on Windows. One test failed on both, `test_files_that_changed_after_verification_do_not_get_in` of `tests/test_database.py`; it passes on Windows.
+
+### Failure reproduced and fixed
+
+| Where | Input | What happened | Silent | Resolution | Commit |
+|---|---|---|---|---|---|
+| `database.stage_run`, through DuckDB's `read_parquet` | a Parquet file rewritten with the same size within the same second, on Linux | the rows staged were those of the previous file, or a mixture of cached bytes and new ones that DuckDB reports as "Out of buffer". DuckDB 1.5.5 keeps an in-memory cache of the external files it reads and validates an entry by the modification time, which the file system gives in seconds. On Windows the same sequence reads correctly | yes, whenever the mixture parses | every connection made by `database.connect` turns the cache off, `enable_external_file_cache = false`, the read-only ones included; a data set is read once, its files are small, and what is staged must be what is on the disk at that moment | `9a16e01` |
+
+How it was pinned down. The sequence of the failing test was run on the CI runners, on a temporary branch of the remote that was deleted afterwards: eight versions of one file written one after another, each read through DuckDB and through pyarrow, with the cache on, with the cache off, and through `stage_run`. The file has 126 rows; its truncated version, 125 rows, and its version with one changed value have the same size as the original, 3144 bytes; the version with a duplicated row and the version with a NaN have other sizes.
+
+| Version written | Cache on | Cache on, 11 s pause before the truncated write | Cache off | pyarrow |
+|---|---|---|---|---|
+| duplicated row, 3148 bytes | 127 rows | 127 | 127 | 127 |
+| NaN, 3132 bytes | 126, NaN read | 126 | 126 | 126 |
+| truncated, 3144 bytes, same second as the previous write | 126 rows reported, 20 rows of one channel, "Out of buffer" on a third query | 125, right, since the mtime changed | 125 | 125 |
+| original again, 3144 bytes, same second | 126 | 125, the truncated content | 126 | 126 |
+| one value changed, 3144 bytes, same second | 126, value read | 125 rows with the new value | 126, value read | 126 |
+
+`stage_run` behaved as `read_parquet` did: with the cache on, the truncated version failed with "Out of buffer"; with the cache off, every version was staged as written. Setting `parquet_metadata_cache`, already off by default, changed nothing.
+
+### What this changes and what it does not
+
+Nothing of the content: the fix touches how a connection is opened. Published data sets are immutable, so the cache could only have mattered for a file altered after a data set was verified, which is the case the failing test exists for, and it is exactly there that the wrong bytes appeared. The test that failed is the behavioural regression test, on Linux; a second test pins the setting on every kind of connection, because on Windows the sequence does not reproduce the failure and a behavioural test there would prove nothing.
