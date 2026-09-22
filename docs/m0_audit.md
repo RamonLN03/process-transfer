@@ -2,7 +2,7 @@
 
 What M0 promised, in `docs/roadmap.md`, `docs/architecture.md` and the decision log, set against what exists at the commit of this file. Three states are kept apart: demonstrated, with where the evidence is; superseded explicitly, by a recorded decision; and pending. An item is not called demonstrated because a later piece of work happens to pass: P3 working and the storage working do not discharge a commitment that neither of them is.
 
-Verdict, stated first. The software path of M0 is complete and has evidence for every part of its definition of done. M0 is a candidate for closure. It is not closed here, because four items need the project owner: two kinds of run promised in D-010 that were never generated and never withdrawn, the provisional value of alpha in D-007, the remote repository without which CI has never run, and what data M1 will start from. None of them is a defect of what exists. M1 is not started.
+Verdict, stated first. The software path of M0 is complete and has evidence for every part of its definition of done. M0 is a candidate for closure. It is not closed here, because three items need the project owner, two kinds of run promised in D-010 that were never generated and never withdrawn, the provisional value of alpha in D-007, and what data M1 will start from; and one item needs to be seen rather than decided: the first runs of continuous integration on Linux with Python 3.12 and 3.13, triggered by the push of 2026-09-22 and not yet seen from here. None of them is a defect of what exists. M1 is not started.
 
 ## The deliverables of the roadmap
 
@@ -55,14 +55,14 @@ Other items:
 | Reproducibility by content, not by file bytes (D-012) | demonstrated | versioned content hashes; M0-E04 H4, M0-E05 H5 |
 | Units at the boundaries (D-013) | demonstrated | `units.py`, `config.py`; SI enforced again where sensors meet states and where data are stored |
 | `PT_DATA_DIR`, private repository (D-014) | demonstrated, with a caution | every generated file goes under it. Its default is inside the repository, which is in a synchronised folder; a DuckDB file there is at risk while open. The variable exists to point elsewhere; the default was not changed |
-| CI on every push (`AGENTS.md`) | pending | `.github/workflows/ci.yml` runs Ruff and pytest on Python 3.12 and 3.13, and the suite holds a small storage and SQL round trip. It has never run: there is no remote. Everything reported as passing was run locally, on Windows 11 and Python 3.13.7 only |
+| CI on every push (`AGENTS.md`) | pending verification | `.github/workflows/ci.yml` runs Ruff and pytest on Python 3.12 and 3.13, and the suite holds a small storage and SQL round trip. The history was pushed to the private remote on 2026-09-22, at `afd1c51`, which triggers it; its result had not been seen when this file was written. Everything reported as passing was run locally, on Windows 11 and Python 3.13.7, in two environments: the project's, with numpy 2.5.3 and scipy 1.18.1, and the system's, with numpy 2.3.5 and scipy 1.16.3 |
 | Whether E/R is known or estimable (`docs/assumptions.md`) | pending, and rightly not M0 | it matters from M1; E/R is not exported as a known parameter |
 | Steady-state search (D-009) | demonstrated, with stated limits | a count of one is a statement about the scanned range, not a proof of uniqueness |
 
 ## What is not verified
 
-* Linux. Identifiers are lower-case ASCII so that a path is the same file on both systems, separators go through `pathlib`, and the tests avoid Windows-only assumptions; none of it has run on Linux.
-* Python 3.12, which CI would cover.
+* Linux. Identifiers are lower-case ASCII so that a path is the same file on both systems, separators go through `pathlib`, and the tests avoid Windows-only assumptions; none of it had run on Linux when this was written. CI is where it runs; its first run was triggered by the push of 2026-09-22.
+* Python 3.12, which the same CI run covers.
 * Agreement of content hashes across library versions: shown not to hold. On the development machine, at one commit, the six runs of M0-E05 have other hashes under numpy 2.3.5 and scipy 1.16.3 than under 2.5.3 and 1.18.1 (experiment log, re-run of 2026-09-22). A data set is reproduced bit for bit by its code, configuration, seeds and environment together, and the environment is recorded with every attempt.
 * Behaviour under a power cut during the rename that publishes a data set, and two writers on several machines.
 
@@ -71,5 +71,5 @@ Other items:
 1. Steady operation with noise only, from D-010: keep it, with what duration and for what use; withdraw it, now that the noise level is a given specification; or defer it.
 2. Single-input step tests with 10 min holds, from D-010: keep them, in which case they need the verification that P3 had, as sequences; withdraw them; or defer them. D-019 left single-input excursions undecided.
 3. Alpha, provisional in D-007: confirm 0.005 and 0.002 1/K on the evidence that the conductance moves by 2 to 3 % under P3, raise it as D-007 contemplated, or decide it at the start of M1 together with the identifiability study.
-4. The remote repository `process-transfer`: its URL, so that the history can be pushed and CI seen to run. Nothing has been pushed or published.
+4. Answered on 2026-09-22: the private remote `https://github.com/RamonLN03/process-transfer.git` was connected as `origin` and the history pushed at `afd1c51`, without force and onto an empty repository. What remains is to see CI pass on Linux with Python 3.12 and 3.13; the run was triggered by that push.
 5. The data that M1 starts from: how many runs, which seeds, and the fixed evaluation set of D-011. This can be the first task of M1 and need not hold M0 open.
