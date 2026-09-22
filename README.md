@@ -39,6 +39,8 @@ One command goes from the configuration files to a verified data set, a DuckDB d
 python -m process_transfer.generation configs/datasets/m0_e05.yaml
 ```
 
+The definitions under `configs/datasets/` are the three operating runs of D-010: `m0_e05.yaml` (protocol P3), `m0_e06.yaml` (steady operation with noise only) and `m0_e07.yaml` (single-input step tests); the experiments `05`, `06` and `07` under `experiments/` add the checks proper to each, and `08_oracle_conductance.py` measures the effect of the temperature-dependent conductance as an oracle diagnostic whose outputs never reach the available branch.
+
 From PyCharm, create a Python run configuration with *module name* `process_transfer.generation` and the path of the definition as its parameter. The working directory does not matter: a relative path is looked for under the repository root, and generated files go under `PT_DATA_DIR`. Experiments are plain scripts, for example `experiments/05_full_data_path.py`, and can be run the same way as *script path*.
 
 The data contract is `docs/data_contract.md`, the SQL is described in `sql/README.md`, and `docs/m0_audit.md` says what the first milestone has and has not delivered.

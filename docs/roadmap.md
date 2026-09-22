@@ -10,7 +10,7 @@ Deliverables: configurable CSTR with a true plant and a modeller's simplified eq
 
 Definition of done: a single reproducible command, or a small documented set, can generate the source and target plants, simulate both, validate the simulations, write Parquet, load DuckDB, run SQL checks, produce ML-ready datasets and basic diagnostic plots, with all tests passing. Complex ML does not start until this foundation is reliable.
 
-Status, 2026-09-22. The software path is complete and M0 is a candidate for closure; it is not closed. `docs/m0_audit.md` sets every deliverable against its evidence and lists what waits for the project owner: two kinds of run promised in D-010 and never generated, the provisional alpha of D-007, and the data that M1 will start from. The history is on the private remote since 2026-09-22, and CI passes on Linux with Python 3.12 and 3.13.
+Status, 2026-09-22, updated the same day. The software path is complete, the three operating runs of D-010 are generated and verified (M0-E05, M0-E06, M0-E07), the effect of the temperature-dependent conductance under P3 is measured as an oracle diagnostic (M0-E08), the history is on the private remote and CI passes on Linux with Python 3.12 and 3.13. M0 is a candidate for closure after the review of Codex and the acceptance of the project owner; `docs/m0_audit.md` sets every deliverable against its evidence. Left to M1 on purpose: the identifiability of alpha, whose values are kept for this version, and the data that M1 will start from.
 
 ## M1: Black-box and hybrid modelling
 

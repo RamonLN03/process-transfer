@@ -35,10 +35,15 @@ A measurement refers to its run and to its channel through the pairs (`plant_id`
 
 Three things are kept apart.
 
-The logical identity of a run, `run_id`, says what the run is: the plant, the protocol, the excitation and the realisation of the noise. It is built from the definition of the run and from nothing else, neither from its content nor from the clock:
+The logical identity of a run, `run_id`, says what the run is: the plant, the protocol, the definition of the experiment under that protocol, and the realisation of the noise. It is built from the definition of the run and from nothing else, neither from its content nor from the clock:
 
-    <plant_id>.<protocol>.e<excitation seed>.x<number of excursions>.n<noise realisation>
-    target.p3.e0.x10.n0
+    <plant_id>.<protocol>.<definition>.n<noise realisation>
+
+    p3       e<excitation seed>.x<number of excursions>        target.p3.e0.x10.n0
+    steady   d<duration in seconds>                             target.steady.d7200.n0
+    step     <input>-<direction>.l<lead>.h<hold>.r<recovery>    target.step.tc-up.l600.h600.r600.n0
+
+The steady and step protocols draw nothing at random, so their identities name no seed; the input is one of q, caf, tf and tc, the direction up or down, and the durations are whole seconds (D-026, added on 2026-09-22; contract version 1 is unchanged, since no table, column or encoding changed). The definition part is the same on every plant that runs the same experiment, which is how the runs of two plants are paired.
 
 The noise realisation is part of the identity. Two different realisations of the noise on the same excitation are two runs, `n0` and `n1`, and cannot share an identity by accident. The seed of the noise is not part of it and appears nowhere under `available/`.
 
