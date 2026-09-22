@@ -224,3 +224,34 @@ It was found because a defect chosen for M0-E05, a concentration channel in mol/
 ### What the scan cannot do, stated in the code and here
 
 It compares names and numbers. A hidden value that was scaled, rounded or combined with another would not be found, nor would information carried by the order or the presence of rows. A hidden value that equals a known one is left out on purpose: T_ref is 350 K, which is also the known feed temperature. It is a check against accidents, and the separation it checks is built into the interfaces, where the writers are never handed the truth.
+
+## Review of 2026-09-22, seventh: three defects reported by the reviewer of `404ae79`
+
+Scope. `data/export`, `data/parquet_store` and `generation/leak_scan`, following the review of `404ae79`. Each defect was reproduced on the code as it stood before anything was changed, on a small data set of synthetic observations and, for the scan, on the stored data of M0-E05.
+
+### Failures reproduced and fixed
+
+| Where | Input | What happened | Silent | Resolution | Commit |
+|---|---|---|---|---|---|
+| `export.export_dataset` | an export already on disk whose run file held a changed reading, or was missing, or sat next to a stray file | reported as already present: only the manifest on disk was compared with the one just written | yes | `open_export_directory` verifies an export as `open_dataset_directory` verifies a data set; the exporter reads its staging directory back through it before the rename, and examines an export already in place through it before comparing identities. A damaged export is an integrity error that says nothing was overwritten | `b4b1715` |
+| `export.export_dataset` | an export directory without `export.json` | a bare `FileNotFoundError` | no | the same: not an export, or its writing was interrupted | `b4b1715` |
+| `parquet_store.open_dataset_directory` | a run whose every `quality_flag` was 7 | opened, and read as good data with its content hash intact: the hash does not cover the flag | yes | every row of a run must carry the flag of the contract; `observations_from_long` checks it for Parquet and DuckDB alike | `633b17e` |
+| `parquet_store.open_dataset_directory` | a manifest whose `dataset_id` was `Bad Data Set`; `operating_runs` naming another data set, or a plant absent from `plants`, with the table digest recomputed | opened; the absent plant was refused only by accident, with a message about row counts | yes | identifiers, the relations between the tables, the channel metadata, the extent of a run and the rows of a run are verified on reading, whatever wrote the files, and a data set copied under another name is refused | `633b17e` |
+| `leak_scan.scan_available` | a master seed of 0, 1 or 1201, on the stored data of M0-E05 | 24, 20 and 4 findings, all of them in ticks, positions, flags, versions and counts, so a data set generated with such a seed could never pass its last check | no, but a false failure of a valid configuration | the fields whose values the contract fixes are not searched for hidden numbers, and their names still are; the readers verify those fields against the contract instead | `968d226` |
+
+### Domain and limits
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `export.open_export_directory` | a directory holding exactly the files of its manifest, every run with the schema of the channels of its plant | none | no manifest; another format, version or encoding; an identifier that is not one; a run listed under another file name, listed twice, of a plant the manifest does not describe, or with an impossible extent; a channel of an unknown kind or with the noise fields of the other kind; a schema, row count, identifier column, tick sequence, extent or content hash that differs from the manifest |
+| `parquet_store.open_dataset_directory`, in addition to the fifth review | the identifiers and relations that the writer enforces | none | a manifest that lists other tables than the four, a run under another file name or twice; a plant defined twice, without channels or without a run; a parameter or channel of an unknown plant, or in a unit that is not SI; a channel not named after its plant and variable, of an unknown kind, with the noise fields of the other kind, or at a position that does not follow from 0; a run of another data set, without a SHA-256 hash, with an impossible extent, or whose rows name another run or plant, use a channel of another plant, carry another quality flag, or do not span the extent recorded |
+| `leak_scan.scan_available` | as in the sixth review | a hidden number that appears in a structural field is not a finding | as in the sixth review |
+
+### What was decided for the scan, and what was set aside
+
+A threshold on the size of a seed, below which it would not be searched for, is an arbitrary number of the kind the rule forbids, and it would still fail for a hidden parameter equal to an instant of the clock. Searching documents and metadata only, and not columns, would miss a seed written as a column under an innocent name, which the test of planted leaks plants. Excluding fields by what the contract says they hold keeps the search where a number could be hidden by accident, and leaves the structural fields to the readers, which verify them. The cost is stated in the code: a number written on purpose into a field named `rows` or `version` is not found by the scan; it is refused by a reader when it breaks the contract, and not otherwise.
+
+### Open limitations
+
+* Verification on reading is by rules, not by signature. A data set edited consistently, tables and manifest digests together, is accepted when it follows the contract. The content hashes protect the numbers of a run, not the metadata around them.
+* `open_export_directory` rebuilds every run to check its hash, as `open_dataset_directory` does, so opening an export reads all of its rows. Nothing at the sizes of M0.

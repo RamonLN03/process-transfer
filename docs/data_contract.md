@@ -46,7 +46,7 @@ The generation attempt says when and with which code a data set was produced: UT
 
 The content hash, `content_sha256`, says what the numbers are. It is the SHA-256 of a canonical encoding of an observation set, given below. It depends on values, labels and instrument specification, not on a file format, a library version or the time of writing.
 
-Policy on repetition, the same for a data set on disk and for a run in the database. The same identity with the same content is accepted and changes nothing: the operation is idempotent. The same identity with different content is a conflict and raises an error; nothing is overwritten. A published data set is never modified: new runs mean a new data set.
+Policy on repetition, the same for a data set on disk, for a run in the database and for an export. The same identity with the same content is accepted and changes nothing: the operation is idempotent. The same identity with different content is a conflict and raises an error; nothing is overwritten. What is already there is examined before it is called the same: a data set or an export that is damaged is an integrity error, not a repetition. A published data set is never modified: new runs mean a new data set.
 
 A run belongs to one data set. `operating_runs.dataset_id` says which, so the same run offered to a database by another data set is a conflict even when its content is the same: accepting it silently would leave the record saying something that is no longer the whole truth.
 
@@ -113,6 +113,8 @@ Three notions that must not be confused:
 * selection of data is what a query does when it builds a training or evaluation set. It is not stored in the data.
 
 Records are checked twice. Before a run enters the database, its rows are loaded into a staging schema without constraints, the quality queries of `sql/quality/` must return no rows, and the content rebuilt from the staged rows must have the hash recorded for the run. The constraints of the main schema are the second line. The whole ingestion of a run is one transaction, so a run is in the database entirely or not at all.
+
+Reading is a line of its own, for whatever wrote the files. A data set is verified when it is opened: the manifest, the exact list of files, schemas, row counts and table digests, and then what the writer enforces, since a file may have been written by something else: identifiers usable in a path, the relations between the tables, the kind and the noise fields of every channel, the quality flag of every row, the extent and sampling period of every run, and the content hash of every run. An export is verified the same way when it is opened, and before the exporter reports one as already present. What fails is refused with a message that names the rule; nothing is repaired. The content hash protects the numbers of a run; the rules protect the metadata around them, and they are rules, not a signature.
 
 ## Available information
 
