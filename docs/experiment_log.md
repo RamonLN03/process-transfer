@@ -408,3 +408,39 @@ Reported without a criterion: whether B stays inside the envelope, with its peak
 Expected before the run, from the smoke run with one excursion: on the source a largest temperature difference of about 0.46 K and a largest concentration difference of about 3.9 mol/m^3, on the target about 0.37 K and 3.5 mol/m^3, that is below one sigma of each sensor on the sensor grid; root mean squares of a third of those values; differences during the rests as large as during the excursions, because the rest carries the transient that the excursion started; B inside the envelope; an integration error near 1e-7, so H2 by a margin of about 1e4. With ten excursions the largest differences may be somewhat larger than with one, since the corners visited are more. Cost: about 10 s.
 
 Expected artefacts. `PT_DATA_DIR/experiments/m0_e08/<run id>/` with `summary.json`, `fig1_differences_source.png`, `fig1_differences_target.png` and copies of the two plant configurations. The exit code is 0 only if H1 and H2 hold for every case.
+
+**Result.** First run on the registered cases: run `20260922T132213Z_6578f45`, from the commit that registered it, clean working tree, identified in its provenance block. H1 and H2 hold on every case and the exit code was 0. Run time 5.7 s for the 24 integrations.
+
+H1. On the source UA_B = 1666.660 W/K, the conductance of the true plant at its nominal 349.9992 K, against UA_ref = 1666.667 W/K at T_ref = 350 K; on the target UA_B = 1347.116 W/K at 355.169 K, against UA_ref = 1333.333 W/K, so anchoring at T_ref instead would have moved the target's nominal point by the 1 % that separates the two. In both plants the conductances are equal bit for bit at T_nominal, the right-hand sides of A and B at the nominal state are equal bit for bit, and their residual is below 1e-14 in both balances. H2. The integration error estimate, at most 9.4e-7 K and 7.2e-6 mol/m^3 over any case, is between 2e-7 and 8e-7 of the largest difference of the same state, four orders of magnitude inside the criterion of 1 %.
+
+The effect, B minus A. It is not what was expected: the expectation of a few tenths of a kelvin was taken from the ranges of UA(T)/UA_ref of M0-E03, which were computed over the central 90 % of the samples and left out the peaks of the excursions, where the conductance of A departs most from its nominal value. Over the whole trajectories UA_A(T)/UA_B runs from 0.952 to 1.079 on the source and from 0.975 to 1.042 on the target.
+
+| | Source, seeds 0, 1, 2 | Target, seeds 0, 1, 2 |
+|---|---|---|
+| Largest |T(B) - T(A)|, K | 4.40 in every sequence, during an excursion | 1.79 in every sequence, during an excursion |
+| Largest |T(B) - T(A)| during the rests, K | 0.65 | 0.73, 1.02, 0.75 |
+| Root mean square of T(B) - T(A) over the run, K | 0.50, 0.40, 0.42 | 0.25, 0.23, 0.23 |
+| The same over the excursions and over the rests, K | 1.19, 0.96, 0.99 and 0.11, 0.10, 0.10 | 0.53, 0.44, 0.45 and 0.15, 0.16, 0.15 |
+| Largest |C_A(B) - C_A(A)|, mol/m^3 | 33.7 in every sequence | 8.8 |
+| Root mean square of C_A(B) - C_A(A) over the run, mol/m^3 | 4.49, 3.56, 3.69 | 1.85, 1.72, 1.67 |
+| On the sensor grid, largest |difference| in sigmas of D-020 | 8.8 sigma_T, 6.7 sigma_CA | 3.5 sigma_T, 1.8 sigma_CA |
+| On the sensor grid, root mean square in sigmas, whole run | 0.99, 0.80, 0.83 sigma_T; 0.90, 0.71, 0.74 sigma_CA | 0.51, 0.46, 0.45 sigma_T; 0.37, 0.34, 0.33 sigma_CA |
+| The same, excursions and rests | 2.4, 1.9, 2.0 and 0.23, 0.22, 0.22 sigma_T | 1.05, 0.87, 0.90 and 0.30, 0.32, 0.30 sigma_T |
+| Peak temperature of A and of B, K | 365.75 and 370.12 | 376.19 and 377.97 |
+| Fraction of the time with B hotter than A | 0.47, 0.46, 0.48 | 0.47, 0.47, 0.49 |
+
+The same largest values in the three sequences of a plant are those of one corner, the hottest, which every sequence visits: there the temperature of A rises by about 16 K on the source and 21 K on the target, the conductance of A rises by 8 % and 4 %, and B, without that extra cooling, peaks 4.4 K and 1.8 K higher. The effect has a sign that follows the excursion: B is hotter and poorer in A during the hot excursions, colder and richer during the cold ones, and it decays during the rests to a few tenths of a kelvin and a few mol/m^3 within the first minutes, as the figures show. B stays inside the envelope on both plants; on the target its peak, 377.97 K, is 2.0 K below the limit, against 3.8 K for the true plant: the temperature dependence of the conductance is part of what keeps the target inside the envelope under P3.
+
+**Interpretation.** Under the P3 sequences of M0-E05, and with everything else known, the temperature dependence of the conductance changes the trajectories by up to 4.4 K and 34 mol/m^3 on the source and 1.8 K and 8.8 mol/m^3 on the target, several sigmas of the sensors of D-020 at the peaks of the hot excursions, and by about one sigma in root mean square over a run on the source and half a sigma on the target, most of it in the excursions, which take 17 % of the time. The alpha of each plant, 0.005 and 0.002 1/K, is therefore not a negligible part of the physics under this excitation, and the source, with the larger alpha, is where it shows most. This is a statement about the size of the effect when the rest of the physics is known exactly. It says nothing about whether a modeller who re-estimates a constant UA, and sees the readings through the noise, could separate this effect from the rest, which is the identifiability question of M1; nor does it say that a difference of several sigmas at a peak is detectable, since detection depends on how many readings carry it and on what else is being fitted. The comparison with the sigmas is a scale, not a threshold. The values of alpha are kept as they are for this version.
+
+Limitations. Three sequences of one protocol, two plants, one excitation amplitude. The effect under other excitations, the steady run and the single-input steps in particular, was not computed. The two variants are both truths; neither is the modeller's model, and the difference between them is not a model error.
+
+### Re-run of M0-E05 after the two other protocols were added (2026-09-22)
+
+Selection. Between `4bc056c` and `6578f45` the generator, the data set definitions and the identifiers changed to admit steady operation and single-input steps (`9aaf178`), and M0-E05 uses all of them; M0-E01 to M0-E04 use none of what changed and were not run again. M0-E06 and M0-E07 were run for the first time in this interval and are their own evidence.
+
+**Method.** `experiments/05_full_data_path.py`, unchanged, from the clean commit `6578f45`, in the environment of the registered run, with the data set `m0-e05` of the registered run on disk.
+
+**Result.** Run `20260922T132222Z_6578f45`, exit code 0, the nine hypotheses hold. The data set, the ingestion and the export are reported as already present, no file of the available branch was touched, and the six content hashes are those of the registered run: `9006d4e1bf9ff9d0...`, `aba65cd6c2817a8a...`, `6d9b8c99a852e794...` on the source and `c45d6a0957b867e0...`, `9e561bfc61983740...`, `37a3b227eec190ae...` on the target. The largest of the 102 z-scores is 2.58, as registered. Run time 15.6 s.
+
+**Interpretation.** The identities, the segments and the content of P3 are what they were: the generalisation of the definitions to three protocols changed nothing of the first one, which is what the re-run was for.
