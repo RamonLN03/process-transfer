@@ -228,3 +228,17 @@ Alternative set aside: rejecting any case where B leaves the envelope, which wou
 Validated once, on the machine that captured it: installed into a clean virtual environment outside the repository and outside any synchronised folder, `pip freeze` there matched the lock file exactly aside from the local editable install, `ruff check .` and the 725 tests passed, and `experiments/08_oracle_conductance.py` exited 0 with H1, H2 and H3 holding, numbers identical to the registered run. No claim is made about a system, architecture or BLAS backend this has not actually been run on.
 
 Alternatives set aside: freezing every package of a personal machine indiscriminately, which would pin unrelated tools and make the file harder to trust as a description of this project's environment; upgrading `pyproject.toml`'s bounds to the newest versions, which would change the dependency contract rather than record what was actually used.
+
+## D-029 M1 begins: its question, comparators and exclusions (2026-09-22, accepted)
+
+Decided by the project owner when M1 was started, the day M0 was closed.
+
+The question: does a continuous-time hybrid model improve data efficiency or extrapolation over simple alternatives, when every model is fitted on data of the target plant only?
+
+The comparators: the nominal mechanistic model, as the starting reference; the mechanistic model with its parameters re-estimated on the target; a black-box model trained on the target only; a hybrid model trained on the target only; and an oracle with the complete true physics, a separate diagnostic reference that is never a candidate.
+
+Out of scope: pretraining on the source, fine-tuning between plants, transfer policies and systematic studies of domain shift, which belong to M2 and later.
+
+Conditions. The hybrid is not assumed to win, and a well-supported negative result is a valid result. The registered values of alpha and the physical configurations of M0 are kept, and the difficulty is not adjusted to favour any method. Ordinary models never contain alpha, the saturating law or the true form of UA(T); a study that uses them is declared an oracle and kept apart. The data sets of M0 do not become the benchmark of M1 by default.
+
+The benchmark itself, its task, data, budgets, metrics and the choices still open, is proposed in `docs/m1_plan.md` and waits for the owner's answers to the questions of its last section. Nothing in that file is accepted by this entry beyond what is written here.
