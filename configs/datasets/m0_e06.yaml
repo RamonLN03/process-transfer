@@ -1,0 +1,23 @@
+# Definition of the data set of M0-E06 (docs/experiment_log.md): steady operation with
+# noise only, the first of the two operating runs of D-010 that were still pending. Fixed
+# and committed before its first formal run. Read by the generator only: sensor_master_seed
+# is private and never reaches the available branch.
+#
+# One run of two hours per plant at the nominal inputs, started at the verified nominal
+# steady state. Nothing is drawn at random for the inputs, so the identity of a run names
+# no seed: source.steady.d7200.n0 and target.steady.d7200.n0. The noise streams follow
+# from those identities, which name the plant, so the noise of the two plants is
+# independent. Sensors of D-020, unchanged.
+#
+# Paths are relative to this file.
+dataset_id: m0-e06
+description: M0-E06, steady operation with noise only, two hours per plant.
+plants:
+  - ../source_cstr.yaml
+  - ../target_cstr.yaml
+sensors: ../sensors_cstr.yaml
+protocol: steady
+duration: {value: 2.0, unit: h}
+noise_realisation: 0
+sensor_master_seed: 20260923
+simulation_period: {value: 0.1, unit: s}
