@@ -31,7 +31,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-import pyarrow.parquet as pq
 
 from process_transfer.config import (
     DatasetDefinitionConfig,
@@ -39,7 +38,7 @@ from process_transfer.config import (
     load_sensors,
 )
 from process_transfer.data import database
-from process_transfer.data.export import EXPORT_MANIFEST, export_dataset, observations_from_aligned
+from process_transfer.data.export import export_dataset, open_export_directory
 from process_transfer.data.identifiers import require_distinct_runs, run_identifier
 from process_transfer.data.parquet_store import DatasetWriter, open_dataset
 from process_transfer.data.private_store import write_private_attempt
@@ -434,19 +433,9 @@ def _hidden_parameters(plants: Mapping[str, VirtualPlant]) -> dict[str, float]:
 
 
 def _export_matches(directory: Path, generated: list[GeneratedRun]) -> bool:
-    """Read the exported files from the disk, as a model would, and compare them with what
-    was generated. Only the export directory is read."""
-    manifest = json.loads((directory / EXPORT_MANIFEST).read_text(encoding="utf-8"))
-    listed = {run["run_id"]: run for run in manifest["runs"]}
-    if sorted(listed) != sorted(g.definition.run_id for g in generated):
+    """Open the export from the disk, verified, as a model would, and compare its runs with
+    what was generated. Only the export directory is read."""
+    export = open_export_directory(directory)
+    if sorted(export.run_ids) != sorted(g.definition.run_id for g in generated):
         return False
-    for made in generated:
-        run = listed[made.definition.run_id]
-        table = pq.read_table(directory / run["file"])
-        channels = manifest["plants"][run["plant_id"]]["channels"]
-        for channel in channels:
-            channel["variable_name"] = channel["column"]
-        record = {**run, "n_samples": run["rows"]}
-        if not _same(observations_from_aligned(table, record, channels), made.observations):
-            return False
-    return True
+    return all(_same(export.observations(g.definition.run_id), g.observations) for g in generated)

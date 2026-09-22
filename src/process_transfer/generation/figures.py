@@ -8,14 +8,14 @@ text, on an off-white surface.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-import pyarrow.parquet as pq  # noqa: E402
+
+from process_transfer.data.export import open_export_directory  # noqa: E402
 
 INK, INK_SECONDARY = "#0b0b0b", "#52514e"
 GRID, AXIS, SURFACE = "#e1e0d9", "#c3c2b7", "#fcfcfb"
@@ -37,7 +37,8 @@ def _style(ax: plt.Axes) -> None:
 def figure_readings(export_directory: Path, destination: Path) -> list[Path]:
     """One figure per measured variable: a row of panels per run definition, a column per
     plant, the readings as dots against process time in minutes."""
-    manifest = json.loads((export_directory / "export.json").read_text(encoding="utf-8"))
+    export = open_export_directory(export_directory)  # verified before anything is drawn
+    manifest = export.manifest
     runs = manifest["runs"]
     plants = sorted(manifest["plants"])
     definitions = sorted({run["run_id"].split(".", 1)[1] for run in runs})
@@ -67,7 +68,7 @@ def figure_readings(export_directory: Path, destination: Path) -> list[Path]:
                 if run is None:
                     ax.set_axis_off()
                     continue
-                table = pq.read_table(export_directory / run["file"], columns=["time_s", name])
+                table = export.table(run["run_id"]).select(["time_s", name])
                 ax.plot(
                     table["time_s"].to_numpy() / 60.0,
                     table[name].to_numpy(),
