@@ -51,7 +51,7 @@ The modeller knows the reaction, that it is exothermic, the Arrhenius form, the 
 | alpha | conductance slope | 0.005 1/K | 0.002 1/K | hidden form | plant-specific |
 | T_ref | reference temperature | 350 K | 350 K | hidden | shared |
 
-Whether E/R counts as known or estimable for the modeller is open and only matters from M1.
+Whether E/R counts as known or estimable for the modeller is open and only matters from M1. The alternatives and a recommendation are question Q1 of `docs/m1_plan.md`.
 
 ## Operating points (M0-E01)
 

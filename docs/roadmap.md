@@ -16,9 +16,11 @@ Left to M1 on purpose, not a missing M0 deliverable: the identifiability of alph
 
 One non-blocking documented limitation carried into M1's backlog: `tests/test_checks.py`'s exit-code propagation test (around line 232) asserts against the same `all(...)` aggregation logic `experiments/08_oracle_conductance.py` uses, rather than invoking that script's `main()` directly. Codex's audit exercised `main()` directly with controlled in-memory faults and confirmed the real script behaves correctly (invalid balances on A or B, and A outside the envelope, both fail; B outside the envelope alone still permits the diagnostic); the test as written is a fainter regression guard against that specific connection silently breaking in the future. Not fixed here, since this closure iteration changes no code.
 
-## M1: Black-box and hybrid modelling
+## M1: Black-box and hybrid modelling (active)
 
 Target-only baseline, black-box model, hybrid physics-plus-ML model. Does hybrid modelling improve data efficiency or extrapolation?
+
+Started 2026-09-22. Question, comparators and exclusions: D-029. The benchmark is proposed in `docs/m1_plan.md`, which awaits the owner's answers to the questions of its last section; nothing of it is implemented yet.
 
 ## M2: Manual transfer learning
 

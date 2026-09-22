@@ -41,13 +41,25 @@ The repository is the implementation source of truth.
 
 Do not implement future milestones unless explicitly requested.
 
-The initial active milestone is:
+The active milestone is:
+
+M1 - Black-Box and Hybrid Modelling
+
+M1 asks whether a continuous-time hybrid model improves data efficiency or extrapolation over simple alternatives when every model is fitted on target-plant data only.
+
+It does not include source pretraining, fine-tuning between plants, transfer policies or systematic domain-shift studies.
+
+Its scope is recorded in `docs/decisions.md` (D-029) and its plan in `docs/m1_plan.md`.
+
+The first milestone was:
 
 M0 - Virtual Plant and Data Infrastructure
 
-M0 is about trustworthy simulation, data generation, validation, SQL infrastructure and reproducibility.
+M0 was about trustworthy simulation, data generation, validation, SQL infrastructure and reproducibility.
 
-It is not an ML milestone.
+It was not an ML milestone.
+
+M0 was closed on 2026-09-22. Its audited technical reference is commit `91206b2`, tagged `m0-v1.0`, and `docs/m0_audit.md` records the evidence.
 
 ## Scientific Discipline
 
@@ -376,3 +388,7 @@ Build a reliable experimental foundation before building intelligent automation.
 The success criterion for M0 is not an impressive demo.
 
 It is a simulation and data environment trustworthy enough that later ML results can be believed.
+
+The success criterion for M1 is not that the hybrid model wins.
+
+It is a comparison fair and reproducible enough that its result, positive or negative, can be believed.
