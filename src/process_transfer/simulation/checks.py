@@ -66,6 +66,20 @@ class TrajectoryCheck:
             and self.balances_close
         )
 
+    @property
+    def physically_valid(self) -> bool:
+        """Whether every check independent of the temperature envelope holds.
+
+        Distinguishes a trajectory that leaves the documented operating envelope,
+        a diagnostic result worth reporting on its own, from one that is invalid
+        on finite values, physical states or the integrated mass and energy
+        balances. ``accepted`` is the stricter criterion that also requires the
+        envelope; this property is for a variant whose purpose is precisely to
+        probe how far a trajectory moves, where leaving the envelope must stay a
+        reported outcome rather than a rejection.
+        """
+        return self.values_finite and self.states_physical and self.balances_close
+
 
 def _values_are_finite(trajectory: Trajectory) -> bool:
     return all(
@@ -147,3 +161,18 @@ def check_trajectory(
         inside_envelope=bool(inside),
         balances_close=balances.closes(balance_tolerance),
     )
+
+
+def comparison_is_valid(primary: TrajectoryCheck, secondary: TrajectoryCheck) -> bool:
+    """Whether a primary/secondary trajectory pair may be reported as valid.
+
+    The primary trajectory must be fully accepted. The secondary trajectory must
+    be ``physically_valid``, but is exempt from the envelope: for a diagnostic
+    variant built to probe how far a change in the physics moves the plant,
+    leaving the documented operating envelope is an admissible result to report,
+    never a reason by itself to reject the comparison. A secondary trajectory
+    that is not finite, not physical, or whose balances do not close is invalid
+    regardless of the envelope, and its differences from the primary must not be
+    presented as a scientifically acceptable result.
+    """
+    return primary.accepted and secondary.physically_valid

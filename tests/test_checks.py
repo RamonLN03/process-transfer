@@ -7,7 +7,11 @@ import pytest
 
 from conftest import PlantUnderTest
 from process_transfer.simulation import cstr_true
-from process_transfer.simulation.checks import check_trajectory
+from process_transfer.simulation.checks import (
+    TrajectoryCheck,
+    check_trajectory,
+    comparison_is_valid,
+)
 from process_transfer.simulation.integration import InputSegment, simulate_piecewise
 
 L_PER_MIN = 1.0e-3 / 60.0
@@ -51,6 +55,9 @@ def test_a10_sequential_counterexample_takes_the_target_far_above_the_limit(
     assert not check.inside_envelope
     assert check.states_physical and check.balances_close  # a real trajectory, not an artefact
     assert not check.accepted
+    # A real trajectory that leaves the envelope is not thereby physically invalid: this is
+    # the diagnostic case M0-E08's variant B is designed to allow (comparison_is_valid below).
+    assert check.physically_valid
     assert check.seconds_above_limit == pytest.approx(19.05, abs=0.1)  # s above 380 K
 
 
@@ -147,3 +154,91 @@ def test_a_temperature_outside_the_domain_of_the_conductance_law_is_not_physical
 
     constant_ua = dataclasses.replace(athermal, alpha=0.0)
     assert check_trajectory(frozen, constant_ua, envelope=(0.0, 1000.0)).states_physical
+
+
+# =========================================================================== #
+# M0-E08's mandatory validity gate (comparison_is_valid), and its regression:
+# the verdict used to depend only on anchoring and numerical resolution, so a
+# pair with a rejected primary or a secondary with open balances could still
+# report H1 and H2 as holding. See docs/numerical_robustness.md.
+# =========================================================================== #
+
+
+def _check(**overrides: object) -> TrajectoryCheck:
+    """A ``TrajectoryCheck`` that is accepted by every criterion, with the given
+    fields overridden. The numeric extremes are arbitrary; only the boolean
+    criteria matter to the tests that use this."""
+    fields: dict[str, object] = {
+        "peak_temperature": 350.0,
+        "refined_peak_temperature": 350.0,
+        "peak_time": 0.0,
+        "min_temperature": 340.0,
+        "c_a_range": (100.0, 250.0),
+        "seconds_above_limit": 0.0,
+        "relative_mass_residual": 1.0e-9,
+        "relative_energy_residual": 1.0e-9,
+        "values_finite": True,
+        "states_physical": True,
+        "inside_envelope": True,
+        "balances_close": True,
+    }
+    fields.update(overrides)
+    return TrajectoryCheck(**fields)  # type: ignore[arg-type]
+
+
+def test_physically_valid_does_not_require_the_envelope() -> None:
+    check = _check(inside_envelope=False)
+    assert not check.accepted
+    assert check.physically_valid
+
+
+@pytest.mark.parametrize(
+    "field", ["values_finite", "states_physical", "balances_close"]
+)
+def test_physically_valid_requires_every_other_criterion(field: str) -> None:
+    check = _check(**{field: False})
+    assert not check.physically_valid
+
+
+def test_comparison_rejects_a_pair_whose_primary_is_not_accepted() -> None:
+    """The primary (A) leaving the envelope must reject the pair, even though the
+    secondary (B) is unaffected: this is the defect Codex reproduced by forcing
+    ``balances_close=False`` and finding H1 and H2 still held."""
+    primary = _check(inside_envelope=False)
+    secondary = _check()
+    assert not comparison_is_valid(primary, secondary)
+
+
+def test_comparison_rejects_a_secondary_with_open_balances() -> None:
+    primary = _check()
+    secondary = _check(balances_close=False)
+    assert not comparison_is_valid(primary, secondary)
+
+
+def test_comparison_rejects_a_secondary_with_non_finite_values() -> None:
+    primary = _check()
+    secondary = _check(values_finite=False, states_physical=False, balances_close=False)
+    assert not comparison_is_valid(primary, secondary)
+
+
+def test_comparison_accepts_a_secondary_that_only_leaves_the_envelope() -> None:
+    """A secondary built to probe how far the physics moves the plant, such as
+    M0-E08's variant B, must not be rejected for leaving [335, 380] K alone."""
+    primary = _check()
+    secondary = _check(inside_envelope=False)
+    assert comparison_is_valid(primary, secondary)
+
+
+def test_an_invalid_case_fails_the_aggregate_verdict_and_the_exit_code() -> None:
+    """Mirrors the aggregation in experiments/08_oracle_conductance.py: every case's
+    ``comparison_is_valid`` feeds one ``all(...)`` that the exit code is drawn from
+    (``0 if all(verdicts.values()) else 1``). One invalid case must flip both."""
+    per_case_valid = [
+        comparison_is_valid(_check(), _check()),
+        comparison_is_valid(_check(), _check()),
+        comparison_is_valid(_check(inside_envelope=False), _check()),  # A not accepted
+    ]
+    verdict = all(per_case_valid)
+    exit_code = 0 if verdict else 1
+    assert verdict is False
+    assert exit_code == 1

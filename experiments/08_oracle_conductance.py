@@ -44,13 +44,20 @@ H2  Numerical resolution. For every state, plant and sequence, the integration e
     estimate of each variant, the largest |x at 1e-9 - x at 1e-11| over the dense grid, is
     at most RESOLUTION_FRACTION of the largest |B - A| of that state on that sequence. A
     case that fails is reported as not resolved, and its differences are not interpreted.
+H3  Validity of the pair (mandatory). A is fully accepted (finite, physical, inside the
+    envelope, balances closed). B is physically valid independent of its own envelope:
+    finite, physical, balances closed; B leaving [335, 380] K is a reported diagnostic, not
+    a validity failure. A case that fails H3 is reported as invalid and its differences are
+    not a scientifically acceptable result, whatever H1 and H2 say about it. See
+    ``comparison_is_valid`` in ``simulation/checks.py``.
 
-Reported, without a criterion: whether B stays inside [335, 380] K, its peak and the
-seconds above the limit if any, a variant that leaves the envelope being kept and never
-mixed with accepted data; the range of UA_A(T) / UA_B over each trajectory; the differences
-B - A of C_A and T on the dense grid, largest absolute value and root mean square, over the
-whole run and over the excursions and the rests separately; the same on the sensor grid in
-units of the sigmas of D-020; and the fraction of the time at which B is hotter than A.
+Reported, without being a validity criterion: whether B stays inside [335, 380] K, its peak
+and the seconds above the limit if any, a variant that leaves the envelope being kept and
+reported as a diagnostic, never mixed with the mandatory validity of H3; the range of
+UA_A(T) / UA_B over each trajectory; the differences B - A of C_A and T on the dense grid,
+largest absolute value and root mean square, over the whole run and over the excursions and
+the rests separately; the same on the sensor grid in units of the sigmas of D-020; and the
+fraction of the time at which B is hotter than A.
 
 Expected before the run, from M0-E03, where UA/UA_ref ranged from 0.972 to 1.032 on the
 source and from 0.997 to 1.023 on the target under P3: temperature differences of a few
@@ -63,8 +70,8 @@ Run from the repository root (expected under a minute):
     python experiments/08_oracle_conductance.py
 
 Outputs go to PT_DATA_DIR/experiments/m0_e08/<run id>: summary.json and one figure per
-plant. They contain hidden parameters and exact states. The exit code is 0 only if H1 and
-H2 hold for every case.
+plant. They contain hidden parameters and exact states. The exit code is 0 only if H1, H2
+and H3 hold for every case; a validity failure (H3) fails the run even if H1 and H2 hold.
 """
 
 from __future__ import annotations
@@ -92,7 +99,7 @@ from process_transfer.data.provenance import (  # noqa: E402
 )
 from process_transfer.generation.plants import VirtualPlant, load_virtual_plant  # noqa: E402
 from process_transfer.simulation import cstr_true  # noqa: E402
-from process_transfer.simulation.checks import check_trajectory  # noqa: E402
+from process_transfer.simulation.checks import check_trajectory, comparison_is_valid  # noqa: E402
 from process_transfer.simulation.cstr_true import TrueCSTRParameters, conductance  # noqa: E402
 from process_transfer.simulation.integration import Trajectory, simulate_piecewise  # noqa: E402
 from process_transfer.simulation.operating_run import sensor_sample_indices  # noqa: E402
@@ -217,6 +224,7 @@ def one_case(plant: VirtualPlant, variant: TrueCSTRParameters, seed: int) -> dic
     excursion = phases(a)
     sensors = sensor_sample_indices(a, SENSOR_PERIOD)
     check_a, check_b = check_trajectory(a, plant.parameters), check_trajectory(b, variant)
+    valid = comparison_is_valid(check_a, check_b)
     ratio = conductance(a.states[:, 1], plant.parameters) / variant.ua_ref
 
     per_state: dict[str, object] = {}
@@ -257,18 +265,27 @@ def one_case(plant: VirtualPlant, variant: TrueCSTRParameters, seed: int) -> dic
         "UA_A_over_UA_B_range": [float(np.min(ratio)), float(np.max(ratio))],
         "A": {
             "accepted": check_a.accepted,
+            "values_finite": check_a.values_finite,
+            "states_physical": check_a.states_physical,
+            "inside_envelope": check_a.inside_envelope,
+            "balances_close": check_a.balances_close,
             "refined_peak_temperature_K": check_a.refined_peak_temperature,
             "min_temperature_K": check_a.min_temperature,
         },
         "B": {
             "accepted": check_b.accepted,
+            "physically_valid": check_b.physically_valid,
+            "values_finite": check_b.values_finite,
+            "states_physical": check_b.states_physical,
             "inside_envelope": check_b.inside_envelope,
+            "balances_close": check_b.balances_close,
             "refined_peak_temperature_K": check_b.refined_peak_temperature,
             "min_temperature_K": check_b.min_temperature,
             "seconds_above_limit": check_b.seconds_above_limit,
             "relative_mass_residual": check_b.relative_mass_residual,
             "relative_energy_residual": check_b.relative_energy_residual,
         },
+        "valid": bool(valid),
         "differences_B_minus_A": per_state,
         "resolved": bool(resolved),
         "figure_series": {
@@ -383,7 +400,7 @@ def main() -> int:
         },
         "plants": {},
     }
-    verdicts = {"H1_anchoring": True, "H2_resolved": True}
+    verdicts = {"H1_anchoring": True, "H2_resolved": True, "H3_valid": True}
     figures = []
     timings: dict[str, float] = {}
     for plant_id, plant in plants.items():
@@ -399,6 +416,7 @@ def main() -> int:
         verdicts["H2_resolved"] = verdicts["H2_resolved"] and all(
             case["resolved"] for case in cases
         )
+        verdicts["H3_valid"] = verdicts["H3_valid"] and all(case["valid"] for case in cases)
         figures.append(figure_differences(plant_id, cases, directory))
         summary["plants"][plant_id] = {  # type: ignore[index]
             "anchoring": anchor,
@@ -412,6 +430,7 @@ def main() -> int:
         for case in cases:
             d = case["differences_B_minus_A"]
             t, c = d["T"]["dense_grid"], d["C_A"]["dense_grid"]
+            tag = "" if case["valid"] else " -- INVALID PAIR, differences not interpretable"
             print(
                 f"    seed {case['seed']}: max |dT| {t['whole_run']['max_abs']:.3f} K (excursions "
                 f"{t['excursions']['max_abs']:.3f}, rests {t['rests']['max_abs']:.3f}), rms "
@@ -420,7 +439,7 @@ def main() -> int:
                 f"{d['T']['sensor_grid_in_sigmas']['whole_run']['max_abs']:.2f} sigma_T and "
                 f"{d['C_A']['sensor_grid_in_sigmas']['whole_run']['max_abs']:.2f} sigma_CA; "
                 f"B peak {case['B']['refined_peak_temperature_K']:.2f} K, inside envelope "
-                f"{case['B']['inside_envelope']}; resolved {case['resolved']}"
+                f"{case['B']['inside_envelope']}; resolved {case['resolved']}{tag}"
             )
     timings["total"] = round(time.perf_counter() - started, 2)
     summary["verdicts"] = verdicts
