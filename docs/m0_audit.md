@@ -1,8 +1,34 @@
-# Audit of M0 against its definition (2026-09-22, updated the same day, twice)
+# Audit of M0 against its definition (2026-09-22, closed the same day)
 
 What M0 promised, in `docs/roadmap.md`, `docs/architecture.md` and the decision log, set against what exists at the commit of this file. Three states are kept apart: demonstrated, with where the evidence is; superseded explicitly, by a recorded decision; and pending. An item is not called demonstrated because a later piece of work happens to pass: P3 working and the storage working do not discharge a commitment that neither of them is.
 
-Verdict, stated first. The software path of M0 is complete and has evidence for every part of its definition of done. The three operating runs that D-010 promised are generated and verified: P3 (M0-E05), steady operation with noise only (M0-E06) and single-input step tests with ten-minute holds (M0-E07). The size of the effect of the temperature-dependent conductance under P3 is characterised (M0-E08), whose verdict now also gates on the physical validity of the compared pair (D-027), not only on anchoring and numerical resolution. Continuous integration runs on every push and passes on Linux with Python 3.12 and 3.13, and a pinned reference environment (D-028, `docs/reference_environment.md`) lets the registered results be reconstructed separately from CI's rolling dependencies. M0 is a candidate for closure after the review of Codex and the acceptance of the project owner; this iteration prepares it for that review and does not itself close or freeze M0. Two matters are left to M1 on purpose, and neither is a missing deliverable of M0: the identifiability of alpha, whose values are kept for this version, and the data that M1 will start from. M1 is not started.
+Verdict, stated first. The software path of M0 is complete and has evidence for every part of its definition of done. The three operating runs that D-010 promised are generated and verified: P3 (M0-E05), steady operation with noise only (M0-E06) and single-input step tests with ten-minute holds (M0-E07). The size of the effect of the temperature-dependent conductance under P3 is characterised (M0-E08), whose verdict gates on the physical validity of the compared pair (D-027), not only on anchoring and numerical resolution. Continuous integration runs on every push and passes on Linux with Python 3.12 and 3.13, and a pinned reference environment (D-028, `docs/reference_environment.md`) lets the registered results be reconstructed separately from CI's rolling dependencies. **M0 is closed.** Two matters are left to M1 on purpose, and neither was a missing deliverable of M0: the identifiability of alpha, whose values are kept for this version, and the data that M1 will start from. M1 is not started.
+
+## Closure
+
+**Closed 2026-09-22. Audited technical reference: commit `91206b2`.** Tag `m0-v1.0` marks the documentary commit that records this closure, one commit later; the reference is `91206b2` because that is the exact commit Codex audited and CI ran green on, and no code, configuration or data changed between it and the closure commit.
+
+Codex's independent audit of `91206b2`, run locally without modifying the repository, found no blocking functional defect. Its own summary, reproduced here rather than paraphrased:
+
+| Check | Result |
+|---|---|
+| Full suite | 725 tests pass |
+| Ruff | clean |
+| Dependencies | match the reference lock file, no incompatibility found |
+| M0-E05, full data path | passes every criterion |
+| M0-E06, steady operation | passes every criterion |
+| M0-E07, single-input steps | all 16 trajectories accepted |
+| M0-E08, effect of UA(T) | anchoring, numerical resolution and physical validity correct |
+| Reproducibility | content hashes of E05, E06 and E07 identical to the registered ones |
+| Repository | clean tree |
+
+Two of pytest's first run failed in Codex's isolated environment from a Git ownership protection setting local to that environment; once excepted for the review only, all 725 passed. Codex additionally exercised `experiments/08_oracle_conductance.py`'s `main()` directly with controlled in-memory faults, beyond reading the code: invalid balances on A or B fail the run, A outside the operating envelope fails the run, and B outside the envelope alone still permits the diagnostic and does not fail it. The scientific results are unchanged: maximum differences of about 4.40 K on the source and 1.79 K on the target, with no change to alpha, noise or the physics.
+
+CI for `91206b2` is green on both matrix jobs: [run `35746894043`](https://github.com/RamonLN03/process-transfer/actions/runs/35746894043), `test (3.12)` and `test (3.13)`, status Success, 2m 25s.
+
+**One non-blocking limitation recorded, not fixed here.** `tests/test_checks.py`'s exit-code propagation test (around line 232) asserts against the same `all(...)` aggregation `experiments/08_oracle_conductance.py`'s `main()` uses, rather than invoking `main()` itself; Codex's direct exercise of `main()` (above) confirms the real script behaves correctly, so this is a fainter regression guard against that specific connection silently breaking later, not a present defect. Left for whoever next touches that test, in M1 or later; it does not gate this closure, per the owner's instruction that no code changes with it.
+
+The project owner reviewed Codex's audit and the green CI run and authorised closure and the `m0-v1.0` tag on 2026-09-22.
 
 ## The deliverables of the roadmap
 
@@ -76,6 +102,6 @@ Other items:
 
 ## Questions for the project owner
 
-1. Closure. With the three runs of D-010 generated and verified and CI green, M0 is a candidate for closure after the review of Codex. Nothing here is asked of the owner beyond that acceptance.
+1. ~~Closure.~~ **Resolved 2026-09-22.** Codex's audit of `91206b2` found no blocking defect, CI was confirmed green on that exact commit, and the owner authorised closure. See Closure above.
 2. Alpha, provisional in D-007: kept at 0.005 and 0.002 1/K for this version, with the effect measured in M0-E08. Whether to confirm the values or to decide them at the start of M1 with the identifiability study is the owner's call; nothing in M0 depends on it.
 3. The data that M1 starts from: how many runs, which seeds, and the fixed evaluation set of D-011. This is the first task of M1 and need not hold M0 open.
