@@ -1,0 +1,33 @@
+# Definition of the data set of M0-E07 (docs/experiment_log.md): single-input step tests
+# with ten-minute holds, the second of the two operating runs of D-010 that were still
+# pending. Fixed and committed before its first formal run. Read by the generator only:
+# sensor_master_seed is private and never reaches the available branch.
+#
+# Eight independent tests per plant: each of the four inputs moved by its A10 amplitude
+# in each direction, 600 s at the nominal inputs, 600 s with the input moved, 600 s at the
+# nominal inputs. Every test starts at the verified nominal steady state and carries its
+# state across its own three segments; the tests are never chained into one trajectory.
+# Nothing is drawn at random for the inputs, so the identity of a run names no seed:
+# target.step.tc-up.l600.h600.r600.n0, for instance. The noise streams follow from the
+# identities, which name the plant, so the noise of the two plants is independent.
+# Sensors of D-020, unchanged.
+#
+# The true trajectories are verified before anything is observed: experiments/07 runs
+# the generator only if all sixteen are accepted.
+#
+# Paths are relative to this file.
+dataset_id: m0-e07
+description: M0-E07, single-input step tests with ten-minute holds, eight independent tests per plant.
+plants:
+  - ../source_cstr.yaml
+  - ../target_cstr.yaml
+sensors: ../sensors_cstr.yaml
+protocol: step
+lead: {value: 10.0, unit: min}
+hold: {value: 10.0, unit: min}
+recovery: {value: 10.0, unit: min}
+inputs: [q, caf, tf, tc]
+directions: [up, down]
+noise_realisation: 0
+sensor_master_seed: 20260924
+simulation_period: {value: 0.1, unit: s}
