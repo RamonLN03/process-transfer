@@ -210,3 +210,21 @@ Alternatives set aside. One continuous trajectory of eight steps, compact but un
 | 1.5.5 | the registered environment, and CI |
 
 The cache stays off in every version, and the regression tests of the stale read stay. Alternatives set aside: keeping `>=1.0` and skipping the setting where it is unknown, which would leave the ingestion exposed on those versions to the very read that was found; pinning 1.5.5, which would refuse versions shown to work.
+
+## D-027 M0-E08's verdict must depend on the physical validity of the pair, not only anchoring and resolution (2026-09-22, decided by the implementation agent, technical and reversible)
+
+`check_trajectory` already computed `A.accepted` and the individual physical checks of variant B, but `experiments/08_oracle_conductance.py`'s verdict and exit code read only H1 (anchoring) and H2 (numerical resolution). Codex reproduced the gap by forcing `balances_close=False`: `A.accepted` and `B.accepted` went false while H1 and H2, the only things gating the exit code, still held.
+
+`TrajectoryCheck.physically_valid` (`simulation/checks.py`) is `accepted` without the envelope requirement: finite values, physical states, closed balances. `comparison_is_valid(primary, secondary)` requires the primary fully `accepted` and the secondary `physically_valid`, deliberately exempting the secondary from the envelope, since M0-E08's variant B exists to probe how far a change in the physics moves the plant and leaving [335, 380] K is a diagnostic result to report, not a validity failure. The script aggregates a third verdict, `H3_valid`, from this function on every case into the same `all(verdicts.values())` the exit code already used.
+
+Alternative set aside: rejecting any case where B leaves the envelope, which would discard exactly the diagnostic M0-E08 was registered to produce (docs/experiment_log.md's expectation that a differently-behaved B might leave the envelope at the hot corner). The chosen criterion keeps that report while still rejecting a pair that is invalid on the grounds that have nothing to do with the envelope: non-finite values, unphysical states, or balances that do not close.
+
+## D-028 A pinned reference environment, separate from CI's rolling dependencies (2026-09-22, decided by the implementation agent, technical and reversible)
+
+`docs/m0_audit.md` already records that exact content reproduction (D-012) does not hold across numpy/scipy versions, and CI (`.github/workflows/ci.yml`) installs current dependencies on every run, which is right for testing the software but cannot reconstruct the registered numbers. Nothing pinned the environment the registered results were generated in.
+
+`requirements-reference.lock.txt` pins the exact versions `pip freeze` reported for the registered environment (Python 3.13.7, Windows); `docs/reference_environment.md` states its scope, the two-step install (`pip install -r` the lock file, then `pip install -e . --no-deps` so the editable install does not re-resolve pinned versions against `pyproject.toml`'s looser bounds), the validation commands, and keeps the two claims apart: exact content reproduction, shown elsewhere not to hold across library versions, against numerical agreement across environments, which D-025's DuckDB matrix already demonstrates for one dependency. `pyproject.toml` is unchanged; this file does not replace it and CI does not install it.
+
+Validated once, on the machine that captured it: installed into a clean virtual environment outside the repository and outside any synchronised folder, `pip freeze` there matched the lock file exactly aside from the local editable install, `ruff check .` and the 725 tests passed, and `experiments/08_oracle_conductance.py` exited 0 with H1, H2 and H3 holding, numbers identical to the registered run. No claim is made about a system, architecture or BLAS backend this has not actually been run on.
+
+Alternatives set aside: freezing every package of a personal machine indiscriminately, which would pin unrelated tools and make the file harder to trust as a description of this project's environment; upgrading `pyproject.toml`'s bounds to the newest versions, which would change the dependency contract rather than record what was actually used.

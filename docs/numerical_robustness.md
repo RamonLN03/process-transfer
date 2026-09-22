@@ -317,3 +317,26 @@ The test suite was run on a clean worktree of `6578f45`, in one isolated virtual
 * The steady and step protocols are verified for the present plants, amplitudes and durations only, like P3; the tests of M0-E07 are independent and say nothing about chaining them.
 * The drift tolerance of M0-E06 is derived for LSODA at rtol = atol = 1e-9; another integrator or tolerance needs its own derivation.
 * The oracle of M0-E08 measures the effect of UA(T) under the P3 sequences of M0-E05 only, with everything else known and without noise. It is a scale, not a detection threshold or an identifiability result.
+
+## Review of 2026-09-22, tenth: M0-E08's verdict did not read the physical validity it already computed
+
+Scope. `experiments/08_oracle_conductance.py`'s verdict aggregation, and `simulation/checks.py`.
+
+### Domain and limits
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `TrajectoryCheck.physically_valid` | any `TrajectoryCheck` | none; it is a projection of three existing boolean fields, `values_finite`, `states_physical`, `balances_close`, deliberately excluding `inside_envelope` | not applicable, a pure combination of already-validated fields |
+| `comparison_is_valid(primary, secondary)` | two `TrajectoryCheck` instances describing a primary/secondary comparison | the secondary is exempt from its own envelope on purpose, since a diagnostic variant leaving it is a reported result | not applicable |
+
+### Not a numerical defect: a verdict that silently dropped information it already had
+
+This is not a case of a denominator, a root or a grid; it is the same class of silence `AGENTS.md`'s Numerical Robustness section warns against at the level of a verdict rather than an arithmetic operation. `check_trajectory` computed `TrajectoryCheck.accepted` for A and every physical field for B, and `one_case` stored both in the case dictionary, but `main()`'s `verdicts` dictionary, the one thing the exit code is drawn from, only ever read `H1_anchoring` and `H2_resolved`. Codex reproduced the consequence directly: substituting `check_trajectory`'s return so both variants had `balances_close=False` left `A.accepted` and `B.accepted` false while the two verdicts gating the exit code stayed true. The registered cases were never affected, since they were always accepted and physically valid; the gap was in what the verdict could catch, not in what it had caught so far.
+
+### Fix
+
+`TrajectoryCheck.physically_valid` and `checks.comparison_is_valid` (D-027) give the script a third verdict, `H3_valid`, folded into the same `all(verdicts.values())` the exit code already used, so a future run with an invalid pair fails loudly instead of reporting H1 and H2 as if they were the whole story.
+
+### Open limitations
+
+* `comparison_is_valid` is written for exactly the primary/accepted, secondary/envelope-exempt shape M0-E08 needs. A future oracle-style comparison with a different exemption would need its own criterion, not a reuse of this one under a different name.
