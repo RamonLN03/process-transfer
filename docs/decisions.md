@@ -195,3 +195,18 @@ Definitions. Steady operation: the nominal inputs held for 7200 s from the verif
 Identities. Neither protocol draws anything at random, so no excitation seed exists and none is invented: `<plant>.steady.d<seconds>.n<k>` and `<plant>.step.<input>-<direction>.l<lead>.h<hold>.r<recovery>.n<k>`, the input written as q, caf, tf or tc, the direction as up or down, the durations in whole seconds. The noise stream still follows from the identity (D-021), so the plants have independent noise, and the definition part still pairs the plants, so the source-target query and the figures needed no change. A data set definition names its protocol and carries the settings of that protocol only. Contract version 1 is unchanged: no table, column or encoding changed; the grammar of `run_id` is extended and recorded in `docs/data_contract.md`.
 
 Alternatives set aside. One continuous trajectory of eight steps, compact but unverified in its transitions. A generic framework of protocols, which nothing in M0 needs. A single token for the three durations, which would not tell a change of the lead from a change of the hold.
+
+## D-025 Minimum DuckDB version 1.3 (2026-09-22, decided by the implementation agent, technical and reversible)
+
+`database.connect` turns DuckDB's external file cache off, after the stale read found by the first CI runs, and the setting that does it exists since DuckDB 1.3.0; `pyproject.toml` admitted any DuckDB from 1.0. The minimum is now 1.3. It was set from evidence and not from the setting alone: the whole test suite, which holds the storage and SQL path, Parquet, staging, the seven quality queries, the views, the analyses, the export and the scan, was run on a clean worktree of `6578f45` in one isolated virtual environment per version, with that DuckDB pinned and nothing of the registered environment touched.
+
+| DuckDB | Result |
+|---|---|
+| 1.2.2 | refuses the setting, "unrecognized configuration parameter", and with it every test that opens a database fails, 40 or more |
+| 1.3.0 | all 716 tests pass |
+| 1.3.2 | all 716 tests pass |
+| 1.4.5 | all 716 tests pass |
+| 1.5.0 | all 716 tests pass |
+| 1.5.5 | the registered environment, and CI |
+
+The cache stays off in every version, and the regression tests of the stale read stay. Alternatives set aside: keeping `>=1.0` and skipping the setting where it is unknown, which would leave the ingestion exposed on those versions to the very read that was found; pinning 1.5.5, which would refuse versions shown to work.

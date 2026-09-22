@@ -282,3 +282,38 @@ How it was pinned down. The sequence of the failing test was run on the CI runne
 ### What this changes and what it does not
 
 Nothing of the content: the fix touches how a connection is opened. Published data sets are immutable, so the cache could only have mattered for a file altered after a data set was verified, which is the case the failing test exists for, and it is exactly there that the wrong bytes appeared. The test that failed is the behavioural regression test, on Linux; a second test pins the setting on every kind of connection, because on Windows the sequence does not reproduce the failure and a behavioural test there would prove nothing.
+
+## Review of 2026-09-22, ninth: the two other runs of D-010, their diagnostics, the oracle and the DuckDB versions
+
+Scope. `simulation/protocols.py` (`steady_segments`, `single_step_segments`), `data/identifiers.py` (`steady_run_identifier`, `step_run_identifier`, `run_definition`), the definitions of data sets in `config.py`, `generation/pipeline.py` (`define_runs`, `run_segments`), the diagnostics of `experiments/06`, `07` and `08`, and the minimum version of DuckDB.
+
+### Domain and limits
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `protocols.steady_segments` | finite nominal inputs, a finite positive duration | none | a duration that is zero, negative or not finite, through `levels_to_segments` |
+| `protocols.single_step_segments` | one of the four inputs, one of the two directions, three finite positive durations | none | an unknown input or direction, a duration that is not finite and positive |
+| `identifiers.steady_run_identifier`, `step_run_identifier` | whole seconds of 1 or more, a plant identifier without a dot, an input token of letters and digits, a direction of `up` or `down`, a non-negative realisation | none | fractions of a second, zero or negative durations, booleans, an input written as the variable name (`T_c`), another direction, a plant with a dot or upper case |
+| `config.SteadyDatasetDefinition`, `StepDatasetDefinition` | durations that are whole numbers of seconds, distinct inputs and directions | none | a fraction of a second, refused rather than rounded; duplicated or empty inputs or directions; an unknown protocol tag |
+| Drift of the steady run (M0-E06) | the largest deviation of the true states from the starting state over the run, against a tolerance of 1e-6 of each state | the tolerance is derived from the local error control of the integrator, 1e-9 of the state per step, damped at a stable point, with a margin of one thousand; it is 1/20 000 of sigma_CA and 1/1400 of sigma_T | exact equality with the root is not asked for; the observed drift is 4.3e-8 mol/m^3 and 2.1e-9 K at most |
+| Correlation of an error series with a constant state (M0-E06) | undefined | the score is not computed for the steady run, and the reason is recorded in the summary; `noise_statistics.correlation` refuses a constant series | a correlation of zero, or an epsilon, would state something about a quantity that does not exist |
+| Direction of the first move after a step (M0-E07) | the sign of the first sampled change, 0.1 s after the switching instant | when that change is exactly zero, the sign of the largest deviation from the starting value over the segment | the derivative at the switching instant is reported but not used for the direction: for a state on which the stepped input has no direct effect it is the residual of the steady state, of the order of 1e-15, whose sign says nothing |
+| Extreme during a hold and its position (M0-E07) | the extreme in the direction of the first move; inside the segment means strictly between its ends | an extreme at the last sample is a monotone approach | none |
+| Distance to the steady state of the stepped inputs (M0-E07) | one steady state in the scanned range | reported with the count of steady states found, which is one in the sixteen cases | none; a count other than one leaves the distance unreported |
+| Phase metrics of the oracle (M0-E08) | a phase with at least one sample | none | a phase without samples has no metrics and raises; the segment structure of P3 gives 12 000 excursion samples and 60 001 rest samples |
+| Numerical resolution of the oracle (M0-E08) | the integration error estimate, the distance between the integrations at 1e-9 and 1e-11, against 1 % of the largest difference of the same state | none | a case that fails is reported as not resolved and its differences are not interpreted; the errors found are 2e-7 to 8e-7 of the largest difference |
+| Anchoring of variant B (M0-E08) | the conductance of A at T_nominal, equal bit for bit to that of B, and the right-hand sides equal bit for bit at the nominal state | none | an anchoring that moved the nominal point would be reported as a failure of H1 |
+
+### An expectation that was wrong, and why
+
+M0-E08 was registered with the expectation of temperature differences of a few tenths of a kelvin, taken from the ranges of UA(T)/UA_ref of M0-E03. Those ranges were computed over the central 90 % of the samples of the sequences, which leaves out the peaks of the excursions, where the conductance of the true plant departs most from its nominal value. The differences found are up to 4.4 K on the source and 1.8 K on the target, at those peaks. The expectation is corrected in the entry; nothing was changed to meet it.
+
+### The DuckDB versions
+
+The test suite was run on a clean worktree of `6578f45`, in one isolated virtual environment per version (D-025). 1.2.2 refuses `enable_external_file_cache` and with it every test that opens a database fails; 1.3.0, 1.3.2, 1.4.5 and 1.5.0 pass all 716 tests; 1.5.5 is the registered environment. The earlier runs of the same script against the live working tree, while it was being edited, were discarded as evidence.
+
+### Open limitations
+
+* The steady and step protocols are verified for the present plants, amplitudes and durations only, like P3; the tests of M0-E07 are independent and say nothing about chaining them.
+* The drift tolerance of M0-E06 is derived for LSODA at rtol = atol = 1e-9; another integrator or tolerance needs its own derivation.
+* The oracle of M0-E08 measures the effect of UA(T) under the P3 sequences of M0-E05 only, with everything else known and without noise. It is a scale, not a detection threshold or an identifiability result.

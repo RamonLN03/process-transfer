@@ -102,12 +102,13 @@ def connect(path: Path | None = None, read_only: bool = False) -> duckdb.DuckDBP
     memory. A read-only connection expects them to be there already.
 
     DuckDB keeps an in-memory cache of the external files it reads, Parquet included,
-    and validates an entry by the file's modification time, which the file system gives
-    in seconds. On Linux, a Parquet file rewritten with the same size within the same
-    second was served from that cache, and the ingestion staged rows of a file that was
-    no longer on the disk. Every connection made here turns the cache off: a data set is
-    read once, its files are small, and what is staged must be what is on the disk at
-    that moment."""
+    and validates an entry by the file's modification time as its own local file system
+    reads it, in whole seconds on Unix whatever the resolution of the file system. On
+    Linux, a Parquet file rewritten with the same size within the same second was served
+    from that cache, and the ingestion staged rows of a file that was no longer on the
+    disk. Every connection made here turns the cache off: a data set is read once, its
+    files are small, and what is staged must be what is on the disk at that moment. The
+    setting exists since DuckDB 1.3.0, the minimum version of the project (D-025)."""
     connection = duckdb.connect(":memory:" if path is None else str(path), read_only=read_only)
     connection.execute("SET enable_external_file_cache = false")
     if not read_only:
