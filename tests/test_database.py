@@ -26,7 +26,12 @@ from process_transfer.data.database import (
     observations_from_database,
     quality_report,
 )
-from process_transfer.data.parquet_store import Dataset, DatasetWriter, open_dataset
+from process_transfer.data.parquet_store import (
+    Dataset,
+    DatasetIntegrityError,
+    DatasetWriter,
+    open_dataset,
+)
 from process_transfer.data.records import KnownParameter, PlantRecord, RunRecord, known_plant
 from process_transfer.measurement.observations import Observations
 
@@ -383,3 +388,36 @@ def test_what_is_wrong_only_between_plants_is_caught_with_the_run_in_the_databas
     assert finding["detail"] == "K against mol/m^3"
     assert counts(connection) == before  # the plant, its channels and its run are all gone
     assert counts(connection, "staging") == dict.fromkeys(database.TABLES, 0)
+
+
+def test_the_reconstruction_refuses_rows_the_contract_forbids(plants: list[PlantRecord]) -> None:
+    """The observations rebuilt from the database go through the checks of the reader:
+    a quality flag the contract does not define, or a channel of another plant, is refused
+    even where the quality queries were not run, as in the staging schema on its own."""
+    dataset = published(plants, runs())
+    connection = connect()
+    run_id = "target.p3.e0.x1.n0"
+    for statement, message in (
+        (
+            "UPDATE staging.measurements SET quality_flag = 3 WHERE sample_index = 4",
+            "6 rows of run 'target.p3.e0.x1.n0' carry the quality flags \\[3\\]",
+        ),
+        (
+            "UPDATE staging.measurements SET sensor_id = 'source.T' WHERE sensor_id = 'target.T'",
+            "use the channels \\['source.T'\\], which its plant 'target' does not have",
+        ),
+        (
+            "UPDATE staging.operating_runs SET sampling_period_s = 60.0",
+            "is sampled every 60.0 s and its channels every \\[6.0\\] s",
+        ),
+    ):
+        connection.execute("BEGIN TRANSACTION")
+        database.stage_run(connection, dataset, run_id)
+        connection.execute(statement)
+        with pytest.raises(DatasetIntegrityError, match=message):
+            observations_from_database(connection, run_id, "staging")
+        connection.execute("ROLLBACK")
+    connection.execute("BEGIN TRANSACTION")
+    database.stage_run(connection, dataset, run_id)
+    assert observations_from_database(connection, run_id, "staging").run == run_id
+    connection.execute("ROLLBACK")

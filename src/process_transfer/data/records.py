@@ -46,7 +46,8 @@ def _text(name: str, value: object) -> str:
     return value
 
 
-def _si_unit(name: str, unit: object) -> str:
+def require_si_unit(name: str, unit: object) -> str:
+    """``unit`` if it is the SI unit of its quantity, ``ValueError`` otherwise."""
     try:
         si_unit = si_unit_of(unit)  # type: ignore[arg-type]
     except (UnknownUnitError, TypeError) as error:
@@ -65,7 +66,7 @@ class KnownParameter:
     def __post_init__(self) -> None:
         _text("parameter", self.parameter)
         object.__setattr__(self, "value", require_finite(self.parameter, self.value))
-        _si_unit(self.parameter, self.unit)
+        require_si_unit(self.parameter, self.unit)
 
 
 @dataclass(frozen=True)
@@ -143,7 +144,7 @@ def validate_observations(observations: Observations) -> np.ndarray:
     for name, unit in zip(
         names, (*observations.measured_units, *observations.input_units), strict=True
     ):
-        _si_unit(name, unit)
+        require_si_unit(name, unit)
 
     times = observations.times
     ticks, on_clock = nearest_ticks(times, float(times[0]), observations.sample_period)

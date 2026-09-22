@@ -467,3 +467,254 @@ def test_one_variable_has_one_unit_on_every_plant_of_a_data_set(plants: list[Pla
         writer.add_run(in_kelvin, RECORD)
         with pytest.raises(DatasetError, match="different units on different plants.*'C_A'"):
             writer.publish()
+
+
+# --------------------------------------------------------------------------- #
+# What the reader refuses: identifiers, relations and the quality flag
+# --------------------------------------------------------------------------- #
+#
+# Regression tests for a defect reported in review: the reader verified schemas, row
+# counts and content hashes, and took identifiers, the relations between the tables and
+# the quality flag on trust. A run flagged as anything was read as good data, with its
+# content hash intact, and a manifest could name a data set that is not a path identifier.
+
+
+def rewrite(directory: Path, name: str, edit) -> None:  # noqa: ANN001
+    """Rewrite a small table after editing its rows, and record its new digest in the
+    manifest, so that only the checks of the contract can refuse what was written."""
+    path = directory / f"{name}.parquet"
+    rows = pq.read_table(path).to_pylist()
+    rows = edit(rows) or rows
+    table = pa.Table.from_pylist(rows, schema=schema.SCHEMAS[name])
+    pq.write_table(table, path)
+    edit_manifest(
+        directory,
+        lambda m: m["tables"][name].update(
+            {"rows": table.num_rows, "content_sha256": schema.table_digest(name, table)}
+        ),
+    )
+
+
+def edit_manifest(directory: Path, edit) -> None:  # noqa: ANN001
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    edit(manifest)
+    (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def rewrite_run(directory: Path, run_id: str, edit) -> None:  # noqa: ANN001
+    path = directory / "measurements" / f"{run_id}.parquet"
+    pq.write_table(edit(pq.read_table(path)), path)
+
+
+def with_column(table: pa.Table, name: str, values: object) -> pa.Table:
+    index = table.schema.get_field_index(name)
+    return table.set_column(index, table.schema.field(name), pa.array(values, table[name].type))
+
+
+def one_row(rows: list[dict], **where: object) -> dict:
+    (row,) = [r for r in rows if all(r[k] == v for k, v in where.items())]
+    return row
+
+
+def test_a_quality_flag_the_contract_does_not_define_is_refused_on_reading(
+    plants: list[PlantRecord],
+) -> None:
+    directory = publish(plants, four_runs()).directory
+    dataset = open_dataset(DATASET)
+    run_id = "target.p3.e0.x1.n0"
+    flags = np.zeros(21 * 6, dtype=np.int16)
+    flags[[4, 40]] = 7  # the content hash does not cover the flag: only the reader can
+    rewrite_run(directory, run_id, lambda t: with_column(t, "quality_flag", flags))
+    message = (
+        "2 rows of run 'target.p3.e0.x1.n0' carry the quality flags \\[7\\]; contract version 1"
+    )
+    with pytest.raises(DatasetIntegrityError, match=message):
+        open_dataset(DATASET)
+    with pytest.raises(DatasetIntegrityError, match=message):
+        dataset.observations(run_id)  # a data set opened earlier does not read it either
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (
+            lambda d: edit_manifest(d, lambda m: m.__setitem__("dataset_id", "Unit Test")),
+            "dataset_id must be lower-case ASCII",
+        ),
+        (
+            lambda d: edit_manifest(
+                d, lambda m: m["tables"].__setitem__("secrets", dict(m["tables"]["plants"]))
+            ),
+            "lists the tables \\['operating_runs', 'plants', 'process_parameters', 'secrets'",
+        ),
+        (
+            lambda d: (
+                edit_manifest(
+                    d, lambda m: m["runs"][0].__setitem__("file", "measurements/x.parquet")
+                ),
+                (d / "measurements" / "source.p3.e0.x1.n0.parquet").rename(
+                    d / "measurements" / "x.parquet"
+                ),
+            ),
+            "listed with the file 'measurements/x.parquet'",
+        ),
+        (
+            lambda d: rewrite(
+                d, "operating_runs", lambda rows: rows[0].__setitem__("dataset_id", "elsewhere")
+            ),
+            "says it belongs to 'elsewhere', not to 'unit-test'",
+        ),
+        (
+            lambda d: rewrite(
+                d, "operating_runs", lambda rows: rows[0].__setitem__("plant_id", "nowhere")
+            ),
+            "operating_runs names the plant 'nowhere', which plants does not have",
+        ),
+        (
+            lambda d: rewrite(
+                d, "operating_runs", lambda rows: rows[0].__setitem__("content_sha256", "abc")
+            ),
+            "has no SHA-256 content hash",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "operating_runs",
+                lambda rows: one_row(rows, run_id="target.p3.e0.x1.n0").__setitem__(
+                    "start_time_s", 1.0
+                ),
+            ),
+            "operating_runs says from 1.0 to 120.0 s",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "operating_runs",
+                lambda rows: one_row(rows, run_id="target.p3.e0.x1.n0").__setitem__(
+                    "sampling_period_s", 3.0
+                ),
+            ),
+            "is sampled every 3.0 s and its channels every \\[6.0\\] s",
+        ),
+        (
+            lambda d: rewrite(d, "plants", lambda rows: rows + rows[:1]),
+            "a plant is defined twice",
+        ),
+        (
+            lambda d: rewrite(
+                d, "process_parameters", lambda rows: rows[0].__setitem__("unit", "L")
+            ),
+            "is given in 'L'; stored data are SI",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "sensors",
+                lambda rows: one_row(rows, sensor_id="target.T").__setitem__(
+                    "channel_kind", "state"
+                ),
+            ),
+            "is of kind 'state', not one of",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "sensors",
+                lambda rows: one_row(rows, sensor_id="target.C_A").__setitem__("unit", "mol/L"),
+            ),
+            "is given in 'mol/L'; stored data are SI",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "sensors",
+                lambda rows: one_row(rows, sensor_id="target.T").__setitem__("channel_index", 5),
+            ),
+            "the measured channels of 'target' are at positions \\[0, 5\\], not 0 to 1",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "sensors",
+                lambda rows: one_row(rows, sensor_id="target.T").__setitem__(
+                    "sensor_id", "target.temperature"
+                ),
+            ),
+            "is not named after its plant and variable, 'target.T'",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "sensors",
+                lambda rows: one_row(rows, sensor_id="target.T").__setitem__("noise_std", None),
+            ),
+            "measured channel 'target.T' needs a noise model and a noise level",
+        ),
+        (
+            lambda d: rewrite(
+                d,
+                "sensors",
+                lambda rows: one_row(rows, sensor_id="target.T_c").__setitem__("noise_std", 0.0),
+            ),
+            "known input 'target.T_c' is presented with noise",
+        ),
+        (
+            lambda d: rewrite(
+                d, "sensors", lambda rows: [r for r in rows if r["plant_id"] != "source"]
+            ),
+            "the plants \\['source'\\] have no channel",
+        ),
+        (
+            lambda d: rewrite_run(
+                d,
+                "target.p3.e0.x1.n0",
+                lambda t: with_column(t, "plant_id", ["source"] * t.num_rows),
+            ),
+            "name the plant \\['source'\\], not 'target'",
+        ),
+        (
+            lambda d: rewrite_run(
+                d,
+                "target.p3.e0.x1.n0",
+                lambda t: with_column(
+                    t, "sensor_id", ["source.T"] * 21 + t["sensor_id"].to_pylist()[21:]
+                ),
+            ),
+            "use the channels \\['source.T'\\], which its plant 'target' does not have",
+        ),
+    ],
+)
+def test_identifiers_and_relations_are_verified_on_reading(
+    damage,  # noqa: ANN001
+    message: str,
+    plants: list[PlantRecord],
+) -> None:
+    """Every case keeps schemas, row counts and table digests valid, so that nothing but
+    the checks of the contract can refuse it."""
+    directory = publish(plants, four_runs()).directory
+    damage(directory)
+    with pytest.raises(DatasetIntegrityError, match=message):
+        open_dataset(DATASET)
+
+
+def test_a_plant_without_a_run_is_refused_on_reading(plants: list[PlantRecord]) -> None:
+    directory = publish(plants, four_runs()).directory
+    rewrite(
+        directory, "operating_runs", lambda rows: [r for r in rows if r["plant_id"] != "source"]
+    )
+    edit_manifest(
+        directory,
+        lambda m: m.__setitem__("runs", [r for r in m["runs"] if r["plant_id"] != "source"]),
+    )
+    for path in (directory / "measurements").glob("source.*.parquet"):
+        path.unlink()
+    with pytest.raises(DatasetIntegrityError, match="the plants \\['source'\\] have no run"):
+        open_dataset(DATASET)
+
+
+def test_a_data_set_copied_under_another_name_is_refused(plants: list[PlantRecord]) -> None:
+    directory = publish(plants, four_runs()).directory
+    shutil.copytree(directory, directory.parent / "other")
+    with pytest.raises(DatasetIntegrityError, match="holds the data set 'unit-test', not 'other'"):
+        open_dataset("other")
+    assert open_dataset_directory(directory.parent / "other").dataset_id == DATASET

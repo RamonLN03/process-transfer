@@ -22,13 +22,17 @@ the content is the same, and changes nothing; with different content it is a con
 
 Reading. Files are taken from the list in the manifest, never from a wildcard, so
 nothing outside the data set can be picked up, the private branch least of all. Reading
-needs nothing but this directory. Schemas, row counts and content hashes are verified.
+needs nothing but this directory. Schemas, row counts and content hashes are verified,
+and so are the identifiers, the relations between the tables and the quality flag: what
+the writer refuses is refused on reading too, whatever wrote the files.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import secrets
 import shutil
 from collections.abc import Mapping, Sequence
@@ -47,7 +51,9 @@ from process_transfer.data.records import (
     PlantRecord,
     RunRecord,
     measurement_table,
+    require_si_unit,
     run_row,
+    sensor_id,
     sensor_rows,
     table_from_rows,
     validate_observations,
@@ -58,6 +64,7 @@ MANIFEST = "manifest.json"
 CONTRACT = "process-transfer/dataset"
 _STAGING_PREFIX = ".staging-"
 SMALL_TABLES = ("plants", "process_parameters", "sensors", "operating_runs")
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 class DatasetError(Exception):
@@ -83,6 +90,18 @@ def dataset_directory(dataset_id: str) -> Path:
 
 def _measurement_file(run_id: str) -> str:
     return f"measurements/{run_id}.parquet"
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise DatasetIntegrityError(message)
+
+
+def _identifier(name: str, value: object) -> str:
+    try:
+        return path_identifier(name, value)
+    except ValueError as error:
+        raise DatasetIntegrityError(str(error)) from None
 
 
 def _identity(manifest: Mapping[str, object]) -> dict[str, object]:
@@ -339,8 +358,11 @@ def observations_from_long(
     run: Mapping[str, object], sensors: Sequence[Mapping[str, object]], measurements: pa.Table
 ) -> Observations:
     """An ``Observations`` from one row of ``operating_runs``, the channels of its plant
-    and its rows of ``measurements``. Used for Parquet and for DuckDB alike. Every channel
-    must have the same ticks and the same instants; nothing is filled in."""
+    and its rows of ``measurements``. Used for Parquet and for DuckDB alike. Every row
+    must name the run and its plant, use a channel of that plant and carry the quality
+    flag of the contract; every channel must have the same ticks and the same instants;
+    nothing is filled in. What is rebuilt passes the validation of the writer."""
+    _verify_rows(run, sensors, measurements)
     n = int(run["n_samples"])  # type: ignore[arg-type]
     columns: dict[str, list[np.ndarray]] = {schema.CHANNEL_MEASURED: [], schema.CHANNEL_INPUT: []}
     reference: tuple[np.ndarray, np.ndarray] | None = None
@@ -376,7 +398,7 @@ def observations_from_long(
     def matrix(kind: str) -> np.ndarray:
         return np.column_stack(columns[kind]) if columns[kind] else np.empty((n, 0))
 
-    return Observations(
+    rebuilt = Observations(
         plant=str(run["plant_id"]),
         run=str(run["run_id"]),
         times=reference[1],
@@ -388,6 +410,54 @@ def observations_from_long(
         input_units=of_kind(schema.CHANNEL_INPUT, "unit"),
         sample_period=float(run["sampling_period_s"]),  # type: ignore[arg-type]
         noise_std=of_kind(schema.CHANNEL_MEASURED, "noise_std"),
+    )
+    try:
+        validate_observations(rebuilt)  # identifiers, names, SI units, the sensor clock
+    except ValueError as error:
+        raise DatasetIntegrityError(f"run {run['run_id']!r}: {error}") from None
+    _require(
+        float(run["start_time_s"]) == rebuilt.times[0]  # type: ignore[arg-type]
+        and float(run["end_time_s"]) == rebuilt.times[-1],  # type: ignore[arg-type]
+        f"run {run['run_id']!r} runs from {rebuilt.times[0]!r} to {rebuilt.times[-1]!r} s, and "
+        f"operating_runs says from {run['start_time_s']!r} to {run['end_time_s']!r} s",
+    )
+    return rebuilt
+
+
+def _verify_rows(
+    run: Mapping[str, object], sensors: Sequence[Mapping[str, object]], measurements: pa.Table
+) -> None:
+    """What every row of a run must say, checked on reading whatever was written: the run
+    and its plant, a channel of that plant, and the quality flag of the contract."""
+    run_id = run["run_id"]
+    _require(bool(sensors), f"the plant {run['plant_id']!r} of run {run_id!r} has no channels")
+    for column, label in (("run_id", "run"), ("plant_id", "plant")):
+        found = set(pc.unique(measurements[column]).to_pylist())
+        _require(
+            found <= {run[column]},
+            f"rows of run {run_id!r} name the {label} {sorted(found - {run[column]})}, not "
+            f"{run[column]!r}",
+        )
+    known = {channel["sensor_id"] for channel in sensors}
+    found = set(pc.unique(measurements["sensor_id"]).to_pylist())
+    _require(
+        found <= known,
+        f"rows of run {run_id!r} use the channels {sorted(found - known)}, which its plant "
+        f"{run['plant_id']!r} does not have",
+    )
+    flags = measurements["quality_flag"].to_numpy()
+    other = flags[flags != schema.QUALITY_GOOD]
+    _require(
+        other.size == 0,
+        f"{other.size} rows of run {run_id!r} carry the quality flags "
+        f"{np.unique(other).tolist()}; contract version {schema.SCHEMA_VERSION} defines only "
+        f"{schema.QUALITY_GOOD}, and the writer stores nothing else",
+    )
+    periods = {float(channel["sampling_period_s"]) for channel in sensors}  # type: ignore[arg-type]
+    _require(
+        periods == {float(run["sampling_period_s"])},  # type: ignore[arg-type]
+        f"run {run_id!r} is sampled every {run['sampling_period_s']!r} s and its channels "
+        f"every {sorted(periods)} s",
     )
 
 
@@ -408,13 +478,20 @@ def _read(path: Path, name: str) -> pa.Table:
 
 
 def open_dataset(dataset_id: str) -> Dataset:
-    """The published data set ``dataset_id`` under ``PT_DATA_DIR``, verified."""
-    return open_dataset_directory(dataset_directory(dataset_id))
+    """The published data set ``dataset_id`` under ``PT_DATA_DIR``, verified, and the one
+    its manifest says it is: a data set renamed or copied under another name is refused."""
+    dataset = open_dataset_directory(dataset_directory(dataset_id))
+    _require(
+        dataset.dataset_id == dataset_id,
+        f"{dataset.directory} holds the data set {dataset.dataset_id!r}, not {dataset_id!r}",
+    )
+    return dataset
 
 
 def open_dataset_directory(directory: Path) -> Dataset:
-    """Open and verify the data set in ``directory``: manifest, list of files, schemas,
-    row counts and content hashes. Only that directory is read."""
+    """Open and verify the data set in ``directory``: manifest, identifiers, list of
+    files, schemas, row counts, the relations between the tables, the quality flag and
+    the content hashes. Only that directory is read."""
     directory = Path(directory)
     manifest_path = directory / MANIFEST
     if not manifest_path.is_file():
@@ -437,6 +514,27 @@ def open_dataset_directory(directory: Path) -> Dataset:
             f"{directory} hashes its content with {manifest.get('encodings')!r}, not with "
             f"{expected_encodings!r}"
         )
+
+    dataset_id = _identifier("dataset_id", manifest.get("dataset_id"))
+    _require(
+        isinstance(manifest.get("tables"), dict) and set(manifest["tables"]) == set(SMALL_TABLES),
+        f"{directory}: the manifest lists the tables {sorted(manifest.get('tables') or [])}, "
+        f"not {sorted(SMALL_TABLES)}",
+    )
+    _require(
+        isinstance(manifest.get("runs"), list) and bool(manifest["runs"]),
+        f"{directory}: the manifest lists no run",
+    )
+    for run in manifest["runs"]:
+        run_id = _identifier("run_id", run.get("run_id"))
+        _identifier("plant_id", run.get("plant_id"))
+        _require(
+            run.get("file") == _measurement_file(run_id),
+            f"{directory}: run {run_id!r} is listed with the file {run.get('file')!r}, not "
+            f"with {_measurement_file(run_id)!r}",
+        )
+    run_ids = [run["run_id"] for run in manifest["runs"]]
+    _require(len(set(run_ids)) == len(run_ids), f"{directory}: a run is listed twice: {run_ids}")
 
     listed = {MANIFEST} | {entry["file"] for entry in manifest["tables"].values()}
     listed |= {run["file"] for run in manifest["runs"]}
@@ -464,9 +562,10 @@ def open_dataset_directory(directory: Path) -> Dataset:
         raise DatasetIntegrityError(
             f"operating_runs lists {sorted(recorded)} and the manifest {sorted(dataset.run_ids)}"
         )
+    _verify_small_tables(dataset, dataset_id)
     for run in manifest["runs"]:
         row = recorded[run["run_id"]]
-        if row["content_sha256"] != run["content_sha256"] or row["n_samples"] != run["n_samples"]:
+        if any(row[key] != run[key] for key in ("plant_id", "content_sha256", "n_samples")):
             raise DatasetIntegrityError(
                 f"run {run['run_id']!r}: manifest and operating_runs differ"
             )
@@ -476,3 +575,125 @@ def open_dataset_directory(directory: Path) -> Dataset:
             )
         dataset.observations(run["run_id"])  # rebuilds the run and checks its content hash
     return dataset
+
+
+def _verify_small_tables(dataset: Dataset, dataset_id: str) -> None:
+    """The identifiers and the relations of the four small tables, as the contract
+    states them and as the writer enforces them: what was refused on writing is refused
+    on reading too, whatever wrote the files."""
+    where = dataset.directory
+    plants = dataset.table("plants").to_pylist()
+    plant_ids = [_identifier("plants.plant_id", row["plant_id"]) for row in plants]
+    _require(len(set(plant_ids)) == len(plant_ids), f"{where}: a plant is defined twice")
+    known = set(plant_ids)
+
+    def of_plant(table: str, row: Mapping[str, object]) -> str:
+        _require(
+            row["plant_id"] in known,
+            f"{where}: {table} names the plant {row['plant_id']!r}, which plants does not have",
+        )
+        return str(row["plant_id"])
+
+    def si(what: str, unit: object) -> None:
+        try:
+            require_si_unit(what, unit)
+        except ValueError as error:
+            raise DatasetIntegrityError(f"{where}: {error}") from None
+
+    def positive(row: Mapping[str, object], *keys: str) -> bool:
+        return all(math.isfinite(row[key]) and row[key] > 0 for key in keys)  # type: ignore[arg-type]
+
+    parameters = dataset.table("process_parameters").to_pylist()
+    keys = [(of_plant("process_parameters", row), row["parameter"]) for row in parameters]
+    _require(len(set(keys)) == len(keys), f"{where}: a parameter is given twice")
+    for row in parameters:
+        si(f"process_parameters.{row['parameter']}", row["unit"])
+        _require(
+            math.isfinite(row["value"]),
+            f"{where}: {row['plant_id']}.{row['parameter']} is {row['value']!r}",
+        )
+
+    sensors = dataset.table("sensors").to_pylist()
+    ids = [row["sensor_id"] for row in sensors]
+    _require(len(set(ids)) == len(ids), f"{where}: a channel is defined twice")
+    units: dict[str, set[str]] = {}
+    positions: dict[tuple[str, str], list[int]] = {}
+    for row in sensors:
+        plant_id = of_plant("sensors", row)
+        name, kind, channel = row["variable_name"], row["channel_kind"], row["sensor_id"]
+        _require(bool(name.strip()), f"{where}: the channel {channel!r} has no variable name")
+        _require(
+            channel == sensor_id(plant_id, name),
+            f"{where}: the channel {channel!r} is not named after its plant and variable, "
+            f"{sensor_id(plant_id, name)!r}",
+        )
+        _require(
+            kind in schema.CHANNEL_KINDS,
+            f"{where}: channel {channel!r} is of kind {kind!r}, not one of {schema.CHANNEL_KINDS}",
+        )
+        si(f"sensors.{channel}", row["unit"])
+        _require(
+            positive(row, "sampling_period_s"),
+            f"{where}: channel {channel!r} is sampled every {row['sampling_period_s']!r} s",
+        )
+        noise_model, noise_std = row["noise_model"], row["noise_std"]
+        if kind == schema.CHANNEL_MEASURED:
+            _require(
+                noise_model == schema.NOISE_ADDITIVE_GAUSSIAN
+                and noise_std is not None
+                and math.isfinite(noise_std)
+                and noise_std >= 0,
+                f"{where}: measured channel {channel!r} needs a noise model and a noise level "
+                f"of zero or more, got {noise_model!r} and {noise_std!r}",
+            )
+        else:
+            _require(
+                noise_model is None and noise_std is None,
+                f"{where}: known input {channel!r} is presented with noise",
+            )
+        units.setdefault(name, set()).add(row["unit"])
+        positions.setdefault((plant_id, kind), []).append(int(row["channel_index"]))
+    mixed = {name: sorted(found) for name, found in units.items() if len(found) > 1}
+    _require(not mixed, f"{where}: a variable has different units on different plants: {mixed}")
+    for (plant_id, kind), found in positions.items():
+        _require(
+            sorted(found) == list(range(len(found))),
+            f"{where}: the {kind} channels of {plant_id!r} are at positions {sorted(found)}, "
+            f"not 0 to {len(found) - 1}",
+        )
+    _require(
+        known <= {plant_id for plant_id, _ in positions},
+        f"{where}: the plants {sorted(known - {p for p, _ in positions})} have no channel",
+    )
+
+    runs = dataset.table("operating_runs").to_pylist()
+    run_ids = [_identifier("operating_runs.run_id", row["run_id"]) for row in runs]
+    _require(len(set(run_ids)) == len(run_ids), f"{where}: a run is defined twice")
+    for row in runs:
+        of_plant("operating_runs", row)
+        _require(
+            row["dataset_id"] == dataset_id,
+            f"{where}: the run {row['run_id']!r} says it belongs to {row['dataset_id']!r}, not "
+            f"to {dataset_id!r}",
+        )
+        _require(
+            _SHA256.fullmatch(row["content_sha256"]) is not None,
+            f"{where}: the run {row['run_id']!r} has no SHA-256 content hash",
+        )
+        _require(
+            positive(row, "sampling_period_s")
+            and math.isfinite(row["start_time_s"])
+            and math.isfinite(row["end_time_s"])
+            and row["end_time_s"] >= row["start_time_s"]
+            and row["n_samples"] >= 1,
+            f"{where}: the run {row['run_id']!r} has an impossible extent, sampling period or "
+            "number of samples",
+        )
+        _require(
+            bool(row["operating_mode"].strip()) and bool(row["description"].strip()),
+            f"{where}: the run {row['run_id']!r} has no operating mode or no description",
+        )
+    _require(
+        known <= {row["plant_id"] for row in runs},
+        f"{where}: the plants {sorted(known - {row['plant_id'] for row in runs})} have no run",
+    )
