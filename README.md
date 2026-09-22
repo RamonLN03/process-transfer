@@ -22,6 +22,10 @@ pip install -e ".[dev]"
 
 Keep the virtual environment outside synced folders such as OneDrive.
 
+To reconstruct the exact environment the registered M0 results were generated and
+checked in, rather than the current dependency bounds of `pyproject.toml`, see
+`docs/reference_environment.md` and `requirements-reference.lock.txt`.
+
 ### Tests and lint
 
 ```

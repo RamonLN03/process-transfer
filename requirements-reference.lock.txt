@@ -1,0 +1,45 @@
+# Reference environment for ProcessTransfer.
+#
+# Exact package versions of the environment the registered M0 results were
+# generated and checked in: the data sets of M0-E05/06/07, the oracle
+# diagnostic of M0-E08, and the 725 tests of the suite at this commit.
+# See docs/reference_environment.md for what this does and does not promise,
+# how to rebuild it, and how to validate it.
+#
+# Captured with `pip freeze` from C:/Users/rlnsk/.venvs/plant-transfer on
+# 2026-09-22, with the editable install of this package itself removed (that
+# line names a local path, not a reproducible version).
+#
+# Direct dependencies (pyproject.toml) and their transitive requirements are
+# both pinned here, deliberately: this file is a reference snapshot to
+# reconstruct one known-good environment, not the project's dependency
+# contract. pyproject.toml keeps the looser lower bounds a library should
+# state; this file does not replace it and is not installed by CI.
+annotated-types==0.8.0
+colorama==0.4.6
+contourpy==1.4.0
+cycler==0.12.1
+duckdb==1.5.5
+fonttools==4.65.0
+iniconfig==2.3.0
+kiwisolver==1.5.1
+matplotlib==3.11.2
+numpy==2.5.3
+packaging==26.3
+pandas==3.0.5
+pillow==12.3.0
+pluggy==1.6.0
+pyarrow==25.0.1
+pydantic==2.13.5
+pydantic_core==2.46.5
+Pygments==2.21.0
+pyparsing==3.3.2
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+ruff==0.16.8
+scipy==1.18.1
+six==1.17.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tzdata==2026.4
