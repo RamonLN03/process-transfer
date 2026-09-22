@@ -12,6 +12,15 @@ what must not be there:
   a sensor instant, the master seed of the noise or a word of a noise stream;
 * files: anything that is not Parquet, JSON or the database.
 
+Numbers are looked for in the fields whose values are free: readings, inputs, parameter
+values, noise levels and any scalar of a document. They are not looked for in the fields
+whose values the contract fixes, the ticks, positions, counts, versions and instants on
+the sampling clock (``STRUCTURAL_FIELDS``): those hold every small integer and every
+instant by construction, so finding a seed of 0 among the ticks says nothing, and a
+legitimate data set must not fail for its seed. The readers verify those fields against
+the contract instead, so a number hidden in one of them would be refused as a violation
+of the contract rather than found here.
+
 It knows the hidden values, so it lives on the truth side. It is a check against
 accidents, not a proof: a hidden value written in a transformed way, scaled or rounded,
 would not be found by comparing numbers.
@@ -52,6 +61,29 @@ FORBIDDEN_IN_NAMES = (
 )
 FORBIDDEN_IN_TEXT = ("true_physics", "sensor_master_seed", "saturation_constant", "UA_ref")
 RELATIVE_TOLERANCE = 1.0e-12  # a parameter may have gone through a unit conversion and back
+
+# Fields whose values are fixed by the contract (docs/data_contract.md) and verified by the
+# readers: ticks, positions, counts, versions, and instants and periods of the sampling
+# clock. Their names are still examined; their values are not compared with hidden ones.
+STRUCTURAL_FIELDS = frozenset(
+    {
+        "sample_index",
+        "channel_index",
+        "quality_flag",
+        "n_samples",
+        "rows",
+        "n_rows",
+        "n_channels",
+        "schema_version",
+        "version",
+        "ticks_since_previous",
+        "time_s",
+        "start_time_s",
+        "end_time_s",
+        "sampling_period_s",
+        "seconds_since_previous",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -99,19 +131,21 @@ def _integer_findings(where: str, values: Iterable[int], hidden: HiddenValues) -
 
 
 def _scan_json(where: str, document: object, hidden: HiddenValues) -> list[str]:
+    """Names, numbers and text of a document. A number is compared with the hidden values
+    unless the field that holds it, the nearest key above it, is structural."""
     findings: list[str] = []
     floats: list[float] = []
     integers: list[int] = []
 
-    def walk(node: object, trail: str) -> None:
+    def walk(node: object, trail: str, field: str) -> None:
         if isinstance(node, dict):
             findings.extend(_name_findings(f"{where} {trail}", node.keys()))
             for key, value in node.items():
-                walk(value, f"{trail}/{key}")
+                walk(value, f"{trail}/{key}", str(key))
         elif isinstance(node, list):
             for index, value in enumerate(node):
-                walk(value, f"{trail}[{index}]")
-        elif isinstance(node, bool) or node is None:
+                walk(value, f"{trail}[{index}]", field)
+        elif isinstance(node, bool) or node is None or field in STRUCTURAL_FIELDS:
             return
         elif isinstance(node, int):
             integers.append(node)
@@ -122,17 +156,20 @@ def _scan_json(where: str, document: object, hidden: HiddenValues) -> list[str]:
                 if word.lower() in node.lower():
                     findings.append(f"{where} {trail}: the text mentions {word!r}")
 
-    walk(document, "")
+    walk(document, "", "")
     findings += _float_findings(where, np.array(floats, dtype=np.float64), hidden)
     findings += _integer_findings(where, integers, hidden)
     return findings
 
 
 def _scan_columns(where: str, columns: dict[str, np.ndarray], hidden: HiddenValues) -> list[str]:
-    """Names and values of the columns of one relation, whatever it was read from."""
+    """Names and values of the columns of one relation, whatever it was read from. The
+    values of a structural column are not compared; its name is examined like any other."""
     findings = _name_findings(where, columns)
     for name, values in columns.items():
         values = np.ma.getdata(values)[~np.ma.getmaskarray(values)]  # nulls hold no value
+        if name in STRUCTURAL_FIELDS:
+            continue
         if values.dtype.kind == "f":
             findings += _float_findings(f"{where}.{name}", values, hidden)
         elif values.dtype.kind in "iu":

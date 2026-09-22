@@ -270,6 +270,75 @@ def test_the_scan_finds_a_leak_of_each_kind(tmp_path: Path) -> None:
         scan_available([clean], HiddenValues({"alpha": 0.0}, np.array([])), ())
 
 
+def test_a_small_seed_or_a_value_that_equals_an_instant_is_not_a_leak(tmp_path: Path) -> None:
+    """Regression. The scan compared every number with the hidden ones, so a master seed
+    of 0 was "found" in every tick, position and flag, and a data set generated with it
+    could never pass. Fields whose values the contract fixes are not searched; the same
+    values in a free field still are."""
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    pq.write_table(
+        pa.table(
+            {
+                "sample_index": pa.array([0, 1, 2], pa.int64()),
+                "channel_index": pa.array([0, 1, 1], pa.int32()),
+                "quality_flag": pa.array([0, 0, 0], pa.int16()),
+                "time_s": [0.0, 6.0, 12.0],
+                "T": [355.4, 354.9, 355.1],
+            }
+        ),
+        clean / "run.parquet",
+    )
+    (clean / "manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "version": 1,
+                "runs": [{"rows": 3, "n_samples": 3, "start_time_s": 0.0, "end_time_s": 12.0}],
+                "tables": {"plants": {"rows": 2}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    for seed in (0, 1, 2, 3):
+        hidden = HiddenValues({"k of x": 6.0}, np.array([12.0]), {"the master seed": seed})
+        assert scan_available([clean], hidden, ())["findings"] == [], seed
+
+    planted = tmp_path / "planted"
+    planted.mkdir()
+    pq.write_table(
+        pa.table({"n": pa.array([0], pa.int64()), "value": [6.0]}), planted / "run.parquet"
+    )
+    (planted / "x.json").write_text(
+        json.dumps({"entropy": 0, "words": [[0, 5, 6, 7]], "rate": 6.0}), encoding="utf-8"
+    )
+    hidden = HiddenValues({"k of x": 6.0}, np.array([]), {"the master seed": 0})
+    assert sorted(scan_available([planted], hidden, ())["findings"]) == [
+        "run.parquet.n: holds the master seed, 0",
+        "run.parquet.value: holds the hidden value of k of x, 6.0",
+        "x.json: holds the hidden value of k of x, 6.0",
+        "x.json: holds the master seed, 0",
+    ]
+
+
+def test_a_master_seed_of_zero_passes_the_whole_path(
+    tmp_path: Path, configs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression, end to end: the definition is valid and the data set is clean, so the
+    scan must find nothing and the command must succeed."""
+    monkeypatch.setenv("PT_DATA_DIR", str(tmp_path / "data"))
+    definition = write_definition(
+        tmp_path,
+        configs_dir,
+        dataset_id="seed-zero-test",
+        excitation_seeds=[46],
+        sensor_master_seed=0,
+    )
+    report = pipeline.run_pipeline(definition, figures=False)
+    assert report["hidden_information_scan"]["findings"] == []
+    assert report["ok"] is True and all(report["checks"].values()), report["checks"]
+
+
 # --------------------------------------------------------------------------- #
 # Failures are reported and are not a pass
 # --------------------------------------------------------------------------- #
