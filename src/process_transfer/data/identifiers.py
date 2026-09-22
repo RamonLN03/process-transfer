@@ -8,10 +8,17 @@ dropped by Windows. All of these are refused rather than repaired.
 
 The logical identity of a run says what the run is (``docs/data_contract.md``):
 
-    <plant_id>.<protocol>.e<excitation seed>.x<number of excursions>.n<noise realisation>
+    <plant_id>.<protocol>.<definition>.n<noise realisation>
 
-and its noise stream is derived from that identity, so that the same identity always
-means the same noise and a new realisation always means a new one.
+where the definition depends on the protocol and never on the clock or the content:
+
+    p3       e<excitation seed>.x<number of excursions>       target.p3.e0.x10.n0
+    steady   d<duration in seconds>                            target.steady.d7200.n0
+    step     <input>-<direction>.l<lead>.h<hold>.r<recovery>   target.step.tc-up.l600.h600.r600.n0
+
+The noise stream is derived from the identity, so that the same identity always means
+the same noise and a new realisation always means a new one. The definition part is the
+same on every plant that runs the same experiment, which is how the plants are paired.
 """
 
 from __future__ import annotations
@@ -55,23 +62,72 @@ def _count(name: str, value: object, minimum: int) -> int:
     return int(value)
 
 
+_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def _part(name: str, value: object) -> str:
+    """A part of an identity: lower-case letters and digits, without the separators."""
+    if not isinstance(value, str) or _TOKEN.fullmatch(value) is None:
+        raise ValueError(f"{name} must be lower-case letters and digits only, got {value!r}")
+    return value
+
+
+def _identity(plant_id: str, protocol: str, definition: str, noise_realisation: int) -> str:
+    path_identifier("plant_id", plant_id)
+    if "." in plant_id:
+        raise ValueError(
+            f"plant_id must not contain a dot, which separates the parts: {plant_id!r}"
+        )
+    _part("protocol", protocol)
+    realisation = _count("noise_realisation", noise_realisation, 0)
+    return path_identifier("run_id", f"{plant_id}.{protocol}.{definition}.n{realisation}")
+
+
 def run_identifier(
     plant_id: str, protocol: str, excitation_seed: int, n_excursions: int, noise_realisation: int
 ) -> str:
-    """The logical identity of a run, built from its definition and from nothing else.
+    """The logical identity of a seeded excursion run such as P3, built from its
+    definition and from nothing else.
 
     The noise realisation is part of it, so two realisations of the noise on the same
     excitation are two runs. The seed of the noise is not part of it.
     """
-    path_identifier("plant_id", plant_id)
-    path_identifier("protocol", protocol)
-    for name, value in (("plant_id", plant_id), ("protocol", protocol)):
-        if "." in value:
-            raise ValueError(f"{name} must not contain a dot, which separates the parts: {value!r}")
     seed = _count("excitation_seed", excitation_seed, 0)
     excursions = _count("n_excursions", n_excursions, 1)
-    realisation = _count("noise_realisation", noise_realisation, 0)
-    return path_identifier("run_id", f"{plant_id}.{protocol}.e{seed}.x{excursions}.n{realisation}")
+    return _identity(plant_id, protocol, f"e{seed}.x{excursions}", noise_realisation)
+
+
+def steady_run_identifier(plant_id: str, duration_s: int, noise_realisation: int) -> str:
+    """The identity of a run of steady operation: the nominal inputs held for a whole
+    number of seconds. Nothing is drawn at random, so there is no seed to name."""
+    seconds = _count("duration_s", duration_s, 1)
+    return _identity(plant_id, "steady", f"d{seconds}", noise_realisation)
+
+
+def step_run_identifier(
+    plant_id: str,
+    input_name: str,
+    direction: str,
+    lead_s: int,
+    hold_s: int,
+    recovery_s: int,
+    noise_realisation: int,
+) -> str:
+    """The identity of a single-input step test: which input, which direction, and the
+    three durations in whole seconds. Nothing is drawn at random."""
+    _part("input_name", input_name)
+    if direction not in ("up", "down"):
+        raise ValueError(f"direction must be 'up' or 'down', got {direction!r}")
+    lead = _count("lead_s", lead_s, 1)
+    hold = _count("hold_s", hold_s, 1)
+    recovery = _count("recovery_s", recovery_s, 1)
+    definition = f"{input_name}-{direction}.l{lead}.h{hold}.r{recovery}"
+    return _identity(plant_id, "step", definition, noise_realisation)
+
+
+def run_definition(run_id: str) -> str:
+    """The identity without its plant: what pairs the runs of two plants."""
+    return path_identifier("run_id", run_id).split(".", 1)[1]
 
 
 def noise_stream_words(run_id: str) -> tuple[int, int, int, int]:

@@ -2,7 +2,8 @@
 
     1  load the definition of the data set, the plants and the instruments
     2  build the plants and verify their starting points
-    3  generate protocol P3 for every excitation seed
+    3  generate the runs of the protocol: P3 under every excitation seed, steady
+       operation, or the single-input step tests
     4  simulate and validate the true trajectories
     5  observe them with the sensors
     6  write the Parquet data set, and the private record of the attempt
@@ -39,7 +40,12 @@ from process_transfer.config import (
 )
 from process_transfer.data import database
 from process_transfer.data.export import export_dataset, open_export_directory
-from process_transfer.data.identifiers import require_distinct_runs, run_identifier
+from process_transfer.data.identifiers import (
+    require_distinct_runs,
+    run_identifier,
+    steady_run_identifier,
+    step_run_identifier,
+)
 from process_transfer.data.parquet_store import DatasetWriter, open_dataset
 from process_transfer.data.private_store import write_private_attempt
 from process_transfer.data.provenance import environment, git_state
@@ -48,7 +54,7 @@ from process_transfer.generation.leak_scan import HiddenValues, scan_available
 from process_transfer.generation.plants import VirtualPlant, load_virtual_plant
 from process_transfer.measurement.observations import Observations
 from process_transfer.measurement.sensors import MeasurementSpec
-from process_transfer.simulation.integration import simulate_piecewise
+from process_transfer.simulation.integration import InputSegment, simulate_piecewise
 from process_transfer.simulation.operating_run import observe_trajectory
 from process_transfer.simulation.protocols import (
     P3_HOLD,
@@ -57,17 +63,22 @@ from process_transfer.simulation.protocols import (
     corner_label,
     p3_corners,
     p3_segments,
+    single_step_segments,
+    steady_segments,
 )
 
 
 @dataclass(frozen=True)
 class RunDefinition:
+    """One run to generate: its identity, its plant, its noise stream and the settings
+    of its protocol, which are what the identity was built from."""
+
     run_id: str
     plant_id: str
-    excitation_seed: int
-    n_excursions: int
+    protocol: str  # "p3", "steady" or "step"
     noise_realisation: int
     stream: tuple[int, int, int, int]
+    settings: Mapping[str, int | str] = field(default_factory=dict)
 
 
 @dataclass
@@ -80,35 +91,99 @@ class GeneratedRun:
 
 
 def define_runs(definition: DatasetDefinitionConfig, plant_ids: list[str]) -> list[RunDefinition]:
-    """Every plant under every excitation seed, with the noise stream that follows from
-    each identity. Two runs with one identity or one stream are refused here."""
-    identities = [
-        (
-            plant_id,
-            seed,
-            run_identifier(
-                plant_id,
-                definition.protocol,
-                seed,
-                definition.n_excursions,
-                definition.noise_realisation,
-            ),
-        )
-        for seed in definition.excitation_seeds
-        for plant_id in plant_ids
-    ]
-    streams = require_distinct_runs(run_id for _, _, run_id in identities)
+    """The runs of a definition on every plant, with the noise stream that follows from
+    each identity: every excitation seed for P3, one run for steady operation, one per
+    input and direction for the step tests. Two runs with one identity or one stream are
+    refused here."""
+    k = definition.noise_realisation
+    planned: list[tuple[str, str, dict[str, int | str]]] = []  # run_id, plant, settings
+    if definition.protocol == "p3":
+        for seed in definition.excitation_seeds:
+            for plant_id in plant_ids:
+                run_id = run_identifier(plant_id, "p3", seed, definition.n_excursions, k)
+                planned.append(
+                    (
+                        run_id,
+                        plant_id,
+                        {"excitation_seed": seed, "n_excursions": definition.n_excursions},
+                    )
+                )
+    elif definition.protocol == "steady":
+        for plant_id in plant_ids:
+            run_id = steady_run_identifier(plant_id, definition.duration_s, k)
+            planned.append((run_id, plant_id, {"duration_s": definition.duration_s}))
+    elif definition.protocol == "step":
+        lead, hold, recovery = definition.durations_s
+        for input_name in definition.inputs:
+            for direction in definition.directions:
+                for plant_id in plant_ids:
+                    run_id = step_run_identifier(
+                        plant_id, input_name, direction, lead, hold, recovery, k
+                    )
+                    settings: dict[str, int | str] = {
+                        "input": input_name,
+                        "direction": direction,
+                        "lead_s": lead,
+                        "hold_s": hold,
+                        "recovery_s": recovery,
+                    }
+                    planned.append((run_id, plant_id, settings))
+    else:
+        raise ValueError(f"unknown protocol {definition.protocol!r}")
+    streams = require_distinct_runs(run_id for run_id, _, _ in planned)
     return [
-        RunDefinition(
-            run_id,
-            plant_id,
-            seed,
-            definition.n_excursions,
-            definition.noise_realisation,
-            streams[run_id],
-        )
-        for plant_id, seed, run_id in identities
+        RunDefinition(run_id, plant_id, definition.protocol, k, streams[run_id], settings)
+        for run_id, plant_id, settings in planned
     ]
+
+
+def run_segments(
+    run: RunDefinition, nominal_inputs: np.ndarray
+) -> tuple[list[InputSegment], dict[str, object]]:
+    """The input segments of a run, and what the private record says about them."""
+    s = run.settings
+    if run.protocol == "p3":
+        corners = p3_corners(int(s["n_excursions"]), int(s["excitation_seed"]))
+        return p3_segments(nominal_inputs, corners), {
+            "corners": [corner_label(corner) for corner in corners]
+        }
+    if run.protocol == "steady":
+        return steady_segments(nominal_inputs, float(s["duration_s"])), {}
+    if run.protocol == "step":
+        segments = single_step_segments(
+            nominal_inputs,
+            str(s["input"]),
+            str(s["direction"]),
+            float(s["lead_s"]),
+            float(s["hold_s"]),
+            float(s["recovery_s"]),
+        )
+        return segments, {}
+    raise ValueError(f"unknown protocol {run.protocol!r}")
+
+
+def describe_run(description: str, run: RunDefinition) -> str:
+    """The words about a run that go into ``operating_runs``: what whoever ran the test
+    on the plant would know, and nothing of the truth."""
+    s, k = run.settings, run.noise_realisation
+    if run.protocol == "p3":
+        return (
+            f"{description} Protocol P3 (D-019): A10 amplitudes, {P3_HOLD:g} s at a corner of "
+            f"the input box, {P3_REST:g} s at the nominal inputs, {s['n_excursions']} excursions, "
+            f"excitation seed {s['excitation_seed']}, noise realisation {k}."
+        )
+    if run.protocol == "steady":
+        return (
+            f"{description} Steady operation (D-010): the nominal inputs held for "
+            f"{s['duration_s']} s from the nominal steady state, no excitation, noise "
+            f"realisation {k}."
+        )
+    return (
+        f"{description} Single-input step test (D-010): {s['lead_s']} s at the nominal inputs, "
+        f"{s['hold_s']} s with {s['input']} moved {s['direction']} by its A10 amplitude, the "
+        f"other inputs nominal, {s['recovery_s']} s at the nominal inputs; an independent run "
+        f"from the nominal steady state, noise realisation {k}."
+    )
 
 
 def generate_run(
@@ -118,10 +193,10 @@ def generate_run(
     master_seed: int,
     simulation_period: float,
 ) -> GeneratedRun:
-    """Simulate, validate and observe one run of protocol P3. The state is carried from
-    segment to segment and never reset. A truth that is not accepted raises."""
-    corners = p3_corners(run.n_excursions, run.excitation_seed)
-    segments = p3_segments(plant.nominal_inputs, corners)
+    """Simulate, validate and observe one run, from the nominal steady state of its plant.
+    The state is carried from segment to segment and never reset. A truth that is not
+    accepted raises."""
+    segments, about_segments = run_segments(run, plant.nominal_inputs)
     trajectory = simulate_piecewise(plant.f, plant.nominal_state, segments, simulation_period)
     observed = observe_trajectory(
         trajectory,
@@ -139,11 +214,11 @@ def generate_run(
     check = observed.truth.check
     private = {
         "plant_id": run.plant_id,
-        "excitation_seed": run.excitation_seed,
-        "n_excursions": run.n_excursions,
+        "protocol": run.protocol,
+        **dict(run.settings),
         "noise_realisation": run.noise_realisation,
         "noise_stream": list(run.stream),
-        "corners": [corner_label(corner) for corner in corners],
+        **about_segments,
         "true_samples": int(len(trajectory.times)),
         "truth_accepted": bool(check.accepted),
         "refined_peak_temperature_K": check.refined_peak_temperature,
@@ -249,14 +324,13 @@ def run_pipeline(definition_path: Path, figures: bool = True) -> dict[str, objec
                     definition.sensor_master_seed,
                     simulation_period,
                 )
-                description = (
-                    f"{definition.description} Protocol P3 (D-019): A10 amplitudes, "
-                    f"{P3_HOLD:g} s at a corner of the input box, {P3_REST:g} s at the nominal "
-                    f"inputs, {run.n_excursions} excursions, excitation seed "
-                    f"{run.excitation_seed}, noise realisation {run.noise_realisation}."
-                )
                 writer.add_run(
-                    made.observations, RunRecord(definition.dataset_id, "p3", description)
+                    made.observations,
+                    RunRecord(
+                        definition.dataset_id,
+                        definition.protocol,
+                        describe_run(definition.description, run),
+                    ),
                 )
                 generated.append(made)
             published = writer.publish()

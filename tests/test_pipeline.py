@@ -29,6 +29,33 @@ MASTER_SEED = 987654321
 RUNS = [f"{plant}.p3.e{seed}.x1.n0" for seed in (41, 42) for plant in ("source", "target")]
 
 
+def write_other_definition(
+    directory: Path, configs_dir: Path, protocol: str, **changes: object
+) -> Path:
+    """A steady or step definition, short enough for a test; JSON is YAML."""
+    definition: dict[str, object] = {
+        "dataset_id": f"{protocol}-test",
+        "description": f"A small {protocol} data set for the tests of the data path.",
+        "plants": [str(configs_dir / "source_cstr.yaml"), str(configs_dir / "target_cstr.yaml")],
+        "sensors": str(configs_dir / "sensors_cstr.yaml"),
+        "protocol": protocol,
+        "noise_realisation": 0,
+        "sensor_master_seed": MASTER_SEED,
+        "simulation_period": {"value": 0.1, "unit": "s"},
+    }
+    if protocol == "steady":
+        definition["duration"] = {"value": 2.0, "unit": "min"}
+    elif protocol == "step":
+        for name in ("lead", "hold", "recovery"):
+            definition[name] = {"value": 1.0, "unit": "min"}
+        definition["inputs"] = ["tc"]
+        definition["directions"] = ["up", "down"]
+    definition.update(changes)
+    path = directory / f"{protocol}_definition.json"
+    path.write_text(json.dumps(definition), encoding="utf-8")
+    return path
+
+
 def write_definition(directory: Path, configs_dir: Path, **changes: object) -> Path:
     definition = {
         "dataset_id": "pipeline-test",
@@ -446,7 +473,7 @@ def test_an_export_with_other_content_under_the_same_name_is_a_conflict(
         ({"plants": []}, "one or more distinct files"),
         ({"n_excursions": 0}, "greater than or equal to 1"),
         ({"sensor_master_seed": -5}, "greater than or equal to 0"),
-        ({"protocol": "p0"}, "Input should be 'p3'"),
+        ({"protocol": "p0"}, "does not match any of the expected tags: 'p3', 'steady', 'step'"),
         ({"simulation_period": {"value": 0.1, "unit": "K"}}, "requires time"),
         ({"amplitude": 0.2}, "Extra inputs are not permitted"),
     ],
@@ -492,3 +519,91 @@ def test_the_starting_point_of_a_plant_is_verified_not_assumed(
                 "multiple", feed="1.0, unit: mol/L", coolant="310.0, unit: K", ua="5.0e+4, unit"
             )
         )
+
+
+# --------------------------------------------------------------------------- #
+# Steady operation and single-input steps through the same path
+# --------------------------------------------------------------------------- #
+
+
+def test_runs_of_the_other_protocols_are_defined_from_their_settings(
+    tmp_path: Path, configs_dir: Path
+) -> None:
+    steady = load_dataset_definition(write_other_definition(tmp_path, configs_dir, "steady"))
+    runs = pipeline.define_runs(steady, ["source", "target"])
+    assert [run.run_id for run in runs] == ["source.steady.d120.n0", "target.steady.d120.n0"]
+    assert all(run.protocol == "steady" and run.settings == {"duration_s": 120} for run in runs)
+    assert len({run.stream for run in runs}) == 2
+
+    step = load_dataset_definition(
+        write_other_definition(tmp_path, configs_dir, "step", inputs=["q", "tc"])
+    )
+    runs = pipeline.define_runs(step, ["source", "target"])
+    assert [run.run_id for run in runs] == [
+        "source.step.q-up.l60.h60.r60.n0",
+        "target.step.q-up.l60.h60.r60.n0",
+        "source.step.q-down.l60.h60.r60.n0",
+        "target.step.q-down.l60.h60.r60.n0",
+        "source.step.tc-up.l60.h60.r60.n0",
+        "target.step.tc-up.l60.h60.r60.n0",
+        "source.step.tc-down.l60.h60.r60.n0",
+        "target.step.tc-down.l60.h60.r60.n0",
+    ]
+    assert runs[4].settings == {
+        "input": "tc",
+        "direction": "up",
+        "lead_s": 60,
+        "hold_s": 60,
+        "recovery_s": 60,
+    }
+    assert len({run.stream for run in runs}) == 8
+    for run in runs:  # the segments follow the settings, whatever the plant
+        segments, about = pipeline.run_segments(run, np.array([1.0, 2.0, 3.0, 4.0]))
+        assert [s.duration for s in segments] == [60.0, 60.0, 60.0] and about == {}
+
+    for changes, message in (
+        ({"duration": {"value": 0.5, "unit": "s"}}, "whole number of seconds"),
+        ({"duration": {"value": 0.0, "unit": "s"}}, "greater than 0"),
+        ({"excitation_seeds": [1]}, "Extra inputs are not permitted"),
+    ):
+        with pytest.raises(ValidationError, match=message):
+            load_dataset_definition(
+                write_other_definition(tmp_path, configs_dir, "steady", **changes)
+            )
+    for changes, message in (
+        ({"inputs": ["tc", "tc"]}, "distinct names"),
+        ({"inputs": ["T_c"]}, "Input should be 'q', 'caf', 'tf' or 'tc'"),
+        ({"directions": []}, "distinct names"),
+        ({"hold": {"value": 12.5, "unit": "s"}}, "whole number of seconds"),
+    ):
+        with pytest.raises(ValidationError, match=message):
+            load_dataset_definition(
+                write_other_definition(tmp_path, configs_dir, "step", **changes)
+            )
+
+
+def test_the_whole_path_runs_for_steady_operation_and_for_step_tests(
+    tmp_path: Path, configs_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PT_DATA_DIR", str(tmp_path / "data"))
+    for protocol, n_runs, rows in (("steady", 2, 21), ("step", 4, 31)):
+        definition = write_other_definition(tmp_path, configs_dir, protocol)
+        report = pipeline.run_pipeline(definition, figures=False)
+        assert report["ok"] is True, report["checks"]
+        assert report["rows"]["operating_runs"] == n_runs
+        assert report["rows"]["measurements"] == n_runs * rows * 6
+        connection = database.connect(database.database_path(f"{protocol}-test"))
+        modes = connection.execute("SELECT DISTINCT operating_mode FROM operating_runs").fetchall()
+        assert modes == [(protocol,)]
+        paired = database.compare_plants(connection, "source", "target")
+        assert [row["definition"] for row in paired] == sorted(
+            {run_id.split(".", 1)[1] for run_id in report["runs"]}
+        )
+        assert all(row["n_used"] == rows for row in paired)  # the same inputs on both plants
+        (description,) = connection.execute(
+            "SELECT description FROM operating_runs WHERE plant_id = 'target' "
+            "ORDER BY run_id LIMIT 1"
+        ).fetchone()
+        connection.close()
+        expected = "Steady operation (D-010)" if protocol == "steady" else "Single-input step test"
+        assert expected in description and "seed" not in description.lower()

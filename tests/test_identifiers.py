@@ -13,7 +13,10 @@ from process_transfer.data.identifiers import (
     noise_stream_words,
     path_identifier,
     require_distinct_runs,
+    run_definition,
     run_identifier,
+    steady_run_identifier,
+    step_run_identifier,
 )
 from process_transfer.measurement.sensors import STREAM_KEY_LIMIT, SensorSpec, measure
 
@@ -134,3 +137,55 @@ def test_two_runs_with_one_identity_are_refused_when_a_data_set_is_defined() -> 
     assert streams["source.p3.e0.x10.n0"] != streams["target.p3.e0.x10.n0"]
     with pytest.raises(ValueError, match="defined twice"):
         require_distinct_runs(["source.p3.e0.x10.n0", "target.p3.e0.x10.n0", "source.p3.e0.x10.n0"])
+
+
+# --------------------------------------------------------------------------- #
+# Steady operation and single-input steps: identities without a seed
+# --------------------------------------------------------------------------- #
+
+
+def test_steady_and_step_runs_are_identified_by_their_definitions() -> None:
+    assert steady_run_identifier("target", 7200, 0) == "target.steady.d7200.n0"
+    assert (
+        step_run_identifier("source", "tc", "up", 600, 600, 600, 1)
+        == "source.step.tc-up.l600.h600.r600.n1"
+    )
+    assert step_run_identifier("source", "caf", "down", np.int64(600), 600, 600, 0) == (
+        "source.step.caf-down.l600.h600.r600.n0"
+    )
+    # the definition part pairs the plants, whatever the protocol
+    assert run_definition("target.step.tc-up.l600.h600.r600.n0") == "step.tc-up.l600.h600.r600.n0"
+    assert run_definition("source.p3.e0.x10.n0") == run_definition("target.p3.e0.x10.n0")
+    assert run_definition("source.steady.d7200.n0") == run_definition("target.steady.d7200.n0")
+
+
+def test_the_streams_of_every_run_kind_of_one_plant_are_distinct() -> None:
+    ids = [
+        step_run_identifier("target", input_name, direction, 600, 600, 600, 0)
+        for input_name in ("q", "caf", "tf", "tc")
+        for direction in ("up", "down")
+    ]
+    ids += [steady_run_identifier("target", 7200, 0), run_identifier("target", "p3", 0, 10, 0)]
+    ids += [steady_run_identifier("source", 7200, 0), steady_run_identifier("target", 7200, 1)]
+    streams = require_distinct_runs(ids)
+    assert len(streams) == 12 and len(set(streams.values())) == 12
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: steady_run_identifier("target", 0, 0),
+        lambda: steady_run_identifier("target", 7200.0, 0),
+        lambda: steady_run_identifier("target", 7200, -1),
+        lambda: steady_run_identifier("tar.get", 7200, 0),
+        lambda: steady_run_identifier("Target", 7200, 0),
+        lambda: step_run_identifier("target", "T_c", "up", 600, 600, 600, 0),
+        lambda: step_run_identifier("target", "tc", "plus", 600, 600, 600, 0),
+        lambda: step_run_identifier("target", "tc", "up", 600, 0, 600, 0),
+        lambda: step_run_identifier("target", "tc", "up", 600.5, 600, 600, 0),
+        lambda: step_run_identifier("target", "tc", "up", 600, 600, True, 0),
+    ],
+)
+def test_an_invalid_steady_or_step_definition_has_no_identity(call) -> None:  # noqa: ANN001
+    with pytest.raises(ValueError):
+        call()

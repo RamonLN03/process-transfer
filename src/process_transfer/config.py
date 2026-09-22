@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from process_transfer.units import dimension_of, to_si
 
@@ -311,38 +311,107 @@ class SensorsConfig(StrictModel):
 # --------------------------------------------------------------------------- #
 
 
-class DatasetDefinitionConfig(StrictModel):
-    """What a data set is made of: plants, instruments, protocol, excitation seeds and
+class DatasetDefinitionBase(StrictModel):
+    """What a data set is made of: plants, instruments, a protocol with its settings and
     the realisation of the noise. It is read by the generator only.
 
     ``sensor_master_seed`` is private. It is recorded in the private provenance of the
     data set and never in the available branch, because with it the noise could be
-    regenerated and subtracted. Every run is one plant under one excitation seed; both
-    plants receive the same excitation sequences, and their noise is independent,
-    because the noise stream of a run follows from its identity.
+    regenerated and subtracted. Every run is one plant under one experiment of the
+    protocol; the plants receive the same inputs, and their noise is independent,
+    because the noise stream of a run follows from its identity, which names the plant.
     """
 
     dataset_id: str
     description: str
     plants: tuple[str, ...]  # configuration files of the plants, relative to this file
     sensors: str  # configuration file of the instruments, relative to this file
-    protocol: Literal["p3"]
-    n_excursions: int = Field(ge=1, le=1000)
-    excitation_seeds: tuple[int, ...]
     noise_realisation: int = Field(ge=0)
     sensor_master_seed: int = Field(ge=0)
     simulation_period: Duration
 
     @model_validator(mode="after")
-    def _runs_must_be_distinct(self) -> DatasetDefinitionConfig:
+    def _plants_must_be_distinct(self) -> DatasetDefinitionBase:
         if len(self.plants) == 0 or len(set(self.plants)) != len(self.plants):
             raise ValueError(f"plants must be one or more distinct files, got {self.plants}")
+        return self
+
+
+def _whole_seconds(name: str, duration: Duration) -> int:
+    """A duration that is a whole number of seconds, as the identity of a run records
+    it. A fraction of a second is refused rather than rounded."""
+    seconds = duration.si
+    if not float(seconds).is_integer():
+        raise ValueError(f"{name} must be a whole number of seconds, got {seconds!r} s")
+    return int(seconds)
+
+
+class P3DatasetDefinition(DatasetDefinitionBase):
+    """Protocol P3 (D-019): every plant under every excitation seed."""
+
+    protocol: Literal["p3"]
+    n_excursions: int = Field(ge=1, le=1000)
+    excitation_seeds: tuple[int, ...]
+
+    @model_validator(mode="after")
+    def _seeds_must_be_distinct(self) -> P3DatasetDefinition:
         seeds = self.excitation_seeds
         if len(seeds) == 0 or len(set(seeds)) != len(seeds) or min(seeds) < 0:
             raise ValueError(
                 f"excitation_seeds must be one or more distinct non-negative integers, got {seeds}"
             )
         return self
+
+
+class SteadyDatasetDefinition(DatasetDefinitionBase):
+    """Steady operation (D-010): the nominal inputs held for ``duration``, one run per
+    plant, nothing drawn at random."""
+
+    protocol: Literal["steady"]
+    duration: Duration
+
+    @property
+    def duration_s(self) -> int:
+        return _whole_seconds("duration", self.duration)
+
+    @model_validator(mode="after")
+    def _whole_seconds(self) -> SteadyDatasetDefinition:
+        _whole_seconds("duration", self.duration)
+        return self
+
+
+class StepDatasetDefinition(DatasetDefinitionBase):
+    """Single-input step tests (D-010): for every plant, every named input in every
+    named direction, each an independent run of lead, hold and recovery."""
+
+    protocol: Literal["step"]
+    lead: Duration
+    hold: Duration
+    recovery: Duration
+    inputs: tuple[Literal["q", "caf", "tf", "tc"], ...]
+    directions: tuple[Literal["up", "down"], ...]
+
+    @property
+    def durations_s(self) -> tuple[int, int, int]:
+        return (
+            _whole_seconds("lead", self.lead),
+            _whole_seconds("hold", self.hold),
+            _whole_seconds("recovery", self.recovery),
+        )
+
+    @model_validator(mode="after")
+    def _tests_must_be_distinct(self) -> StepDatasetDefinition:
+        _ = self.durations_s  # refuses a fraction of a second at the boundary
+        for name, values in (("inputs", self.inputs), ("directions", self.directions)):
+            if len(values) == 0 or len(set(values)) != len(values):
+                raise ValueError(f"{name} must be one or more distinct names, got {values}")
+        return self
+
+
+DatasetDefinitionConfig = Annotated[
+    P3DatasetDefinition | SteadyDatasetDefinition | StepDatasetDefinition,
+    Field(discriminator="protocol"),
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -375,5 +444,5 @@ def load_sensors(path: str | Path) -> SensorsConfig:
 
 
 def load_dataset_definition(path: str | Path) -> DatasetDefinitionConfig:
-    """Load the definition of a data set to generate."""
-    return DatasetDefinitionConfig.model_validate(load_yaml(path))
+    """Load the definition of a data set to generate; its ``protocol`` says which kind."""
+    return TypeAdapter(DatasetDefinitionConfig).validate_python(load_yaml(path))
