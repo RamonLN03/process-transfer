@@ -241,4 +241,4 @@ Out of scope: pretraining on the source, fine-tuning between plants, transfer po
 
 Conditions. The hybrid is not assumed to win, and a well-supported negative result is a valid result. The registered values of alpha and the physical configurations of M0 are kept, and the difficulty is not adjusted to favour any method. Ordinary models never contain alpha, the saturating law or the true form of UA(T); a study that uses them is declared an oracle and kept apart. The data sets of M0 do not become the benchmark of M1 by default.
 
-The benchmark itself, its task, data, budgets, metrics and the choices still open, is proposed in `docs/m1_plan.md` and waits for the owner's answers to the questions of its last section. Nothing in that file is accepted by this entry beyond what is written here.
+The benchmark itself, its task, data, budgets, metrics and the choices still open, is proposed in `docs/m1_plan.md` and waits for the owner's answers to the questions it lists. Nothing in that file is accepted by this entry beyond what is written here.

@@ -20,7 +20,7 @@ One non-blocking documented limitation carried into M1's backlog: `tests/test_ch
 
 Target-only baseline, black-box model, hybrid physics-plus-ML model. Does hybrid modelling improve data efficiency or extrapolation?
 
-Started 2026-09-22. Question, comparators and exclusions: D-029. The benchmark is proposed in `docs/m1_plan.md`, which awaits the owner's answers to the questions of its last section; nothing of it is implemented yet.
+Started 2026-09-22. Question, comparators and exclusions: D-029. The benchmark is proposed in `docs/m1_plan.md`, revised on 2026-09-23 after Codex's audit, which awaits the owner's answers to the questions it lists; nothing of it is implemented yet.
 
 ## M2: Manual transfer learning
 
