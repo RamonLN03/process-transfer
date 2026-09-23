@@ -59,7 +59,7 @@ M0 was about trustworthy simulation, data generation, validation, SQL infrastruc
 
 It was not an ML milestone.
 
-M0 was closed on 2026-09-22. Its audited technical reference is commit `91206b2`, tagged `m0-v1.0`, and `docs/m0_audit.md` records the evidence.
+M0 was closed on 2026-09-22. Its audited technical reference is commit `91206b2`. The tag `m0-v1.0` marks `3e8f0d1`, the documentary commit that records the closure one commit later. `docs/m0_audit.md` records the evidence.
 
 ## Scientific Discipline
 

@@ -15,7 +15,7 @@ Do not implement future milestones unless explicitly requested.
 
 The current milestone is M1: Black-Box and Hybrid Modelling, on target-plant data only. Its plan is `docs/m1_plan.md`.
 
-M0, Virtual Plant and Data Infrastructure, was closed on 2026-09-22 (audited technical reference `91206b2`, tag `m0-v1.0`).
+M0, Virtual Plant and Data Infrastructure, was closed on 2026-09-22. Its audited technical reference is commit `91206b2`; the tag `m0-v1.0` marks `3e8f0d1`, the closure commit one commit later.
 
 For scientifically consequential choices:
 
