@@ -9,10 +9,12 @@
 # base even if the tag is later moved.
 FROM python:3.13.7-slim-trixie@sha256:5f55cdf0c5d9dc1a415637a5ccc4a9e18663ad203673173b8cda8f8dcacef689
 
-# PT_DATA_DIR is where every generated file goes, and the entry point refuses to run
-# unless a directory from outside the container is mounted there. MPLCONFIGDIR gives
-# matplotlib a cache it can write as any user. Python writes no bytecode at run time, the
-# code being read-only for the user that runs it, and pip keeps no cache in the image.
+# PT_DATA_DIR is where every generated file goes. The entry point refuses to run when
+# nothing is mounted there, but it cannot tell a mount that keeps the results (a folder of
+# the host, a named volume) from one that does not (tmpfs, an anonymous volume removed by
+# --rm); docs/docker.md says which to use. MPLCONFIGDIR gives matplotlib a cache it can
+# write as any user. Python writes no bytecode at run time, the code being read-only for
+# the user that runs it, and pip keeps no cache in the image.
 ENV PT_DATA_DIR=/data \
     MPLCONFIGDIR=/tmp/matplotlib \
     PYTHONDONTWRITEBYTECODE=1 \

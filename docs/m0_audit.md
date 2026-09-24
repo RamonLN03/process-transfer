@@ -30,6 +30,8 @@ CI for `91206b2` is green on both matrix jobs: [run `35746894043`](https://githu
 
 The project owner reviewed Codex's audit and the green CI run and authorised closure and the `m0-v1.0` tag on 2026-09-22.
 
+Post-closure check, 2026-09-24. In an independent audit of `01c6422`, Codex rebuilt `91206b2`, generated the data sets of M0-E05, M0-E06 and M0-E07 in the reference environment on Windows, and found all 24 content hashes equal to those of the code at `01c6422`. The only change to the production code of M0 since `91206b2` is the choice of font of the figures. The audit modified nothing and did not reopen M0; its record is in `docs/docker.md`.
+
 ## The deliverables of the roadmap
 
 | Deliverable | State | Evidence, or what is missing |
