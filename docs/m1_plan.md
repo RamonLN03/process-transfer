@@ -1,6 +1,6 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed, and revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`; section 16 lists what the revision changed and why. Nothing described here is implemented. The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029). Everything else is a proposal until the owner has answered the questions of section 15. The owner authorised the corrections of revision 1; that authorisation answers none of those questions.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15. Section 16 lists what each revision changed and why. Nothing described here is implemented. The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
 
 ## 1. The question
 
@@ -14,7 +14,7 @@ Accepted (D-029):
 * alpha (0.005 1/K on the source, 0.002 1/K on the target) and the physical configurations of M0 are kept. The difficulty is not adjusted to favour a method.
 * Ordinary models never contain alpha, the saturating law, K_sat or the true form of UA(T). A study that uses them is an oracle and is kept apart.
 
-Proposed here, beyond that list: a linear black box as the simplest data-driven reference (section 8.3) and two ablations of the hybrid (section 8.2).
+Added by this plan beyond that list, and accepted with the answers of section 15: a linear black box as the simplest data-driven reference (section 8.3) and two variants of the hybrid for comparison (section 8.2).
 
 ## 2. What M0 hands over
 
@@ -44,13 +44,13 @@ What M0 does not hand over, and M1 has to build: a division of data into fitting
 
 Carried over from M0 and not blocking: the test of the exit code of M0-E08 checks the same aggregation that `main()` uses instead of calling `main()` (`docs/roadmap.md`). Nothing in M1 depends on it. It is left for whoever next touches that test, and no iteration below is planned around it. No other defect of M0 was found while preparing this plan or its revision.
 
-## 3. What is accepted, proposed and open
+## 3. What is accepted and what is still open
 
-* Accepted: the list of section 1 (D-029).
-* Proposed, awaiting the owner: sections 4 to 14. The five choices that change the design most are the questions of section 15. Revision 1 makes the proposal precise; it does not answer them.
-* Open, to be settled during M1: the training framework (section 8.6); the grids of the learned models; the thresholds of the hypotheses and the rules for interpreting them, fixed in the registration of the benchmark (section 13, I5); whether M1 is repeated on the source plant as a second case, after the target.
+* Accepted: the list of section 1 (D-029), and the owner's answers to Q1 to Q5 (D-030, section 15). They settle the treatment of E/R, the extrapolation test, the budgets and how fitting and validation share one, the main hybrid, and the primary evaluation with its scoring.
+* The working design of M1: sections 4 to 14, which carry those answers out. A part that the answers do not cover can still change, through a recorded revision (section 16) reviewed like the others.
+* Open, and not closed by the answers: the two budgets of the secondary analysis with E/R held fixed, and the number of replicates, both fixed in the registration of the benchmark (section 13, I5), the second from the cost of a fit measured in I3; the training framework (section 8.6, I3); the grids of the learned models; the thresholds of the hypotheses and the rules for interpreting them (I5); P3 at A5, which is used only once its verification has passed (I4); whether M1 is repeated on the source plant as a second case, after the target.
 
-## 4. The predictive task (proposed)
+## 4. The predictive task
 
 ### 4.1 What is observed and what is predicted
 
@@ -96,7 +96,7 @@ Secondary, on test runs only: free rollout over a whole run, from the context at
 
 Diagnostic only: predictions k steps ahead, k = 1 and 10, each from a single reading taken as the initial state and scored against the reading k ticks later, never against itself.
 
-## 5. Data and partitions (proposed)
+## 5. Data and partitions
 
 ### 5.1 Three kinds of data
 
@@ -198,7 +198,7 @@ Scales used inside a model, the centring and scaling of the inputs of a network 
 
 A standard deviation is positive only if the variable takes at least two values. In the development protocols of M1 every excursion moves all four inputs and the states respond, so a fitting part with one excursion gives positive scales for every variable. That is a property of P3, not a guarantee of the code: if a scale is zero, the fit is refused with an error that names the variable, and the refusal is a training failure of that model, replicate and budget (section 8.7). No scale is invented, no epsilon is added, and no data outside F is consulted to find one.
 
-## 6. Interpolation and extrapolation (proposed)
+## 6. Interpolation and extrapolation
 
 ### 6.1 Definitions
 
@@ -212,7 +212,7 @@ A descriptive measure, computed from available data only: for each test point, r
 
 The test region is A10 under P3, exactly what D-019 accepted. The training region A5 is new. Smaller excursions from the verified steady state are expected to stay further inside the envelope and to recover sooner, but expected is not verified. Before any A5 data are generated, P3 at A5 receives the verification P3 received at A10 in M0-E03b: recovery after every corner within the tolerances of P3, all 256 ordered pairs of corners accepted, and the envelope. The lead needs no new physics, only its token in the identity. Nothing else new is proposed: no amplitude above A10, no other rest, hold, plant or operating point.
 
-## 7. Knowledge, estimation and identifiability (proposed)
+## 7. Knowledge, estimation and identifiability
 
 ### 7.1 What a model may know
 
@@ -273,7 +273,7 @@ Method. Target plant; the 16 corner windows of P3, 120 s at a corner then 600 s 
 
 What it may have informed, and so cannot be presented as independent of it: the framing of Q1 as a question of bias rather than of variance, and the recommendation to estimate E/R; the recommendation of Q4, although its argument rests on the structure of the balances and on M0-E08; the hypotheses and expectations of section 10; the content of M1-E01. Its Fisher information took the initial state as exact and is optimistic for that reason (section 7.4).
 
-## 8. Models and a fair comparison (proposed)
+## 8. Models and a fair comparison
 
 ### 8.1 Mechanistic
 
@@ -335,7 +335,7 @@ MN, MR and BL need nothing beyond SciPy. The networks need gradients through a r
 4. Networks, BN and the hybrids. Their weights are not identifiable and are not expected to be. The fitted network is the result of the declared training from the declared initialisation and seed, with the regularisation of the chosen configuration of the grid, which is part of the method. Where there are several minima, the seed decides which is found; there is one declared seed per replicate and configuration, and no reseeding after a result.
 5. Training failures. The procedure of every method declares how it treats a rollout that fails during fitting, for instance as a rejected step of the optimiser; a failure it does not treat ends the fit. A training failure is then: an optimiser that stops with an error, a loss that is not finite, a failed rollout that ends the fit, a refused scale (section 5.8), or a grid whose every checkpoint fails on V. Each is a training failure of that model, replicate and budget, recorded with its reason, not retried with other settings and not replaced. The replicate stays in every table (section 9.3).
 
-## 9. Evaluation (proposed)
+## 9. Evaluation
 
 ### 9.1 Metrics, and what readings can and cannot say about the true state
 
@@ -461,7 +461,7 @@ Iterations I1 and I3 are software work on the data of M0 and on synthetic data; 
 
 | Iteration | Deliverables | Accepted when |
 |---|---|---|
-| I0 Design, and revision 1 | this plan and its revision; the active milestone in `AGENTS.md`, `CLAUDE.md`, `README.md` and the roadmap; D-029 | the owner has answered section 15 and the plan follows the answers; Codex has reviewed revision 1 |
+| I0 Design, revisions 1 and 2 | this plan and its revisions; the active milestone in `AGENTS.md`, `CLAUDE.md`, `README.md` and the roadmap; D-029 and D-030 | the owner has answered section 15 and the plan follows the answers; Codex has reviewed revision 1. Both hold since 2026-09-24 (D-030, revision 2) |
 | I1 Evaluation contract and mechanistic models | `evaluation`: the index contract, windows, phases, contexts, fitting and validation parts, metrics, records of failures, the validity bounds, the implied rate and heat flow. `models`: the interface of a continuous-time model, rollout with failures recorded, MN, MR, MR_F. A test on the import graph for both packages | tests on the worked example of section 5.7: no context scored in its own window, F and V disjoint, the counts of section 5.4; metrics equal to values computed by hand; the integration error of the rollout below 1 % of sigma against a tighter tolerance; MR recovers the parameters of data simulated by the modeller's own model, first noise-free from an exact initial state to the tolerance of the optimiser, then with the noise of D-020 and the context rule, each estimate within four standard errors of the true value over a declared set of seeds, the standard errors being those of the sandwich of section 7.4, which include the error of the initial state; suite and CI pass. A smoke run on `m0-e05` shows the code runs on a real export; it is exploratory |
 | I2 Identifiability diagnostic, M1-E01 | parts 1 to 3 of section 7.4; the decision on E/R, if Q1 leaves it to the diagnostic | registered before it is run; run from a clean commit; logged as hypothesis, method, result and interpretation; oracle outputs only under `experiments/` |
 | I3 Framework and learned models | the comparison of two frameworks and the decision; BL, BN, HK, HU, HKU; tests | HK with its correction at the identity equals MR_F to the precision of the integrator; gradients agree with finite differences; a correction planted in data simulated by the modeller's model is recovered, without the truth; BL's convention holds on a rank-deficient case; tests pass on CI with the new dependency; the cost of one fit is measured on development data |
@@ -473,7 +473,7 @@ Iterations I1 and I3 are software work on the data of M0 and on synthetic data; 
 
 ## 14. The next iteration, recommended
 
-I1, after the owner has answered the questions of section 15 and Codex has reviewed this revision. I1 depends on Q5 and on the part of Q3 that says how fitting and validation share a budget; the other answers do not change it. It needs no new dependency and gives the mechanistic baseline a place before any network exists. Concretely:
+I1. The owner has answered the questions of section 15 (D-030). I1 depends on the answers to Q5 and on the part of Q3 that says how fitting and validation share a budget; the other answers do not change it. It needs no new dependency and gives the mechanistic baseline a place before any network exists. Concretely:
 
 * `process_transfer/evaluation/`: the index contract of section 4.3 and the division of section 5.5, built from the known inputs; the rule for initial states; metrics per channel in physical units and in sigmas, per phase; records of failures; the validity bounds; the implied rate and heat flow.
 * `process_transfer/models/`: the interface of a continuous-time model; rollout under piecewise-constant inputs, sampled at the sensor instants, returning failures as records; MN, MR and MR_F on the equations of `modeller/cstr_first_order.py`, parameterised by k_350, E/R and UA.
@@ -481,24 +481,31 @@ I1, after the owner has answered the questions of section 15 and Codex has revie
 * A test on the import graph: `models` and `evaluation` never import `simulation` or `generation`. The generic integration code that both sides need is either moved to a neutral module or written again on the model side; which, is decided on inspection in I1 and recorded.
 * Models read exports through `data.export.open_export_directory`, the known parameters from the export and the modeller's values from `configs/modeller_cstr.yaml`, never a plant configuration file.
 
-## 15. Questions for the owner
+## 15. Questions for the owner, and the answers
+
+The questions are kept as revision 1 put them. The owner answered all five on 2026-09-24 by accepting each recommendation (D-030); the answer follows each question.
 
 **Q1. E/R: fixed or estimated with the other parameters.**
 (a) Estimated together with k_350 and UA. Realistic, and in the exploratory check of section 7.5 the better predictor of the two, because a free E/R can offset part of the missing physics; its estimate then depends on the excitation and not only on the chemistry (section 7.3), and in the hybrid it trades off against the correction, so mechanism is judged on the whole rate. (b) Fixed at 8750 K. This gives MR and the hybrids the exact value of a parameter that the black boxes have to learn from data. An engineer may know an activation energy from laboratory work, but rarely exactly; here the exactness is an artefact of the design. Attribution is cleaner, and MR loses the freedom to offset part of the missing physics, so it is expected to predict worse. (c) Decided by the diagnostic of section 7.4. If the difficulty is bias rather than variance, as the exploratory check suggested, the diagnostic will call E/R identifiable and (c) becomes (a) with an extra step that depends on data. Recommendation: (a) for every model, with (b) as a secondary analysis for MR and HK at two budgets, declared in the registration.
+Answer (D-030): (a). E/R is estimated together with the other parameters; E/R held at 8750 K is a secondary analysis for MR and HK at two budgets, which the registration names.
 
 **Q2. The extrapolation test.**
 (a) Train at half amplitude, A5, and test at A10. Clean and symmetric, entirely inside the validated region at test time; it needs the verification of P3 at A5 before any data (section 6.2) and a token for the amplitude in the identities. (b) Train without the corners where T_c is high and test on them: extrapolation in one direction, towards the hot region that matters for the envelope; needs a restricted variant of P3, safe by the argument of the 256 pairs but new code. (c) The change of protocol only, the single-input steps: no new verification, but a weak notion of extrapolation. Recommendation: (a) as the primary test and (c) as a secondary one.
+Answer (D-030): (a) as the primary test, once P3 at A5 has passed its verification; (c) as a secondary evaluation of a change of protocol.
 
 **Q3. Budgets, replicates, and how fitting and validation share a budget.**
 Proposed: b = 2, 5, 10, 20 and 40 excursions (exact records of 25, 61, 121, 241 and 481 min, 4 to 80 min at a corner); ten replicates, each one run of 40 excursions whose prefixes are the budgets; for a method that selects, validation on the last max(1, floor(b / 5)) windows of the prefix, a temporal hold-out under the index contract (section 5.5); no refit after selection; hybrids started from MR_F; MR and BL fitted on all b windows; training at A5 on b = 10 and 40 only. Alternatives: (i) validation on a separate run of the same replicate, counted in the budget: independent of the fitting run in its noise stream and carried state, but every budget then needs two leads and two prefixes, which changes what a budget is; (ii) a refit on F and V together after selection, with a schedule fixed in advance: every method then fits on all b, but the final model is checked by no held-out data; (iii) five replicates instead of ten: about half the cost, but a paired sign count over five replicates cannot reach a two-sided 5 % level even when one model wins all five (p = 0.0625); (iv) independent runs for each budget instead of prefixes, which adds noise to the shape of the curves. Recommendation: as proposed, with the number of replicates confirmed after the cost of one fit is measured (I3) and fixed in the registration (I5).
+Answer (D-030): as proposed. Ten replicates is the initial proposal, to be confirmed from the cost of a fit before the registration.
 
 **Q4. The first hybrid.**
 (a) The kinetic correction, HK, as the hybrid of the primary comparisons, with HU and HKU as ablations. (b) The thermal correction first. (c) Both from the start. Recommendation: (a), for the reasons of section 8.2: the rate is constrained by both balances, and the thermal signal on the target is weak, so (b) would probably have little to learn and (c) invites a trade-off that the data may not resolve. The recommendation was written after the exploratory check of section 7.5 (section 10).
+Answer (D-030): (a). HK is the main hybrid; HU and HKU are variants for comparison.
 
 **Q5. The primary predictive task, and how it is scored.**
 (a) Free rollout over the windows of section 4.3: the initial state is the mean of the ten context readings in (t0 - 60 s, t0]; 110 readings in (t0, t0 + 660 s] are scored, in phases of 20, 50 and 40; the last ten readings of each cycle are the context of the next window and are scored in no window; a lead of 60 s at the start of each P3 run; the primary score of a replicate exists only if every test window completed, and a failure loses every paired comparison (section 9.3); rollout over whole runs as a secondary evaluation; k steps ahead as a diagnostic. (b) Rollout over whole runs as the primary evaluation, which weighs steady-state bias more and dynamics less. (c) One step ahead as the primary evaluation, dominated by noise (section 4.4). A variant of (a) would keep a replicate with some failed windows and score it on the windows that completed; it is not proposed, because the score would then be computed on the windows the model happened to survive. Recommendation: (a).
+Answer (D-030): (a). In a paired comparison a failure loses to a completed evaluation, and two failures tie.
 
-Defaults that stand unless the owner objects: the target only, with a repetition on the source considered only after the target is done; BN and BL as the black boxes; the sigmas of the data sheet as the scale of the metrics; scales inside models computed from the fitting part, a zero scale refused as a training failure; failures reported, never replaced by a value; test sets generated only after the technical freeze; the data of M0 for software development and exploratory runs only.
+Defaults that stand unless the owner objects, and none was raised with the answers of D-030: the target only, with a repetition on the source considered only after the target is done; BN and BL as the black boxes; the sigmas of the data sheet as the scale of the metrics; scales inside models computed from the fitting part, a zero scale refused as a training failure; failures reported, never replaced by a value; test sets generated only after the technical freeze; the data of M0 for software development and exploratory runs only.
 
 ## 16. Revisions
 
@@ -513,3 +520,7 @@ Defaults that stand unless the owner objects: the target only, with a repetition
 7. Failures and statistics: training failures, integration failures and physical violations are kept apart; a failure counts as a loss at the level of the replicate instead of being excluded; the bootstrap of the test set resamples runs, and each summary says which uncertainty it estimates (sections 9.3 and 9.7).
 8. Interpretations that claimed too much, about BN against BL, HK against MR, trade-offs between parameters and corrections, and the oracle fit as a limit of infinite data, are restricted to the models, procedures and data evaluated, and pseudo-true is defined by its windows and objective (sections 7.3, 7.4, 8.3 and 10).
 9. Precisions: exact durations of the budgets beside rounded labels (section 5.4); the initial state in the Fisher information and in the recovery test of I1 (sections 7.4 and 13); the claim that five replicates halve the power is replaced by what a sign count can reach (Q3, section 9.7); `AGENTS.md` and `CLAUDE.md` said that `91206b2` carries the tag `m0-v1.0`, which is on `3e8f0d1`.
+
+**Revision 2, 2026-09-24.** The owner answered Q1 to Q5 by accepting each recommendation (D-030). What changed:
+
+1. The answers are recorded after each question of section 15 and in D-030. Section 3 says what they settle and what they leave open; sections 4 to 9 are no longer headed as proposals; the header, section 1, the row of I0 in section 13 and section 14 follow.

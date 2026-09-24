@@ -242,3 +242,15 @@ Out of scope: pretraining on the source, fine-tuning between plants, transfer po
 Conditions. The hybrid is not assumed to win, and a well-supported negative result is a valid result. The registered values of alpha and the physical configurations of M0 are kept, and the difficulty is not adjusted to favour any method. Ordinary models never contain alpha, the saturating law or the true form of UA(T); a study that uses them is declared an oracle and kept apart. The data sets of M0 do not become the benchmark of M1 by default.
 
 The benchmark itself, its task, data, budgets, metrics and the choices still open, is proposed in `docs/m1_plan.md` and waits for the owner's answers to the questions it lists. Nothing in that file is accepted by this entry beyond what is written here.
+
+## D-030 M1: the owner's answers to questions Q1 to Q5 of the plan (2026-09-24, accepted)
+
+The owner accepted the recommendation of each question of revision 1 of `docs/m1_plan.md`, section 15:
+
+* Q1. E/R is estimated together with the other parameters of MR and of the hybrids. E/R held at 8750 K is a secondary analysis, for MR and HK at two budgets.
+* Q2. Extrapolation is tested by training at half amplitude, A5, and evaluating at A10, once P3 at A5 has passed the verification of section 6.2 of the plan. The single-input steps are a secondary evaluation of a change of protocol.
+* Q3. Budgets of 2, 5, 10, 20 and 40 excursions. Ten replicates as the initial proposal, to be confirmed from the cost of a fit before the benchmark is registered. Validation is a temporal hold-out inside the budget, there is no refit after selection, the hybrids start from MR_F, and MR and BL are fitted on the whole budget.
+* Q4. The kinetic correction, HK, is the main hybrid; HU and HKU are variants for comparison.
+* Q5. The primary evaluation is the rollout over windows with 110 scored readings (section 4.3 of the plan); rollouts over whole runs are a secondary evaluation. In a paired comparison, a failure loses to a completed evaluation and two failures tie.
+
+What this entry does not fix, and later iterations must: the two budgets of the secondary analysis with E/R held fixed, and the number of replicates, both in the registration of the benchmark (I5), the second from the cost of a fit measured in I3; the training framework (I3); the grids of the learned models, the thresholds of the hypotheses and the rules for reading them (I5); P3 at A5, which exists only once its verification (I4) has passed.
