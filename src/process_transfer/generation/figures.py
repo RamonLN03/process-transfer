@@ -14,6 +14,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib import font_manager  # noqa: E402
 
 from process_transfer.data.export import open_export_directory  # noqa: E402
 
@@ -21,6 +22,25 @@ INK, INK_SECONDARY = "#0b0b0b", "#52514e"
 GRID, AXIS, SURFACE = "#e1e0d9", "#c3c2b7", "#fcfcfb"
 PLANT_COLOR = {"source": "#2a78d6", "target": "#eb6834"}
 OTHER_PLANT = "#52514e"
+
+# The font of the figures of M0, then one that matplotlib ships with every installation.
+# The first that the machine has is used. A family that is missing, even when a list names
+# a fallback after it, makes matplotlib log a warning every time it looks for it: on Linux,
+# which has no Segoe UI, more than a thousand lines for the figures of one data set.
+FONT_PREFERENCE = ("Segoe UI", "DejaVu Sans")
+
+
+def font_family(installed: set[str] | None = None) -> str:
+    """The first family of ``FONT_PREFERENCE`` among ``installed``, by default the fonts
+    matplotlib has found on this machine. DejaVu Sans comes with matplotlib, so it is there
+    wherever matplotlib is complete; if it is not, it is still returned, and matplotlib's
+    own warning then says that the installation lacks it."""
+    if installed is None:
+        installed = {entry.name for entry in font_manager.fontManager.ttflist}
+    for family in FONT_PREFERENCE:
+        if family in installed:
+            return family
+    return FONT_PREFERENCE[-1]
 
 
 def _style(ax: plt.Axes) -> None:
@@ -48,7 +68,7 @@ def figure_readings(export_directory: Path, destination: Path) -> list[Path]:
         for channel in manifest["plants"][plants[0]]["channels"]
         if channel["channel_kind"] == "measured"
     ]
-    plt.rcParams["font.family"] = ["Segoe UI", "DejaVu Sans", "sans-serif"]
+    plt.rcParams["font.family"] = font_family()
     written = []
     for channel in measured:
         name, unit = channel["column"], channel["unit"]

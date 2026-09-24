@@ -9,6 +9,7 @@ to was reported as already present, and a directory without a manifest raised a 
 """
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -255,3 +256,31 @@ def test_the_figures_are_drawn_from_a_verified_export(exported, tmp_path: Path) 
     with pytest.raises(ExportIntegrityError, match="unexpected \\['run.parquet'\\]"):
         figure_readings(directory, tmp_path)
     assert list(tmp_path.glob("*.png")) == []
+
+
+def test_the_figures_log_no_warning_about_a_missing_font(
+    exported,  # noqa: ANN001
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression: the figures named Segoe UI, which Linux does not have, and matplotlib
+    logged a warning for every piece of text, 1005 lines for the figures of one data set in
+    the Linux container, burying the output of the run. The font is now one the machine
+    has, so on a machine without Segoe UI, such as CI, nothing is logged."""
+    pytest.importorskip("matplotlib")
+    from process_transfer.generation.figures import figure_readings
+
+    _, directory = exported
+    with caplog.at_level(logging.WARNING, logger="matplotlib.font_manager"):
+        written = figure_readings(directory, tmp_path)
+    assert [path.name for path in written] == ["readings_C_A.png", "readings_T.png"]
+    assert [r.getMessage() for r in caplog.records if r.name == "matplotlib.font_manager"] == []
+
+
+def test_the_figures_use_the_first_preferred_font_that_is_installed() -> None:
+    pytest.importorskip("matplotlib")
+    from process_transfer.generation.figures import font_family
+
+    assert font_family({"Segoe UI", "DejaVu Sans", "Arial"}) == "Segoe UI"
+    assert font_family({"DejaVu Sans", "Liberation Sans"}) == "DejaVu Sans"
+    assert font_family(set()) == "DejaVu Sans"  # matplotlib then says what is missing
