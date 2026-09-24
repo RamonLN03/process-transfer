@@ -111,6 +111,14 @@ def test_the_evaluation_reads_only_available_information() -> None:
     _assert_reads_only_available_information("evaluation")
 
 
+def test_the_models_read_only_available_information() -> None:
+    """The models of M1 are built from the known parameters of an export and the modeller's
+    values, and fitted on the windows they are handed. They never import the simulation,
+    the generator or the private branch, and never mention what reads a plant configuration
+    file (docs/m1_plan.md, sections 5.6 and 12)."""
+    _assert_reads_only_available_information("models")
+
+
 def test_the_check_of_names_sees_what_it_is_meant_to_see(tmp_path: Path) -> None:
     probe = tmp_path / "probe.py"
     probe.write_text(

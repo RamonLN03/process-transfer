@@ -1,16 +1,20 @@
 """Synthetic runs for the tests of the evaluation contract and the models of M1.
 
-Nothing here is read by the package. The inputs follow the protocols of the plan (a lead
+Nothing here is read by the package. The runs simulated with the modeller's equations are
+made on the truth side of the tests, with the integrator of the simulation, and reach the
+code under test only as observations. The inputs follow the protocols of the plan (a lead
 of 60 s, corners held 120 s, rests of 600 s; single-input steps of 600 s), with the
 nominal inputs of both plants of M0 and the amplitudes A10 of D-019.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
 from process_transfer.cstr_variables import INPUT_NAMES, INPUT_UNITS, STATE_NAMES, STATE_UNITS
 from process_transfer.measurement.observations import Observations
+from process_transfer.simulation.integration import InputSegment, simulate_piecewise
+from process_transfer.simulation.steady_state import find_steady_states
 
 NOMINAL = np.array([0.1 / 60.0, 500.0, 350.0, 337.5])
 AMPLITUDES = np.array([0.1 * (0.1 / 60.0), 50.0, 5.0, 5.0])
@@ -71,3 +75,25 @@ def observations(
 def random_corners(n: int, seed: int) -> list[list[int]]:
     rng = np.random.default_rng(seed)
     return [list(rng.choice([-1, 1], size=4)) for _ in range(n)]
+
+
+def modeller_run(
+    f: Callable[[np.ndarray, np.ndarray], np.ndarray],
+    corners: Sequence[Sequence[int]],
+    noise_seed: int | None,
+    run: str = "target.p3.e0.x8.n0",
+) -> Observations:
+    """A P3 run with the lead of M1, simulated with the modeller's equations from their
+    steady state at the nominal inputs, on the truth side of the tests. Readings with the
+    noise of D-020 drawn from ``noise_seed``, or exact when it is None. ``f`` is the
+    right-hand side of the modeller's model at the values chosen by the test."""
+    (steady,) = find_steady_states(lambda x: f(x, NOMINAL), c_a_upper=NOMINAL[1])
+    segments = [InputSegment(60.0, NOMINAL)]
+    for signs in corners:
+        segments += [InputSegment(120.0, corner(signs)), InputSegment(600.0, NOMINAL)]
+    truth = simulate_piecewise(f, steady.state, segments, sample_period=6.0)
+    readings = np.array(truth.states)
+    if noise_seed is not None:
+        rng = np.random.default_rng(noise_seed)
+        readings = readings + rng.normal(0.0, 1.0, readings.shape) * np.array(SIGMA)
+    return observations(truth.inputs, measured=readings, run=run)
