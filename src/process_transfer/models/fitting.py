@@ -172,7 +172,8 @@ class StartRecord:
     final: MechanisticParameters | None  # None after a numerical failure
     objective: float | None  # J on the windows of the fit, at the endpoint
     singular_values: tuple[float, ...] | None  # of the Jacobian of (prediction - reading) / sigma
-    evaluations: int  # of the residuals: each one a rollout of every window
+    # distinct points at which the loss was computed, each one a rollout of every window
+    evaluations: int
     jacobian_evaluations: int
     seconds: float = field(compare=False)
 
@@ -373,7 +374,7 @@ def fit_mechanistic(
                 singular_values=tuple(
                     float(s) for s in np.linalg.svd(normalised_jacobian, compute_uv=False)
                 ),
-                evaluations=int(found.nfev),
+                evaluations=loss.evaluations,
                 jacobian_evaluations=int(found.njev),
                 seconds=time.perf_counter() - began,
             )
