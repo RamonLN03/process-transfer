@@ -254,3 +254,18 @@ The owner accepted the recommendation of each question of revision 1 of `docs/m1
 * Q5. The primary evaluation is the rollout over windows with 110 scored readings (section 4.3 of the plan); rollouts over whole runs are a secondary evaluation. In a paired comparison, a failure loses to a completed evaluation and two failures tie.
 
 What this entry does not fix, and later iterations must: the two budgets of the secondary analysis with E/R held fixed, and the number of replicates, both in the registration of the benchmark (I5), the second from the cost of a fit measured in I3; the training framework (I3); the grids of the learned models, the thresholds of the hypotheses and the rules for reading them (I5); P3 at A5, which exists only once its verification (I4) has passed.
+
+## D-031 A Linux container for the data path of M0 (2026-09-24, decided by the implementation agent, technical and reversible)
+
+Asked for by the owner, as a technical iteration before I1: the data path of M0 must build and run in a Linux container on the CPU, with explicit inputs and with results that outlive the container, without anything of M1. The details, the commands and what was checked are in `docs/docker.md`.
+
+* The base image is `python:3.13.7-slim-trixie`, pinned by digest: the interpreter of the registered environment of M0, on a Debian whose C library, glibc, has a wheel of every package of the lock.
+* The image has its own lock, `docker/requirements.lock.txt`: the runtime packages at the versions of `requirements-reference.lock.txt`, which is not modified, plus setuptools, each pinned to the hash of its Linux wheel for CPython 3.13 and installed with `--require-hashes --no-deps`.
+* The checkout is copied through a whitelist, `.dockerignore`, and installed in editable mode, because the SQL and the configurations are read next to `pyproject.toml`.
+* `PT_DATA_DIR` is `/data`, and the entry point refuses to run, with exit code 3, unless it is a mounted directory, so that a data set is never written into the container and deleted with it.
+* A user without administrator rights runs the container; the code is read-only for it.
+* Neither `.git` nor git is in the image. Runs made there record that the code could not be identified, as the provenance of M0 does whenever git cannot answer, and no commit is written into their results.
+
+Alternatives set aside. The Windows reference lock as the dependencies of the image: it was never tested on Linux, and it holds development tools and a package only Windows uses. A wheel installed without the checkout: the database would not find its SQL, and that way of installing has not been built or tested. `.git` and git in the image: the files of the image differ from the commit on purpose, so git would report changes, and its ownership check refuses a repository owned by another user. A `VOLUME` in the Dockerfile: `docker run --rm` deletes the anonymous volume with the container. Alpine as the base: PyPI has no wheel of DuckDB 1.5.5 for its C library, musl, so DuckDB would have to be compiled from source (checked on 2026-09-24; the other packages of the lock do have musl wheels). Docker Compose: there is one process and nothing to compose.
+
+Checked on 2026-09-24 (`docs/docker.md`): the ten checks of the generator pass in the container on the definitions of M0-E06, and experiments 05 and 06 hold all their hypotheses there. Content hashes are not equal to those registered on Windows in seven of eight runs, with the same library versions; the readings agree to the precision of the integrator. A data set generated in the container is therefore not a copy of a registered one, and the policy on repetition refuses to put it in its place.

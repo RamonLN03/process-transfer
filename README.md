@@ -26,6 +26,9 @@ To reconstruct the exact environment the registered M0 results were generated an
 checked in, rather than the current dependency bounds of `pyproject.toml`, see
 `docs/reference_environment.md` and `requirements-reference.lock.txt`.
 
+The data path can also be built and run in a Linux container, with Docker, without a
+local Python: `docs/docker.md` has the commands and what they do.
+
 ### Tests and lint
 
 ```

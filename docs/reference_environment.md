@@ -78,6 +78,12 @@ has been tested.
 Do not promise hash equality, or even numerical agreement, on a system or a version
 combination this file has not actually been installed and run on.
 
+The Linux container of `docs/docker.md` is a separate environment with a lock of its
+own, `docker/requirements.lock.txt`, at the same versions of the runtime packages. It
+does not replace this file. Compared with the data sets registered here on 2026-09-24,
+the container gave the same content hash for one run of eight and agreed with the
+others to the precision of the integrator; `docs/docker.md` has the figures.
+
 ## What was validated when this file was written
 
 `requirements-reference.lock.txt` was installed into a clean virtual environment

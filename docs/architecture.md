@@ -42,7 +42,9 @@ A row of observations holds an instant, the readings of the state at that instan
     AGENTS.md, CLAUDE.md        operating rules
     README.md
     pyproject.toml
-    .github/workflows/ci.yml    ruff and pytest on every push
+    .github/workflows/ci.yml    ruff and pytest on every push, and a build and run of the container
+    Dockerfile, .dockerignore   the Linux container of the data path (docs/docker.md, D-031)
+    docker/                     its entry point and its lock of Python packages
     src/process_transfer/       reusable code
     tests/                      pytest, including physical-behaviour tests
     configs/                    plant, modeller and sensor configurations, and data set definitions (YAML)
@@ -124,6 +126,7 @@ Reproducibility is tested at the level that matters: identical numerical traject
 * Pydantic for configuration validation, YAML for configuration files.
 * DuckDB, Parquet, SQL; Pandas where a dataframe is the right tool.
 * pytest and ruff.
+* Docker, for a Linux container that runs the data path on the CPU (D-031, `docs/docker.md`). It is a way to run the existing code, not a deployment.
 * Experiment tracking initially in structured files and DuckDB tables; MLflow or similar evaluated later.
 * No GUI now. A possible progression is research CLI, internal prototype, FastAPI backend, web frontend.
 
