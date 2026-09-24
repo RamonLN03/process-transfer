@@ -1,6 +1,6 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15. Section 16 lists what each revision changed and why. Nothing described here is implemented. The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Nothing described here is implemented. The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
 
 ## 1. The question
 
@@ -114,7 +114,7 @@ Development runs and test runs belong to different data sets, with different exc
 | train-A5 | P3 with the lead, half amplitudes (A5), if Q2 is accepted | 10 runs of 40 excursions | 10 x 481 min | development, for the extrapolation test |
 | test-A10 | P3 with the lead, A10 | 8 runs of 10 excursions, 80 windows | 8 x 121 min | the fixed evaluation set of D-011, for interpolation and extrapolation |
 | test-A5 | P3 with the lead, A5 | 4 runs of 10 excursions, 40 windows | 4 x 121 min | the in-region reference of the models trained at A5 |
-| test-steps | the eight single-input steps of D-026, a new noise realisation | 8 runs | 8 x 30 min | protocol shift |
+| test-steps | the eight single-input steps of D-026, a new noise realisation | 8 runs, one per fixed condition | 8 x 30 min | protocol shift |
 
 Excitation seeds and master seeds are new: none that an earlier experiment, test or smoke run used (the experiment log lists them), and one master seed per data set. The test sets are defined in the registration with the others, seeds included, but generated only after the technical freeze.
 
@@ -253,7 +253,7 @@ Three parts, one script, no new benchmark data:
 2. Available, on the development data of M0: the profile of the fitting objective against E/R, with E/R held on a grid and k_350 and UA re-estimated, on the target runs of `m0-e05`. It shows how sharp the minimum is, and where it lies, under the real and wrong structure. It is exploratory in the sense of section 5.1.
 3. Oracle, kept apart: the first-order model fitted to the noise-free true trajectories of the 16 corner windows, each started from the exact nominal steady state, with equal weight per corner and the objective of section 9.1 over the scored readings of each window. Its minimiser, called pseudo-true below, is defined by that set of windows and that objective. It is not the limit of infinite data of the benchmark, whose windows start from noisy context means, whose corners are drawn with replacement, and whose fits use prefixes of runs; how far the two differ is not something this part shows. And, in the manner of M0-E08, how far the kinetic mismatch alone moves the trajectories, beside what M0-E08 measured for UA(T) alone. Outputs under `experiments/` only.
 
-Parts 1 and 2 use available information only. Part 3 is never used to choose or tune an ordinary model. Nothing more is planned: no global sensitivity analysis, no identifiability analysis of network weights, which have no physical meaning to identify, and no design of experiments. For the hybrid, the substitute is a recovery test on synthetic data with a known correction (I3), and the oracle comparison of the learned rate with the true one at the end.
+Parts 1 and 2 use available information only. Part 3 is never used to choose or tune an ordinary model. Nothing more is planned: no global sensitivity analysis, no identifiability analysis of network weights, which have no physical meaning to identify, and no design of experiments. For the hybrid, the substitute is a recovery test on synthetic data with a known correction (I3), which separates the recovery of trajectories from the recovery of the mechanism, and the oracle comparison of the learned rate with the true one at the end.
 
 ### 7.5 An exploratory check made while writing the first version (2026-09-22)
 
@@ -398,16 +398,19 @@ Oracle, computed by a separate script on the truth side, outputs under `experime
 
 ### 9.7 Replicates, test runs, and what each uncertainty means
 
-The independent units are the development replicates, for the variability of training, and the test runs, for the variability of the test set. Windows and readings are not independent units.
+The independent units are the development replicates, for the variability of training, and the runs of a P3 test set, for the variability of that test set. Windows and readings are not independent units.
+
+The runs of test-A10 and test-A5 are draws from the P3 distribution: each has its own random sequence of corners, and another draw would give other runs. The eight runs of test-steps are not a sample of anything: they are the eight fixed conditions of D-026, each input moved up and down once. Their results are reported for each condition and as a fixed aggregate, the score pooled over the eight, each with its spread over the training replicates. No bootstrap is computed over them, and no repetition of them is added now.
 
 | Summary | What it estimates | What it holds fixed |
 |---|---|---|
 | median, quartiles and extremes of the per-replicate score | the spread of the score over training realisations: excitation, noise and training seed | the test set |
 | paired outcomes over replicates: wins, losses, failures | how consistently one model beats another across training realisations | the test set |
 | bootstrap over replicates of the mean paired difference, computed only when both models have a score in every replicate | the uncertainty of that mean over training realisations | the test set |
-| cluster bootstrap over test runs, resampling whole runs and never windows | the sampling variability of the finite test set | the fitted models |
+| cluster bootstrap over the runs of test-A10 or test-A5, resampling whole runs and never windows | the sampling variability of that finite P3 test set | the fitted models |
+| test-steps: per condition and the fixed aggregate over the eight, with their spread over replicates | the result on those eight conditions, and how it varies with the training realisation | the conditions, which are fixed and not sampled |
 
-None of them alone is the whole uncertainty, and every interval says which one it is. With eight test runs the cluster bootstrap is coarse, and it is presented as such.
+None of them alone is the whole uncertainty, and every interval says which one it is. With eight runs in test-A10 and four in test-A5 the cluster bootstrap is coarse, and it is presented as such.
 
 The primary comparisons are named in the registration: HK against MR and HK against BN, on test-A10 at every budget and on the extrapolation test. With ten replicates a paired sign count can reach a two-sided 5 % level, at 9 of 10 (p = 0.021) or 10 of 10 (p = 0.002), and 8 of 10 cannot (p = 0.109). The thresholds of the hypotheses and the rules for reading them are fixed in the registration.
 
@@ -421,7 +424,7 @@ The test sets are defined, seeds included, in the registration, and generated on
 
 * H1, interpolation and data efficiency: on test-A10, HK scores lower than MR from some budget on, and lower than BN at small budgets; the gap to BN narrows as the budget grows.
 * H2, extrapolation: of the models trained at A5, HK loses less than BN between test-A5 and test-A10. MR is expected to lose accuracy as its structural error grows away from the nominal point.
-* H3, protocol shift: the candidates rank on test-steps as they rank on test-A10.
+* H3, protocol shift: the candidates rank on the fixed aggregate of test-steps as they rank on test-A10; the ranking in each of the eight conditions is reported beside it.
 * H4, physical validity: the black boxes produce physically invalid predictions, or imply a negative rate or a heat flow incompatible with any non-negative conductance, in some windows, more often at small budgets and outside the training region. That the structured models produce none is a check of their implementation, not a finding.
 * H5, mechanism (oracle, secondary): over the visited states, the rate of HK is closer to the true rate than MR's first-order law is.
 
@@ -464,7 +467,7 @@ Iterations I1 and I3 are software work on the data of M0 and on synthetic data; 
 | I0 Design, revisions 1 and 2 | this plan and its revisions; the active milestone in `AGENTS.md`, `CLAUDE.md`, `README.md` and the roadmap; D-029 and D-030 | the owner has answered section 15 and the plan follows the answers; Codex has reviewed revision 1. Both hold since 2026-09-24 (D-030, revision 2) |
 | I1 Evaluation contract and mechanistic models | `evaluation`: the index contract, windows, phases, contexts, fitting and validation parts, metrics, records of failures, the validity bounds, the implied rate and heat flow. `models`: the interface of a continuous-time model, rollout with failures recorded, MN, MR, MR_F. A test on the import graph for both packages | tests on the worked example of section 5.7: no context scored in its own window, F and V disjoint, the counts of section 5.4; metrics equal to values computed by hand; the integration error of the rollout below 1 % of sigma against a tighter tolerance; MR recovers the parameters of data simulated by the modeller's own model, first noise-free from an exact initial state to the tolerance of the optimiser, then with the noise of D-020 and the context rule, each estimate within four standard errors of the true value over a declared set of seeds, the standard errors being those of the sandwich of section 7.4, which include the error of the initial state; suite and CI pass. A smoke run on `m0-e05` shows the code runs on a real export; it is exploratory |
 | I2 Identifiability diagnostic, M1-E01 | parts 1 to 3 of section 7.4; the decision on E/R, if Q1 leaves it to the diagnostic | registered before it is run; run from a clean commit; logged as hypothesis, method, result and interpretation; oracle outputs only under `experiments/` |
-| I3 Framework and learned models | the comparison of two frameworks and the decision; BL, BN, HK, HU, HKU; tests | HK with its correction at the identity equals MR_F to the precision of the integrator; gradients agree with finite differences; a correction planted in data simulated by the modeller's model is recovered, without the truth; BL's convention holds on a rank-deficient case; tests pass on CI with the new dependency; the cost of one fit is measured on development data |
+| I3 Framework and learned models | the comparison of two frameworks and the decision; BL, BN, HK, HU, HKU; tests | HK with its correction at the identity equals MR_F to the precision of the integrator; gradients agree with finite differences; on data simulated by the modeller's model with a planted correction, and without the truth, recovery is tested in two separate ways: the fitted hybrid reproduces the trajectories, and the mechanism is recovered either as the correction itself, with the mechanistic parameters held at the values used to simulate, or, when parameters and correction are fitted together, as the total rate (the total heat flow for HU) over a domain of the states declared with the test; a joint fit is not required to recover the correction alone, since its split with the parameters is not identifiable (section 7.3); BL's convention holds on a rank-deficient case; tests pass on CI with the new dependency; the cost of one fit is measured on development data |
 | I4 Protocol extensions and their verification | the lead, and the amplitude if Q2 is accepted, in the grammar of identities and in the data contract; the verification of P3 at A5 (M1-E02, registered, as M0-E03b) | identities and contract changed with tests; M1-E02 passes, or its failure is reported and Q2 is reopened |
 | I5 Registration of the benchmark, M1-E03 | the registration and the data set definitions, test sets included | committed from a clean commit before any benchmark data exist; offered to Codex for review before I6 |
 | I6 Development runs and technical freeze | the development sets generated; every fit on every budget and replicate; selection on V; deviations recorded; the freeze commit | the registration precedes all of it in the history; every fit logged with its failures and selection effort; no test data exist before the freeze |
@@ -473,7 +476,7 @@ Iterations I1 and I3 are software work on the data of M0 and on synthetic data; 
 
 ## 14. The next iteration, recommended
 
-I1. The owner has answered the questions of section 15 (D-030). I1 depends on the answers to Q5 and on the part of Q3 that says how fitting and validation share a budget; the other answers do not change it. It needs no new dependency and gives the mechanistic baseline a place before any network exists. Concretely:
+I1. The owner has answered the questions of section 15 (D-030), and revision 2 takes in Codex's review of revision 1. I1 depends on the answers to Q5 and on the part of Q3 that says how fitting and validation share a budget; the other answers do not change it. It needs no new dependency and gives the mechanistic baseline a place before any network exists. Concretely:
 
 * `process_transfer/evaluation/`: the index contract of section 4.3 and the division of section 5.5, built from the known inputs; the rule for initial states; metrics per channel in physical units and in sigmas, per phase; records of failures; the validity bounds; the implied rate and heat flow.
 * `process_transfer/models/`: the interface of a continuous-time model; rollout under piecewise-constant inputs, sampled at the sensor instants, returning failures as records; MN, MR and MR_F on the equations of `modeller/cstr_first_order.py`, parameterised by k_350, E/R and UA.
@@ -521,6 +524,8 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 8. Interpretations that claimed too much, about BN against BL, HK against MR, trade-offs between parameters and corrections, and the oracle fit as a limit of infinite data, are restricted to the models, procedures and data evaluated, and pseudo-true is defined by its windows and objective (sections 7.3, 7.4, 8.3 and 10).
 9. Precisions: exact durations of the budgets beside rounded labels (section 5.4); the initial state in the Fisher information and in the recovery test of I1 (sections 7.4 and 13); the claim that five replicates halve the power is replaced by what a sign count can reach (Q3, section 9.7); `AGENTS.md` and `CLAUDE.md` said that `91206b2` carries the tag `m0-v1.0`, which is on `3e8f0d1`.
 
-**Revision 2, 2026-09-24.** The owner answered Q1 to Q5 by accepting each recommendation (D-030). What changed:
+**Revision 2, 2026-09-24.** The owner answered Q1 to Q5 by accepting each recommendation (D-030), and Codex's review of revision 1 left two precisions, which the owner asked to take in. What changed:
 
 1. The answers are recorded after each question of section 15 and in D-030. Section 3 says what they settle and what they leave open; sections 4 to 9 are no longer headed as proposals; the header, section 1, the row of I0 in section 13 and section 14 follow.
+2. The cluster bootstrap over test runs is limited to the P3 test sets, whose runs are draws of the protocol. The eight single-input steps are fixed conditions: they are reported for each condition and as a fixed aggregate, with their spread over the training replicates, and no repetition is added (sections 5.2, 9.7 and 10, H3).
+3. The recovery test of the hybrid in I3 no longer asks a joint fit of parameters and correction to recover the correction alone. It tests the trajectories, and the mechanism either with the parameters held fixed or as the total rate or heat flow over a declared domain (sections 7.4 and 13).
