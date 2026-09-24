@@ -1,0 +1,19 @@
+# The build context is the repository root. Everything in it is left out, and only what
+# the image needs is let back in: pyproject.toml and README.md (the metadata of the
+# package), the code, the SQL, the configurations, the experiment scripts and the files
+# of docker/. Generated data, virtual environments, git, credentials such as .env, editor
+# files, tests, documentation and caches never reach the builder.
+*
+!pyproject.toml
+!README.md
+!src/
+!sql/
+!configs/
+!experiments/
+!docker/
+
+# Left out again inside the directories let in above: bytecode and build metadata that a
+# local interpreter wrote next to the sources.
+**/__pycache__
+**/*.pyc
+**/*.egg-info
