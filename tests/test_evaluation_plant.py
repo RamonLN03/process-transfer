@@ -45,8 +45,8 @@ def test_the_known_parameters_are_those_of_the_plant(export: Export, configs_dir
     assert plant.density == spec.properties.density.si
     assert plant.heat_capacity == spec.properties.heat_capacity.si
     assert plant.reaction_enthalpy == spec.properties.reaction_enthalpy.si
-    np.testing.assert_array_equal(plant.nominal_inputs, nominal_inputs(spec))
-    assert not plant.nominal_inputs.flags.writeable
+    assert plant.nominal_inputs == tuple(nominal_inputs(spec))
+    assert plant == read_known_plant(export, "target")  # plants compare as values
     assert plant.thermal_mass == 0.1 * 1000.0 * 239.0
     assert plant.heat_release_per_mole == 50000.0 / (1000.0 * 239.0)
 

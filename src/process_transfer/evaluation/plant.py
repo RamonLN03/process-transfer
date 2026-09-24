@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from process_transfer.cstr_variables import INPUT_NAMES, FloatArray
+from process_transfer.cstr_variables import INPUT_NAMES
 from process_transfer.data.export import Export
 from process_transfer.validation import require_finite, require_positive
 
@@ -43,7 +43,8 @@ class KnownPlant:
     density: float  # rho, kg/m^3
     heat_capacity: float  # cp, J/(kg K)
     reaction_enthalpy: float  # dH, J/mol; negative for an exothermic reaction
-    nominal_inputs: FloatArray  # q, C_Af, T_f, T_c: m^3/s, mol/m^3, K, K
+    # q, C_Af, T_f, T_c: m^3/s, mol/m^3, K, K. A tuple, so that two plants compare as values.
+    nominal_inputs: tuple[float, ...]
 
     def __post_init__(self) -> None:
         for name in ("volume", "density", "heat_capacity"):
@@ -60,10 +61,11 @@ class KnownPlant:
                 f"nominal_inputs must hold {len(INPUT_NAMES)} values, {INPUT_NAMES}, got "
                 f"shape {nominal.shape}"
             )
-        for name, value in zip(INPUT_NAMES, nominal, strict=True):
+        values = tuple(
             require_positive(f"nominal {name}", value)
-        nominal.setflags(write=False)
-        object.__setattr__(self, "nominal_inputs", nominal)
+            for name, value in zip(INPUT_NAMES, nominal, strict=True)
+        )
+        object.__setattr__(self, "nominal_inputs", values)
 
     @property
     def thermal_mass(self) -> float:
@@ -111,5 +113,5 @@ def read_known_plant(export: Export, plant_id: str) -> KnownPlant:
         density=values["density"],
         heat_capacity=values["heat_capacity"],
         reaction_enthalpy=values["reaction_enthalpy"],
-        nominal_inputs=np.array([values[name] for name in NOMINAL_INPUT_UNITS], dtype=np.float64),
+        nominal_inputs=tuple(values[name] for name in NOMINAL_INPUT_UNITS),
     )
