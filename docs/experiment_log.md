@@ -454,3 +454,51 @@ Selection. Between `4bc056c` and `6578f45` the generator, the data set definitio
 **Result.** Run `20260922T132222Z_6578f45`, exit code 0, the nine hypotheses hold. The data set, the ingestion and the export are reported as already present, no file of the available branch was touched, and the six content hashes are those of the registered run: `9006d4e1bf9ff9d0...`, `aba65cd6c2817a8a...`, `6d9b8c99a852e794...` on the source and `c45d6a0957b867e0...`, `9e561bfc61983740...`, `37a3b227eec190ae...` on the target. The largest of the 102 z-scores is 2.58, as registered. Run time 15.6 s.
 
 **Interpretation.** The identities, the segments and the content of P3 are what they were: the generalisation of the definitions to three protocols changed nothing of the first one, which is what the re-run was for.
+
+## M1
+
+The plan of M1 is `docs/m1_plan.md`. Development runs made while implementing an iteration are recorded here as such: they are not experiments, nothing in them was registered, and none of their numbers is a result of M1.
+
+### Development runs of I1 (2026-09-25)
+
+Two runs, made after the tests of I1 passed, from clean commits, with PT_DATA_DIR set to a new directory outside the repository and outside OneDrive. Environment: Python 3.13.7, numpy 2.5.3, scipy 1.18.1, the versions of the reference environment of M0.
+
+#### Smoke run on the exports of M0
+
+Code: `experiments/m1_i1_smoke_run.py` at commit `bfb69ab`, clean working tree; run `20260924T232014Z_bfb69ab` under `PT_DATA_DIR/development/m1-i1-smoke/`. Data: the exports `m0-e05` and `m0-e07`, read only, from the data directory of the repository. A fingerprint of every file under `available/exports` was the same before and after the run.
+
+**Hypothesis.** None about the plants. About the software: the code of I1 runs end to end on real exports; the windows, budgets and parts are those the index contract gives on runs without a lead; every declared start of MR and MR_F ends on a declared criterion; the structured models give no integration failure, no violation of the validity bounds and no implied term that the physics forbids, since they satisfy them by construction; the reference integration stays below 1 % of sigma on real windows.
+
+**Method.** The three target P3 runs of `m0-e05`, each taken as a replicate with a budget of its nine windows, F the first eight and V the last. MR fitted on the nine windows and MR_F on F, from the five declared starts (D-032). MN, MR_F and MR evaluated on the windows of their replicate, on the windows of the two other runs and on the eight target steps of `m0-e07`, the last two held out from every model; MR_F also on V alone, which it never saw. Validity bounds and implied terms on every completed window. The reference integration compared with LSODA and DOP853 at rtol = 1e-12 on the nine windows of the first run and the eight steps, for MN and for the MR of the first run. Everything is in `summary.json` of the run.
+
+**Result.** In each run the first excursion, at tick 0, forms no window, for lack of a context; excursions 2 to 10 form nine, F holds 880 scored readings, and the prefix ends at tick 1200. The fitting parts visit 6, 8 and 6 distinct corners, with sign vectors of rank 4 in each. All 30 starts converged, in 9 to 17 evaluations of the residuals; within each fit the five endpoints differ by at most 0.011 K in E/R and 4e-7 relative in k_350 and UA. The singular values of the Jacobian of the normalised residuals at the selected endpoints lie between 2308 and 2519, 485 and 525, and 17.7 and 19.8.
+
+| Run | Model | k_350, 1/s | E/R, K | UA, W/K | J, own windows | J, other P3 runs | J, steps | J, V |
+|---|---|---|---|---|---|---|---|---|
+| e0 | MN | 0.016666 | 8750 | 1666.7 | 11.46 | 11.13 | 11.22 | |
+| e0 | MR | 0.017716 | 9598.1 | 1329.8 | 2.241 | 2.535 | 1.788 | |
+| e0 | MR_F | 0.017682 | 9684.9 | 1331.1 | 2.244 | 2.546 | 1.754 | 2.475 |
+| e1 | MN | | | | 11.01 | 11.36 | 11.22 | |
+| e1 | MR | 0.017437 | 9436.2 | 1311.9 | 2.665 | 2.333 | 1.912 | |
+| e1 | MR_F | 0.017364 | 9446.7 | 1309.4 | 2.665 | 2.340 | 1.926 | 1.695 |
+| e2 | MN | | | | 11.25 | 11.23 | 11.22 | |
+| e2 | MR | 0.017622 | 9568.3 | 1320.4 | 2.361 | 2.478 | 1.799 | |
+| e2 | MR_F | 0.017626 | 9627.8 | 1321.9 | 2.363 | 2.486 | 1.770 | 2.464 |
+
+The "own windows" of MR_F are its eight windows of F and the window of V together, and are labelled as fitting data, so no excess over the noise is computed for them. No evaluation had an integration failure, a violation of a validity bound, a negative implied rate or an implied heat flow incompatible with a non-negative conductance. The error of the reference integration against the two tighter ones was at most 2.2e-5 sigma for MN and 2.5e-5 sigma for MR. The run took 62.9 s.
+
+**Interpretation.** The code of I1 runs end to end on real exports and does there what its tests say it does. The numbers are not results: they come from the data of M0, which is not the benchmark, three runs and one budget, and nothing was registered before they were seen. Nothing here compares models, or says how any of them would score on the benchmark of M1, and the estimates of E/R are not read as evidence about E/R, which is the question of I2. What the run does say about the software: on these data the fit reaches one endpoint from every start; the reference integration is about four hundred times more accurate on real windows than the plan requires; and MN's score of about 11 is of the size that section 2 of the plan leads one to expect, its steady state lying 12 sigma_CA and 10 sigma_T from the target's.
+
+#### Calibration of the sandwich standard errors
+
+Code: `experiments/m1_i1_sandwich_calibration.py` at commit `f71deea`, clean working tree; run `20260924T232253Z_f71deea` under `PT_DATA_DIR/development/m1-i1-sandwich-calibration/`; noise seeds 2000 to 2199, fixed before the run.
+
+**Hypothesis.** When the model is right, the sandwich standard errors of MR describe the spread of its estimates: z = (estimate - true value) / standard error is standard normal for each of ln k_350, E/R and ln UA.
+
+**Method.** The data of the recovery test of I1: the modeller's own equations at k_350 = 1.3 times the textbook value, E/R = 9200 K and UA = 0.85 times the textbook value, simulated on the truth side from their steady state, with a lead of 60 s and eight P3 excursions whose corners come from seed 2026; readings with the noise of D-020, one seed per replicate. MR fitted on the eight windows from the textbook start; its covariance computed at the estimate with the error of the context mean (the sandwich) and without it. The spread of z over the 200 replicates, with a bootstrap interval of its standard deviation.
+
+**Result.** 200 fits, no training failure. Means of z: -0.001, -0.061 and -0.043. Standard deviations: 1.014, 1.004 and 1.011, with 95 % bootstrap intervals of 0.93 to 1.09, 0.91 to 1.10 and 0.90 to 1.11. Largest |z|: 2.34, 2.91 and 3.15; fraction beyond 2: 0.025, 0.060 and 0.055, against 0.046 for a standard normal. With the initial state taken as exact, the standard deviations are 1.03, 1.10 and 1.04. Mean sandwich standard errors: 0.0021 in ln k_350, 30.0 K in E/R and 0.0013 in ln UA. 201 s.
+
+A first pass over 40 seeds, 1000 to 1039, with a script outside the repository and the same fit, had given standard deviations of 1.23, 1.12 and 1.09. The first is about two standard errors of such an estimate above 1, which is what prompted this run over 200 seeds; its seeds were fixed before it was run, and it is the run recorded here.
+
+**Interpretation.** With the right structure and these eight windows, the sandwich standard errors describe the spread of the estimates of MR to within about 10 %, the width of the bootstrap intervals. Leaving out the error of the initial state understates the spread of E/R by about 10 %, and those of ln k_350 and ln UA by a few per cent. This supports the criterion of four standard errors in the recovery test of I1, and the use of the sandwich in part 1 of M1-E01. It says nothing about a model whose structure is wrong, which is the case of MR on the target.

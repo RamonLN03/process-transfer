@@ -12,9 +12,9 @@ The package is organised so that these remain logically distinct (AGENTS.md):
 | Generation: from configuration files to a verified data set; the truth side of the data path | `process_transfer.generation` | M0 |
 | Data infrastructure: Parquet, DuckDB, SQL, paths | `process_transfer.data` | M0 |
 | Configuration and units | `process_transfer.config`, `process_transfer.units` | M0 |
-| Models (black box, hybrid) | `process_transfer.models` | M1 |
+| Models: the mechanistic MN, MR and MR_F since I1; black box and hybrid later | `process_transfer.models` | M1 |
 | Transfer logic (baselines, heuristic, policies) | `process_transfer.transfer` | M2 onwards |
-| Evaluation (metrics, physics metrics, plots) | `process_transfer.evaluation` | M1 onwards |
+| Evaluation: windows, budgets, metrics, failures and physical checks since I1 | `process_transfer.evaluation` | M1 onwards |
 
 Ground-truth information (true parameters, hidden constitutive relations, noise-free trajectories, exact rates) is stored separately from observable information and never enters training or evaluation inputs, except in an explicit oracle experiment.
 

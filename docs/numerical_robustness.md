@@ -340,3 +340,49 @@ This is not a case of a denominator, a root or a grid; it is the same class of s
 ### Open limitations
 
 * `comparison_is_valid` is written for exactly the primary/accepted, secondary/envelope-exempt shape M0-E08 needs. A future oracle-style comparison with a different exemption would need its own criterion, not a reuse of this one under a different name.
+
+## Review of 2026-09-25, eleventh: the evaluation contract and the mechanistic models of I1
+
+Scope. The interfaces added in I1 of M1 (D-032): `evaluation/plant`, `evaluation/windows`, `evaluation/budgets`, `evaluation/metrics`, `evaluation/outcomes`, `evaluation/physics`, `models/rollout`, `models/mechanistic` and `models/fitting`. They were written with the rule in hand, so this section records their domains, limits and scales, and what was caught before the code was committed. No module of M0 was changed.
+
+### Domain and limits of each interface
+
+| Interface | Valid domain | Limits resolved explicitly | Rejected at the boundary |
+|---|---|---|---|
+| `plant.read_known_plant`, `KnownPlant` | the eight known parameters of the contract, each once, in its SI unit, as a number | none | a parameter missing, repeated, unknown, in another unit, given as a string or a boolean, or not finite; a volume, density or heat capacity that is not positive; a product V rho cp that overflows or underflows; a nominal input that is not positive |
+| `windows.find_windows` | a run whose rows are the consecutive ticks of the 6 s clock, with the channels of the CSTR in their order and SI units | a run without excursions has no window; an excursion without ten rows at the nominal inputs before it, or that the run ends inside, forms no window and is recorded with its reason | another period, a gap, channels in another order or unit; nominal inputs that no row carries, which would otherwise read as one excursion at tick 0; a hold of another length than the layout's; inputs that change inside a window; a context that reaches the scored readings of the window before |
+| `windows.WindowData` | the shapes of its layout, finite values, noise levels not negative | the initial state is the mean of the ten context readings, computed there and nowhere else | wrong shapes, values that are not finite |
+| `budgets.split_budget`, `BudgetSplit` | two or more windows of one run, in the order of time | the prefix ends at the next onset, or at the end of the run | a budget below 2, a fraction, a boolean; more windows than the run has; parts that share a row, windows out of order, rows beyond the prefix |
+| `budgets.excitation` | the inputs at the onsets | the sign of a difference of two floating-point numbers is exact; the rank is computed in rational arithmetic | none |
+| `metrics.score`, `metrics.evaluate` | finite errors, one row per scored reading; sigmas finite and positive; one layout and one set of noise levels per evaluation | a negative excess over the noise is reported as it comes; for readings that are not held out the excess is absent, not zero | a sigma of zero, since an exact sensor has no normalised score; errors that are not finite, which are integration failures; squared errors that overflow and sigmas whose squares underflow, both checked on the outcome |
+| `outcomes` | the results of every window of a set, or a training failure | a failure loses a paired comparison and two failures tie | a primary score beside a failure; results for a model that was not trained; a score that is not finite |
+| `physics.validity_violations` | dH <= 0 | each bound follows the inputs applied before the instant it judges | an endothermic reaction |
+| `physics.implied_terms`, `check_implied_terms` | finite derivatives, states and inputs, one row per point | T = T_c recognised exactly; a sign judged only beyond the rounding bound of its term | values that are not finite, rows that do not match |
+| `rollout.rollout` | a finite initial state in the domain of the model, finite inputs, a positive period | one row is a segment of its own; sensitivities to the parameters and to the initial state | wrong shapes, values that are not finite, tolerances that are not positive, a guard that is not a positive integer, sensitivities of a model that states no Jacobians |
+| `mechanistic` | k0, E/R and UA finite and not negative; a positive temperature at the start | k0 = 0 is no reaction and UA = 0 an adiabatic reactor; a negative estimate of C_A starts the model and is judged by the validity bounds | an exponential that overflows in the coordinates of the optimiser (`OverflowError`); a start at T <= 0, where the rate law divides by the temperature |
+| `fitting.fit_mechanistic` | windows that share positive noise levels, each given once | a start that fails or exhausts its budget is recorded, with its endpoint when it has one | no window, a window given twice, a sigma of zero, repeated labels of starts, a start that moves E/R when it is fixed, a start that puts E/R at or below zero |
+
+### Failures reproduced and resolved before the code was committed
+
+| Where | Input | What happened | Silent | Resolution |
+|---|---|---|---|---|
+| `scipy.integrate.solve_ivp`, LSODA | a right-hand side that returns infinity; dx/dt = x^2, which grows without bound in finite time | LSODA did not stop by itself: more than 100 000 evaluations on each, until a counter stopped them | yes, a run that hangs | the rollout checks every derivative for finiteness and counts evaluations; either ends the rollout with a record of its cause |
+| `evaluation.plant.KnownPlant` | two plants compared with `==` | `ValueError`: the dataclass compares its fields as a tuple, and a numpy array has no single truth value | no | the nominal inputs are a tuple of floats (`7f624b8`) |
+| `tests/test_models_rollout.py`, sensitivities | central differences of rollouts at rtol = 1e-12 with a step of 1e-5 | 1 % disagreement with the sensitivity to (E/R) / T_ref | no | not a defect of the sensitivities: the disagreement shrank as the step grew, and was the same with LSODA, DOP853 and Radau. The reference was dominated by the error of the integration divided by the step, about 350e-12 / h, on a sensitivity that is small, a factor 1 - T_ref / T of about 0.014 below that to ln k_350. Each step now balances truncation against that error |
+| `tests/test_models_rollout.py`, inputs | the states before a change of the inputs, compared bit for bit with those of a run without the change | they differed by about 1e-10 relative | no | not a defect: with a change at 300 s the first piece of the integration ends there, and the adaptive integrator takes other steps. The test compares them to the accuracy of the integration, and checks that the first state after the change moves by more than a tenth of a sigma |
+
+### Scales and resolutions, stated as such
+
+* The reference integration: LSODA, rtol = 1e-8, atol = 1e-6 in the SI unit of each component. Its error against LSODA and DOP853 at rtol = 1e-12 was at most 2.5e-5 sigma on the target windows of M0 in the smoke run, and is asserted below 1 % of sigma on the 16 corners in the tests.
+* The guard of 100 000 evaluations of the right-hand side per window is a guard, not a tolerance: a window of 660 s takes a few hundred.
+* The rounding bounds of the implied terms are gamma_4 and gamma_12, about 4.4e-16 and 1.3e-15, times the traffic through each balance. A test compares the computed terms with their exact values in rational arithmetic, for the same floating-point arguments, on points that include large derivatives that cancel and T = T_c.
+* The numerical rank of the Jacobian, for the covariance, follows numpy's convention: the largest singular value times the larger dimension times the machine epsilon.
+
+### Open limitations
+
+* The rollout of a window depends on where the later changes of its inputs fall, at the level of the error of the integration, since the integration restarts at each change. That is not a reading of later measurements: the inputs over the horizon are known and given to every model (section 4.1 of the plan).
+* A prediction within the error of the integration of a validity bound could be flagged. No state of the plants of M1 comes near one.
+* The temperature bound of an endothermic reaction is not implemented; the function refuses such a plant.
+* Squared errors beyond about 1e154 are refused, not scored.
+* The sandwich assumes the model is right. For MR on the target it is not, and the covariance the smoke run reports for it describes the conditioning of the fit, not an uncertainty of anything.
+* A Jacobian that is deficient only to the accuracy of the integration, about 1e-8 of its largest singular value, passes the rank test and gives standard errors that are very large and mean nothing; the singular values are reported beside them for that reason.

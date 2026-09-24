@@ -1,6 +1,6 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Nothing described here is implemented. The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, only I1 is implemented: the evaluation contract and the mechanistic models MN, MR and MR_F, on 2026-09-25, not yet accepted (section 13); D-032 records the choices made in implementing it. The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
 
 ## 1. The question
 
@@ -474,6 +474,8 @@ Iterations I1 and I3 are software work on the data of M0 and on synthetic data; 
 | I7 Test evaluation | the test sets generated from their registered definitions; one evaluation of every frozen model; the oracle diagnostics by their own script; results in the log | generated after the freeze; every window and replicate accounted for; every hypothesis reported as it came out |
 | I8 Analysis and closure | mechanism, from the oracle; `docs/m1_audit.md`; Codex's review; the owner's acceptance | the definition of done of section 12 |
 
+Status on 2026-09-25. I1 is implemented, in the commits from `124c377` on, and is not yet accepted: its tests pass and ruff is clean on the development machine, but CI has not run on it, since nothing was pushed in that iteration, and Codex has not reviewed it. Where each of its criteria is met: the worked example and the counts of section 5.4 in `tests/test_evaluation_budgets.py` and `tests/test_evaluation_windows.py`; metrics against values computed by hand in `tests/test_evaluation_metrics.py`; the error of the rollout below 1 % of sigma in `tests/test_models_rollout.py`, and at most 2.5e-5 sigma on real windows in the smoke run; recovery without noise to the tolerance of the optimiser, and with the noise of D-020 within four sandwich standard errors for five declared seeds, in `tests/test_models_fitting.py`, with the calibration of those errors checked over 200 seeds; the smoke run on `m0-e05`, and on the steps of `m0-e07`. The last two are development runs, recorded in the experiment log. I2 has not started.
+
 ## 14. The next iteration, recommended
 
 I1. The owner has answered the questions of section 15 (D-030), and revision 2 takes in Codex's review of revision 1. I1 depends on the answers to Q5 and on the part of Q3 that says how fitting and validation share a budget; the other answers do not change it. It needs no new dependency and gives the mechanistic baseline a place before any network exists. Concretely:
@@ -483,6 +485,8 @@ I1. The owner has answered the questions of section 15 (D-030), and revision 2 t
 * The access rules of section 5.6 enforced where data are handed over: a fit receives the index sets of its part and nothing else.
 * A test on the import graph: `models` and `evaluation` never import `simulation` or `generation`. The generic integration code that both sides need is either moved to a neutral module or written again on the model side; which, is decided on inspection in I1 and recorded.
 * Models read exports through `data.export.open_export_directory`, the known parameters from the export and the modeller's values from `configs/modeller_cstr.yaml`, never a plant configuration file.
+
+Carried out on 2026-09-25 (section 13). The integration was written again on the model side, not moved (D-032). The next iteration is I2, which has not started.
 
 ## 15. Questions for the owner, and the answers
 
@@ -529,3 +533,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 1. The answers are recorded after each question of section 15 and in D-030. Section 3 says what they settle and what they leave open; sections 4 to 9 are no longer headed as proposals; the header, section 1, the row of I0 in section 13 and section 14 follow.
 2. The cluster bootstrap over test runs is limited to the P3 test sets, whose runs are draws of the protocol. The eight single-input steps are fixed conditions: they are reported for each condition and as a fixed aggregate, with their spread over the training replicates, and no repetition is added (sections 5.2, 9.7 and 10, H3).
 3. The recovery test of the hybrid in I3 no longer asks a joint fit of parameters and correction to recover the correction alone. It tests the trajectories, and the mechanism either with the parameters held fixed or as the total rate or heat flow over a declared domain (sections 7.4 and 13).
+
+**Revision 3, 2026-09-25.** Status only. The header, section 13 and section 14 say that I1 is implemented and what remains before it is accepted. No part of the design changed; the choices made in implementing I1, where the plan left the how open, are D-032.
