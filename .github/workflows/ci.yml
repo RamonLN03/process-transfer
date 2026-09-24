@@ -25,3 +25,37 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest
+
+  # The Linux container of the data path (docs/docker.md): it builds, generates the data
+  # set of M0-E06 into a folder of the runner, leaves it there when the container has
+  # ended, and fails with the documented exit codes. No experiment or benchmark runs here.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t process-transfer:ci .
+      - name: Generate the data set of M0-E06 in a container
+        run: |
+          # The container runs as UID 1000; the runner's folder must be writable by it.
+          mkdir -p "$RUNNER_TEMP/pt-data"
+          chmod a+rwx "$RUNNER_TEMP/pt-data"
+          docker run --rm -v "$RUNNER_TEMP/pt-data:/data" process-transfer:ci configs/datasets/m0_e06.yaml
+      - name: The results are on the runner after the container has ended
+        run: |
+          d="$RUNNER_TEMP/pt-data/available"
+          test -f "$d/datasets/m0-e06/manifest.json"
+          test -f "$d/datasets/m0-e06/measurements/source.steady.d7200.n0.parquet"
+          test -f "$d/datasets/m0-e06/measurements/target.steady.d7200.n0.parquet"
+          test -f "$d/databases/m0-e06.duckdb"
+          test -f "$d/exports/m0-e06/export.json"
+          ls -lR "$RUNNER_TEMP/pt-data"
+      - name: Failures end with their exit codes
+        run: |
+          code=0; docker run --rm process-transfer:ci configs/datasets/m0_e06.yaml || code=$?
+          echo "without a mounted data directory: $code"; test "$code" -eq 3
+          code=0; docker run --rm -v "$RUNNER_TEMP/pt-data:/data" process-transfer:ci configs/datasets/missing.yaml || code=$?
+          echo "a definition that does not exist: $code"; test "$code" -eq 2
+          mkdir -p "$RUNNER_TEMP/read-only"
+          code=0; docker run --rm -v "$RUNNER_TEMP/read-only:/data:ro" process-transfer:ci configs/datasets/m0_e06.yaml || code=$?
+          echo "a data directory mounted read-only: $code"; test "$code" -eq 1
