@@ -502,3 +502,43 @@ Code: `experiments/m1_i1_sandwich_calibration.py` at commit `f71deea`, clean wor
 A first pass over 40 seeds, 1000 to 1039, with a script outside the repository and the same fit, had given standard deviations of 1.23, 1.12 and 1.09. The first is about two standard errors of such an estimate above 1, which is what prompted this run over 200 seeds; its seeds were fixed before it was run, and it is the run recorded here.
 
 **Interpretation.** With the right structure and these eight windows, the sandwich standard errors describe the spread of the estimates of MR to within about 10 %, the width of the bootstrap intervals. Leaving out the error of the initial state understates the spread of E/R by about 10 %, and those of ln k_350 and ln UA by a few per cent. This supports the criterion of four standard errors in the recovery test of I1, and the use of the sandwich in part 1 of M1-E01. It says nothing about a model whose structure is wrong, which is the case of MR on the target.
+
+### Development runs after Codex's audit of I1 (2026-09-25)
+
+Codex audited `124c377` to `a8905dc` and reported six findings, corrected in `d785135` to `b5c2838`, with a last fix of the covariance in `08ebcf6` after these runs (`docs/numerical_robustness.md`, twelfth review). These runs check that the corrections change nothing at the scales of the plants and that the tables of the smoke run keep their denominators. They are development, like the runs above, and none of their numbers is a result of M1. All were made from the clean commit `b5c2838`, with PT_DATA_DIR set to a new directory outside the repository and outside OneDrive, and the exports of M0 read only: a fingerprint of every file under `available/exports` was the same before and after.
+
+#### The smoke run, repeated
+
+Run `20260925T170124Z_b5c2838`, `experiments/m1_i1_smoke_run.py` as in `20260924T232014Z_bfb69ab`.
+
+**Hypothesis.** The corrections change no fit, and no score beyond the rounding of the new way of forming squares: the fits of the audited run are reproduced bit for bit and its scores to within a few units in the last place.
+
+**Method.** The same exports, replicates, budget, starts and settings. Every number of the two summaries compared, path by path, apart from times and the provenance of the attempt.
+
+**Result.** 11 332 numbers compared; 4 492 are equal bit for bit, among them every parameter, objective, singular value, covariance, count of evaluations and excitation, and the error of the reference integration, 2.53e-5 sigma at most as before. The other 6 840 are metrics: MSE, MSE / sigma^2, RMSE and J differ by at most 3.7e-15 relative, and MSE - sigma^2 by at most 1.2e-12 relative, which is 4e-16 absolute on a difference of nearly equal numbers. All 30 starts converged, as before. The summary now also holds the tables of the windows of each replicate and of V. 68.2 s.
+
+**Interpretation.** At the scales of the plants the corrections are neutral: the fits are the same numbers, and the scores move in their last bits because squares are now formed on scaled values. What the audit found lay outside these scales.
+
+#### Training failures, reproduced on purpose
+
+Run `20260925T170305Z_b5c2838`, the same with `--max-evaluations 1`.
+
+**Hypothesis.** With a limit of one evaluation no start can converge, MR and MR_F are training failures in every replicate, and every table still counts the three replicates.
+
+**Method.** The smoke run with every start limited to one evaluation of the loss; the failure tables of every model and view.
+
+**Result.** Every start of MR and MR_F ended with its budget exhausted, and both fits are training failures in the three replicates. Each of their tables, on the windows of the replicate, the other runs, the steps and, for MR_F, V, holds three replicates, none scored and three training failures. MN, which is never trained, is scored in all three on each of its views.
+
+**Interpretation.** A replicate whose model was not trained stays in the denominator as a failure of that model, which is what section 9.3 of the plan asks and what the audited version did not do.
+
+#### The calibration of the sandwich errors, repeated
+
+Run `20260925T170324Z_b5c2838`, `experiments/m1_i1_sandwich_calibration.py` over the noise seeds 2000 to 2199, as in `20260924T232253Z_f71deea`.
+
+**Hypothesis.** The fixes to the fit and to the covariance add checks and change no number where the numbers are doubles, so the calibration repeats bit for bit.
+
+**Method.** The same data, fit and seeds; the 200 rows of the two summaries compared.
+
+**Result.** The 200 rows, each an estimate, its z-scores and its standard errors, are equal bit for bit, and so is every statistic: standard deviations of z of 1.014, 1.004 and 1.011, with the same bootstrap intervals. 191 s.
+
+**Interpretation.** The corrected fit and covariance give the numbers they gave before the audit on these data; the calibration recorded above stands as it was. The last fix of the covariance, `08ebcf6`, came after this run and changes only how overflow is reported for noise levels of 1e200.

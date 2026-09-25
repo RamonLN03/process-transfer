@@ -386,3 +386,68 @@ Scope. The interfaces added in I1 of M1 (D-032): `evaluation/plant`, `evaluation
 * Squared errors beyond about 1e154 are refused, not scored.
 * The sandwich assumes the model is right. For MR on the target it is not, and the covariance the smoke run reports for it describes the conditioning of the fit, not an uncertainty of anything.
 * A Jacobian that is deficient only to the accuracy of the integration, about 1e-8 of its largest singular value, passes the rank test and gives standard errors that are very large and mean nothing; the singular values are reported beside them for that reason.
+
+## Review of 2026-09-25, twelfth: Codex's audit of I1, 124c377 to a8905dc
+
+Scope. Six findings of Codex's audit of the seven commits of I1, each reproduced on `a8905dc` before anything was changed, and two defects of the same kind found while reproducing them. Every fix has a regression test that fails on `a8905dc` and passes after it. The equations, configurations, data contracts and scientific behaviour of M0 are unchanged: no module of M0 was touched.
+
+What the extreme cases show and what they do not. Most of these inputs lie far outside the scales of the plants, readings and errors of 1e154 to 1e308. No result of I1 at ordinary scales was affected: the smoke run repeated after the fixes gave every fit bit for bit and every score to within 1e-12 of its relative value (below). The defects were nonetheless real. The code gave wrong or misleading answers without saying so, J = 0 or J = inf, a heat flow counted as compatible, a fit with an infinite objective reported as converged, and it would have done so for any model whose predictions or derivatives reach such values, which the learned models of I3 can.
+
+### Failures reproduced and fixed
+
+| Where | Input | What happened | Silent | Resolution | Commit |
+|---|---|---|---|---|---|
+| `tests/test_models_rollout.py`, finding A | central differences of LSODA rollouts at rtol = 1e-12, in the initial temperature, step 1e-3 K | on Linux 3 values beyond rtol = 1e-4, atol = 1e-6, by up to 1.09e-6: 827 passed, 1 failed; on Windows it passed | no | not a defect of the sensitivities (study below): the reference is now central differences of a fixed-step Runge-Kutta integration | `c03ed41` |
+| `experiments/m1_i1_smoke_run.py`, finding B | every start limited to one evaluation | MR and MR_F failed to train, were left out of the scores, and their failure tables were null: failed replicates disappeared | yes | every declared model has a record on every view of every replicate, a training failure when its fit selected no start; the tables count every replicate | `b5c2838` |
+| `evaluation.physics.implied_terms`, finding C | derivatives [[-1e308, 0]] with V = 0.1, rho = 1000, cp = 100, dH = -5e5 | the heat flow and its bound were both inf, and the point was counted as within its bound, compatible with a non-negative conductance | yes | the rate, the heat flow and both bounds must be doubles or the point is refused; `ImpliedTerms` checks what the check reads | `33bab6a` |
+| `evaluation.metrics.score`, finding D | errors of 1, sigmas of 1e200, held out | J = 0 and MSE - sigma^2 = -inf: sigma^2 overflowed | yes | squares and means formed on values scaled by their largest magnitude; what is not representable is refused | `2674cbc` |
+| `evaluation.metrics.score`, finding D | errors of 1e154, sigmas of 1 | J = inf, although J is 1e154 | yes | the same | `2674cbc` |
+| `models.fitting.fit_mechanistic`, finding E | readings of 1e308, sigmas of 0.1 | `ValueError: Residuals are not finite in the initial point` escaped from least_squares | no | refused before any start, with a message that says why: the loss is not defined on these data for any model | `572ba65` |
+| `models.fitting.fit_mechanistic`, found while reproducing E | readings of 1e160 to 1e300, sigmas of 5 and 0.5 | the normalised residuals were finite and the sum of their squares overflowed: every start was recorded as converged with an objective of inf, one was selected, and there was no training failure | yes | residuals, Jacobian, loss and gradient are checked at every point a start reaches; if one is not a double, that start is a numerical failure and the others go on | `572ba65` |
+| `evaluation.windows.WindowData`, finding F | sample_period = inf; a context of ten readings of 1e308 | accepted; the initial state was [inf, inf], although the mean is a double | yes | the period must be finite and positive, the onset time finite, the last scored instant a double; a column whose sum overflows is averaged after scaling | `d785135` |
+| `models.rollout.rollout`, found with F | a period of 1e307 s, whose grid overflows | reported as an integration failure, "Unexpected istate in LSODA": an invalid argument taken for a failure of the integrator | no | refused where it enters | `d785135` |
+| `models.fitting.covariance`, found with E | noise levels of 1e-306, or of 1e200 | the normalised sensitivities, the variance of a context mean or the inverse of the squared singular values overflowed or divided by an underflowed zero before any check: a RuntimeWarning, which the tests turn into an error | no | every such product is formed under the check of its result, and a covariance that is not a double is given as the reason | `572ba65`, `08ebcf6` |
+
+### Finding A: the study behind the new test
+
+The question was whether the sensitivities or their reference were wrong. On the window of the test, MR-like parameters and the corner (+, -, +, +):
+
+| Comparison | Largest difference |
+|---|---|
+| sensitivities to the initial state, LSODA at 1e-12 against LSODA at 1e-13, DOP853 at 1e-13 and Radau at 1e-12 | 3.3e-11 |
+| sensitivities to the parameters, the same | 1.6e-9 |
+| central differences of LSODA at 1e-12 in the initial temperature, against the sensitivity, steps 1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2 and 1e-1 K | 1.4e-5, 8.3e-6, 2.0e-6, 1.1e-6, 1.9e-6, 1.6e-5, 1.8e-4 |
+| central differences of fixed-step Runge-Kutta, 0.1 s, the same steps | 3.1e-8, 7.4e-9, 2.0e-8, 1.6e-7, 1.8e-6, 1.6e-5, 1.8e-4 |
+
+The sensitivities agree among four integrations to far below anything the test asked. The adaptive differences have a floor of about 1e-6 at their best step, set by the steps LSODA chooses differently from nearby points and divided by the step of the difference: the tolerance of the old test sat on that floor, and the last bits of a platform decided the outcome. The fixed-step differences have no such floor and converge as the square of the step until rounding takes over near 1e-8. The new test compares with them, at steps chosen from this study for each direction, and asks 1e-7 of the scale of each sensitivity for the tight rollout, which at every element is stricter than the old tolerance, and 1e-5 for the rollout at the settings of the evaluation. The measured errors are about 1e-9 and 4e-8 to 8e-8 of the scale, on Windows and on Linux.
+
+### Domain and limits, as they now stand
+
+| Interface | Refused at the boundary | Recorded as a failure | Computed as before |
+|---|---|---|---|
+| `WindowData` | a period that is not finite and positive; an onset time that is not finite; a last scored instant beyond the largest double | none | the mean of the context by numpy, bit for bit, unless its sum overflows |
+| `rollout` | a period whose grid of instants is not representable | as in the eleventh review | the integration |
+| `metrics.score` | normalised errors, an MSE or an MSE / sigma^2 that are not doubles; for held-out readings a sigma^2 that overflows | none | the definitions; ordinary values differ in their last bits at most |
+| `physics.implied_terms` | a rate, heat flow or rounding bound that is not a double, naming the point | none | the rounding bounds and the exact recognition of T = T_c |
+| `ImpliedTerms` | values that are not finite, bounds that are negative, signs other than -1, 0 and +1, lengths that differ | none | none |
+| `fitting.fit_mechanistic` | scored readings whose values divided by the noise levels are not doubles, besides the earlier checks | at a point a start reaches: residuals, Jacobian, loss or gradient that are not doubles, a failed rollout, parameters that overflow; the start ends, the others go on, and with no selectable start the fit is a training failure | the selection among converged starts |
+| `fitting.covariance` | none | normalised sensitivities or a covariance that are not doubles, given as the reason | the sandwich |
+
+### Evidence on Windows and on Linux
+
+* Windows, the reference environment of the project (Python 3.13.7, numpy 2.5.3, scipy 1.18.1): 853 passed, none skipped, with ruff clean, at `b5c2838` and again at `08ebcf6`.
+* Linux, in a throwaway container of the image of each of those commits (the numerical libraries of `docker/requirements.lock.txt`, the same versions), with pytest 9.1.1 installed apart from the image, the committed tree extracted from `git archive`, and the user without administrator rights of the image: 849 passed and 4 skipped, both times. The four skipped tests need the git executable, which the image does not have: `tests/test_paths.py:55`, `tests/test_provenance.py:46` and `:67`, `tests/test_provenance_git_failures.py:145`. The same run on `a8905dc`: 827 passed, 1 failed (finding A), 4 skipped.
+* A difference between the platforms that is not a defect: in the test of a steady state that leaves one direction undetermined, the start "E/R + 2000 K" converges on Windows and on Linux ends as a numerical failure, at a trial point where the optimiser had gone far along that direction, E/R about 164 500 K, and LSODA reported repeated failures of its error test. Along a direction the data do not determine, the path of the optimiser depends on the last bits of the arithmetic. The failure is recorded as designed, the other four starts converge on both platforms, and the test asks for at least two.
+
+### Results of the checks of this iteration
+
+* The images of `b5c2838` and `08ebcf6` build; they hold no test tool. The data set of M0-E06, generated with each in a new folder, passes the ten checks of the generator, and its two content hashes equal those of the earlier generation in the container on 2026-09-24, and one of the two registered on Windows, as D-031 recorded. No module, configuration, SQL file or container file of M0 changed in this iteration or in I1.
+* The smoke run of I1, repeated from `b5c2838` in a new data directory with the exports of M0 read only: every start converged, the parameters, objectives, singular values and covariances equal those of the audited run `20260924T232014Z_bfb69ab` bit for bit, the scores differ from them by at most 3.7e-15 relative (1.2e-12 for MSE - sigma^2, a difference of nearly equal numbers, 4e-16 absolute), and the largest error of the reference integration is again 2.53e-5 sigma. A fingerprint of the exports was the same before and after.
+* The same run with every start limited to one evaluation: MR and MR_F fail to train in the three replicates, and every one of their tables holds three replicates, none scored and three training failures; MN is scored in all three.
+* The check of the calibration of the sandwich errors, repeated from `b5c2838` over the same 200 seeds: every estimate, z-score and standard error equal to those of `20260924T232253Z_f71deea` bit for bit. The fixes to the fit and to the covariance add checks and change no number where the numbers are doubles, which is why the check was repeated rather than assumed.
+
+### Open limitations
+
+* LSODA prints a `UserWarning` when it fails internally, as in the Linux case above. The failure is recorded; the warning is printed as scipy prints it.
+* A result that is representable only as a subnormal number keeps the precision of a subnormal: a J of 1e-200 is computed, an MSE / sigma^2 of 1e-400 is zero.
+* What is refused as not representable is refused with a ValueError at the boundary of each function. The learned models of I3 will need a decision on whether a window whose implied terms cannot be computed counts as an integration failure or as an undetermined point of the check; it is not taken here.
