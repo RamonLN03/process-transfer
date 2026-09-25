@@ -492,7 +492,8 @@ def covariance(
     names = ("ln k_350", "E/R", "ln UA") if estimated else ("ln k_350", "ln UA")
     units = np.array([1.0, REFERENCE_TEMPERATURE, 1.0] if estimated else [1.0, 1.0])
     sigma = windows[0].noise_std
-    context_covariance = np.diag(sigma**2) / CONTEXT_READINGS
+    with np.errstate(over="ignore", under="ignore"):
+        context_covariance = np.diag(sigma**2) / CONTEXT_READINGS  # checked with the result
     blocks, couplings = [], []
     for data in windows:
         result = rollout(
@@ -525,7 +526,7 @@ def covariance(
     # numpy's convention for the numerical rank of a matrix, not a threshold chosen here
     if singular[-1] <= singular[0] * max(stacked.shape) * np.finfo(np.float64).eps:
         return Covariance(names, values, None, None, "the Jacobian is rank deficient")
-    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+    with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
         bread = right.T @ np.diag(1.0 / singular**2) @ right  # (S^T W S)^-1
         initial_error = sum(m @ context_covariance @ m.T for m in couplings)
         sandwich = bread + bread @ initial_error @ bread

@@ -304,3 +304,6 @@ def test_a_covariance_that_is_not_representable_says_so_instead_of_returning_it(
     assert "not representable" in spread.reason
     with pytest.raises(ValueError, match="no covariance"):
         spread.standard_errors()
+    # noise levels of 1e200: the variance of a context mean overflows, and so the sandwich
+    huge = covariance(TRUE, (window_of_readings(200.0, (1e200, 1e200)),), KNOWN)
+    assert huge.sandwich is None and "not representable" in huge.reason
