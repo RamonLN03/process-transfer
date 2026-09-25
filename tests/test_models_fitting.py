@@ -48,7 +48,12 @@ from process_transfer.models.mechanistic import (
     MechanisticParameters,
     modeller_values,
 )
-from process_transfer.models.rollout import RolloutSettings, predict_window
+from process_transfer.models.rollout import (
+    EVALUATION_SETTINGS,
+    RolloutSettings,
+    predict_window,
+    rollout,
+)
 from process_transfer.simulation.steady_state import find_steady_states
 
 KNOWN = KnownPlant("target", 0.1, 1000.0, 239.0, -50000.0, NOMINAL)
@@ -307,3 +312,54 @@ def test_a_covariance_that_is_not_representable_says_so_instead_of_returning_it(
     # noise levels of 1e200: the variance of a context mean overflows, and so the sandwich
     huge = covariance(TRUE, (window_of_readings(200.0, (1e200, 1e200)),), KNOWN)
     assert huge.sandwich is None and "not representable" in huge.reason
+
+
+def window_the_start_reproduces(sigma: float) -> WindowData:
+    """A window whose scored readings are the prediction of the textbook start itself, but
+    for one reading moved by 1e-13, with noise levels ``sigma``: the residuals are finite
+    and small in physical units, and divided by a tiny sigma they become huge."""
+    base = window_of_readings(1.0, (sigma, sigma))
+    theta = DEFAULT_STARTS[0].point(TEXTBOOK).coordinates(None)
+    start = MechanisticModel("MR", KNOWN, MechanisticParameters.from_coordinates(theta, None))
+    predicted = rollout(start, base.initial_state, base.inputs, 6.0, EVALUATION_SETTINGS).states
+    scored = np.array(predicted)
+    scored[-1, 0] += 1e-13
+    return WindowData(
+        window=base.window,
+        sample_period=base.sample_period,
+        noise_std=base.noise_std,
+        onset_time=base.onset_time,
+        context=base.context,
+        scored=scored,
+        inputs=base.inputs,
+    )
+
+
+def test_a_scale_of_the_optimiser_that_overflows_ends_the_start_instead_of_converging():
+    """Codex's review of 9ea9a76. With sigmas of 1e-155 the residuals, the Jacobian, the loss
+    and its gradient are all doubles, but x_scale="jac" makes least_squares form the norms of
+    the columns of the Jacobian from their squares, which overflow: the scale became zero,
+    the step vanished and the start was reported as converged by its tolerance on the step,
+    or, with the warnings of this suite, the overflow escaped as an exception."""
+    settings = FitSettings(starts=DEFAULT_STARTS[:2], max_evaluations=2)
+    fit = fit_mechanistic("MR", (window_the_start_reproduces(1e-155),), KNOWN, MODELLER, settings)
+    first, second = fit.starts
+    assert first.outcome == NUMERICAL_FAILURE
+    assert "norms of the columns of the Jacobian" in first.message
+    # the second start begins elsewhere, where the loss itself is not a double: it is
+    # recorded as well, so a failed start does not stop the others
+    assert second.outcome == NUMERICAL_FAILURE and "loss is not representable" in second.message
+    assert fit.selected is None and fit.training_failure is not None
+
+
+def test_an_operation_of_the_optimiser_that_overflows_ends_the_start_instead_of_converging():
+    """With sigmas of 3e-152 the norms of the columns are doubles as well, but the first
+    radius of the trust region, the norm of the starting point times those norms, overflows
+    inside least_squares: checking the quantities the loss hands over is not enough, so any
+    operation of the optimiser that is not representable ends the start."""
+    settings = FitSettings(starts=DEFAULT_STARTS[:1], max_evaluations=2)
+    fit = fit_mechanistic("MR", (window_the_start_reproduces(3e-152),), KNOWN, MODELLER, settings)
+    (record,) = fit.starts
+    assert record.outcome == NUMERICAL_FAILURE
+    assert "an operation of the optimiser" in record.message
+    assert fit.selected is None and fit.training_failure is not None

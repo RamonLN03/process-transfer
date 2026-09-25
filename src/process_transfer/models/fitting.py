@@ -32,8 +32,10 @@ further points, in that order (``DEFAULT_STARTS``). The outcome of each start is
     converged           least_squares stopped on one of its tolerances (status 1 to 4)
     budget exhausted    it reached its limit of evaluations (status 0)
     numerical failure   at a point the start reached, the parameters overflowed, the rollout
-                        of a window failed, or the residuals, their Jacobian, the loss or its
-                        gradient were not representable in double precision
+                        of a window failed, or the residuals, their Jacobian, the norms of its
+                        columns, the loss or its gradient were not representable in double
+                        precision; or an operation of the optimiser itself was not
+                        representable
 
 What is refused before any start, with a ValueError, is what makes the loss undefined
 whatever the model: no window, a window given twice, noise levels that differ between
@@ -42,6 +44,16 @@ are not representable. Everything that depends on the point a start has reached 
 numerical failure of that start, recorded with its cause; the other starts go on. Only the
 exceptions named here are caught: an error of programming is not a numerical failure and
 is not hidden as one.
+
+The optimiser runs with numpy's floating-point errors raised: overflow, invalid operations and
+division by zero. Its own arithmetic can overflow on quantities that are all doubles: with
+``x_scale="jac"`` it forms the norms of the columns of the Jacobian from their squares, and
+its first radius of trust from the starting point times those norms. Left to warnings, an
+infinite norm made the scale of a coordinate zero, the step vanished and the start was
+reported as converged by its tolerance on the step (Codex's review of ``9ea9a76``). Raised,
+such an operation ends the start as a numerical failure, whatever the filters of warnings
+are, and the other starts go on. On ordinary data the optimiser meets none of these, so
+nothing else changes.
 
 A failed rollout ends its start. The TRF method of least_squares happens to treat a trial
 point with residuals that are not finite as a rejected step, but that is not documented,
@@ -250,17 +262,22 @@ class _Loss:
         self.sigma = windows[0].noise_std
         self.scale = 1.0 / math.sqrt(2.0 * sum(len(data.scored) for data in windows))
         self.evaluations = 0
+        self.last_theta: list[float] | None = None
         self._key: bytes | None = None
         self._value: tuple[FloatArray, FloatArray] | None = None
 
     def _evaluate(self, theta: FloatArray) -> tuple[FloatArray, FloatArray]:
-        key = np.asarray(theta, dtype=np.float64).tobytes()
+        theta = np.asarray(theta, dtype=np.float64)
+        key = theta.tobytes()
         if key == self._key and self._value is not None:
             return self._value
+        self.last_theta = theta.tolist()
+        if not np.all(np.isfinite(theta)):
+            raise _FitStop(f"the optimiser proposed a point that is not finite: {theta.tolist()}")
         try:
             parameters = MechanisticParameters.from_coordinates(theta, self.fixed_activation)
         except OverflowError:
-            raise _FitStop(f"the parameters overflow at theta = {list(theta)}") from None
+            raise _FitStop(f"the parameters overflow at theta = {theta.tolist()}") from None
         model = MechanisticModel(self.name, self.known, parameters, self.fixed_activation)
         residuals, jacobian = [], []
         for data in self.windows:
@@ -274,7 +291,7 @@ class _Loss:
             )
             if isinstance(result, RolloutFailure):
                 raise _FitStop(
-                    f"the rollout of window {data.key} failed at theta = {list(theta)}: "
+                    f"the rollout of window {data.key} failed at theta = {theta.tolist()}: "
                     f"{result.cause}: {result.detail}"
                 )
             with np.errstate(over="ignore", invalid="ignore", under="ignore"):
@@ -287,16 +304,24 @@ class _Loss:
             j = np.vstack(jacobian) * self.scale
             loss = float(np.dot(r, r))
             gradient = j.T @ r
-        # least_squares forms the loss and its gradient from these; none may be inf or NaN
-        for name, values in (
-            ("residuals", r),
-            ("Jacobian of the residuals", j),
-            ("loss", loss),
-            ("gradient of the loss", gradient),
+            column_squares = np.sum(j**2, axis=0)  # as x_scale="jac" makes least_squares form it
+        # least_squares forms the loss, its gradient and its scales from these; none may be inf
+        # or NaN
+        for description, values in (
+            ("the residuals are", r),
+            ("the Jacobian of the residuals is", j),
+            ("the loss is", loss),
+            ("the gradient of the loss is", gradient),
+            (
+                "the norms of the columns of the Jacobian, with which the optimiser scales its "
+                "steps, are",
+                column_squares,
+            ),
         ):
             if not np.all(np.isfinite(values)):
                 raise _FitStop(
-                    f"the {name} is not representable in double precision at theta = {list(theta)}"
+                    f"{description} not representable in double precision at theta = "
+                    f"{theta.tolist()}"
                 )
         self._key = key
         self._value = (r, j)
@@ -333,6 +358,23 @@ def _check_windows(windows: Sequence[WindowData]) -> None:
             )
 
 
+def _numerical_failure(
+    start: Start, initial: MechanisticParameters, message: str, loss: _Loss, began: float
+) -> StartRecord:
+    return StartRecord(
+        start=start,
+        initial=initial,
+        outcome=NUMERICAL_FAILURE,
+        message=message,
+        final=None,
+        objective=None,
+        singular_values=None,
+        evaluations=loss.evaluations,
+        jacobian_evaluations=0,
+        seconds=time.perf_counter() - began,
+    )
+
+
 def select_start(records: Sequence[StartRecord]) -> int | None:
     """The position of the selected start: among those that converged, the lowest
     objective, the first in the declared order on a tie. None when none converged."""
@@ -366,36 +408,31 @@ def fit_mechanistic(
         loss = _Loss(name, windows, known, fixed, settings.rollout)
         began = time.perf_counter()
         try:
-            found = least_squares(
-                loss.residuals,
-                initial.coordinates(fixed),
-                jac=loss.jacobian,
-                bounds=bounds,
-                method="trf",
-                ftol=settings.ftol,
-                xtol=settings.xtol,
-                gtol=settings.gtol,
-                x_scale="jac",
-                loss="linear",
-                max_nfev=settings.max_evaluations,
-                tr_solver="exact",
-                verbose=0,
-            )
-        except _FitStop as stop:
-            records.append(
-                StartRecord(
-                    start,
-                    initial,
-                    NUMERICAL_FAILURE,
-                    str(stop),
-                    None,
-                    None,
-                    None,
-                    loss.evaluations,
-                    0,
-                    time.perf_counter() - began,
+            with np.errstate(over="raise", invalid="raise", divide="raise"):
+                found = least_squares(
+                    loss.residuals,
+                    initial.coordinates(fixed),
+                    jac=loss.jacobian,
+                    bounds=bounds,
+                    method="trf",
+                    ftol=settings.ftol,
+                    xtol=settings.xtol,
+                    gtol=settings.gtol,
+                    x_scale="jac",
+                    loss="linear",
+                    max_nfev=settings.max_evaluations,
+                    tr_solver="exact",
+                    verbose=0,
                 )
+        except _FitStop as stop:
+            records.append(_numerical_failure(start, initial, str(stop), loss, began))
+            continue
+        except FloatingPointError as error:
+            message = (
+                f"an operation of the optimiser is not representable in double precision "
+                f"({error}), after the point theta = {loss.last_theta}"
             )
+            records.append(_numerical_failure(start, initial, message, loss, began))
             continue
         outcome = CONVERGED if found.status > 0 else BUDGET_EXHAUSTED
         normalised_jacobian = found.jac / loss.scale

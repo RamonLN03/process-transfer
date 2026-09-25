@@ -203,7 +203,9 @@ def test_scores_are_computed_without_overflow_whenever_they_are_representable() 
     assert large.excess_mse == pytest.approx((1e308, 1e308), rel=1e-15)
     assert large.excess_j_squared == pytest.approx(1e308, rel=1e-15)
     small = score(np.array([[1.0, 1.0]]), np.array([1e200, 1e200]), Role.FITTING)
-    assert small.j == pytest.approx(1e-200, rel=1e-15)  # not zero
+    # abs=0.0: pytest.approx allows 1e-12 in absolute terms by default, which zero would pass
+    assert small.j > 0.0
+    assert small.j == pytest.approx(1e-200, rel=1e-15, abs=0.0)
     assert small.mse == (1.0, 1.0)
 
 

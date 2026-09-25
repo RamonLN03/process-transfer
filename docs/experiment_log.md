@@ -542,3 +542,15 @@ Run `20260925T170324Z_b5c2838`, `experiments/m1_i1_sandwich_calibration.py` over
 **Result.** The 200 rows, each an estimate, its z-scores and its standard errors, are equal bit for bit, and so is every statistic: standard deviations of z of 1.014, 1.004 and 1.011, with the same bootstrap intervals. 191 s.
 
 **Interpretation.** The corrected fit and covariance give the numbers they gave before the audit on these data; the calibration recorded above stands as it was. The last fix of the covariance, `08ebcf6`, came after this run and changes only how overflow is reported for noise levels of 1e200.
+
+#### The smoke run, after Codex's review of `9ea9a76`
+
+Run `20260925T180744Z_9ea9a76-dirty`, `experiments/m1_i1_smoke_run.py`, made from the working tree of the fix of the optimiser before it was committed, which is what the mark `-dirty` says; its provenance holds the fingerprint of the change. A new data directory outside the repository and outside OneDrive, the exports of M0 read only, a fingerprint of them equal before and after.
+
+**Hypothesis.** Running the optimiser with floating-point errors raised, and checking the norms of the columns of the Jacobian, changes nothing where the optimiser met no such error: every number of the smoke run is what it was.
+
+**Method.** The same run as `20260925T170124Z_b5c2838`; every number of the two summaries compared, apart from times and the provenance of the attempt.
+
+**Result.** 11 444 numbers compared, all equal bit for bit; every start converged; no warning was printed. 60.4 s.
+
+**Interpretation.** On the data of M0 the fix is neutral, as the absence of any warning in the earlier runs implied it would be.

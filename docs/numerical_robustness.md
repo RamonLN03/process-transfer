@@ -451,3 +451,36 @@ The sensitivities agree among four integrations to far below anything the test a
 * LSODA prints a `UserWarning` when it fails internally, as in the Linux case above. The failure is recorded; the warning is printed as scipy prints it.
 * A result that is representable only as a subnormal number keeps the precision of a subnormal: a J of 1e-200 is computed, an MSE / sigma^2 of 1e-400 is zero.
 * What is refused as not representable is refused with a ValueError at the boundary of each function. The learned models of I3 will need a decision on whether a window whose implied terms cannot be computed counts as an integration failure or as an undetermined point of the check; it is not taken here.
+
+## Review of 2026-09-25, thirteenth: Codex's review of 9ea9a76
+
+Scope. Two points of Codex's review of `9ea9a76`, both reproduced on it before anything was changed: an overflow inside the optimiser that the checks of the twelfth review did not reach, and a regression test that could not fail. Nothing of M0 was touched, and no scientific choice of M1 changed.
+
+### The optimiser's own arithmetic
+
+| Where | Input | What happened | Silent | Resolution |
+|---|---|---|---|---|
+| `models.fitting.fit_mechanistic`, through `least_squares` | Codex's case: one window whose scored readings are the prediction of the textbook start, one of them moved by 1e-13, with noise levels of 1e-155; the first start, at most two evaluations | residuals, Jacobian, loss and gradient were all doubles, the largest element of the Jacobian 1.35e156, and the checks of the twelfth review passed. With ordinary warnings the start ended as converged, status 3, by the tolerance on the step, at its own starting point, with an objective of 7.7e140, and was selected. With the warnings of the suite, `RuntimeWarning: overflow encountered in square` escaped from `fit_mechanistic` | yes, with ordinary warnings | the loss checks the norms of the columns of the Jacobian as the optimiser forms them, and the optimiser runs with floating-point errors raised: either ends the start as a numerical failure, and the other starts go on |
+| the same, found while reproducing it | the same window with noise levels of 3e-152 | the norms of the columns are doubles, 4.5e153 at most, but the first radius of trust overflows: again converged by the tolerance on the step, or `overflow encountered in dot` escaping with the warnings of the suite | yes, with ordinary warnings | the same: the raised error ends the start |
+
+The cause, traced in SciPy 1.18.1. `x_scale="jac"` makes `trf_bounds` call `compute_jac_scale`, which forms the norm of each column of the Jacobian as `np.sum(J**2, axis=0)**0.5`. Elements of 1.35e156 square beyond the largest double, so two of the three norms became infinite and their scales, the inverses of the norms, zero. The first radius of trust, `norm(x0 * scale_inv / v**0.5)`, overflowed in its dot product; the solution of the subproblem of the trust region divided infinities (`common.py`, lines 113 and 115) and cast a NaN to an integer (line 398). With a scale of zero the step vanished, and `least_squares` reported that its tolerance on the step was satisfied. The second case shows that checking the norms is not enough: with noise levels of 3e-152 every norm is a double and still the radius of trust, the starting point times the norms, overflows.
+
+The correction. `least_squares` runs inside `numpy.errstate(over="raise", invalid="raise", divide="raise")`, so that an operation of its own whose result is not a double raises a `FloatingPointError`, whatever the filters of warnings are. That exception, and no other, is caught around the call, and ends the start as a numerical failure whose message names the operation and the last point the loss was computed at; the other starts go on, and with no selectable start the fit is a training failure, as before. The loss also checks, before handing them over, the norms of the columns of the Jacobian as the optimiser will form them, so that the commonest case is named precisely, and it refuses a proposed point that is not finite. Underflow is left as numpy leaves it: it loses nothing that matters to these results. Nothing else of the optimisation changed: the method, the scales, the tolerances, the starts and the selection among converged starts are those of D-032. No minimum was put on the noise levels, no value is clipped and no warning is silenced.
+
+Why this changes nothing on ordinary data. The smoke run, the run with training failures and the 200 fits of the calibration, made before this change, printed no warning of floating-point arithmetic: the optimiser met none of these operations there, so raising them changes no result. The smoke run repeated with the change gave 11 444 numbers equal bit for bit to those of the run of `b5c2838` (below).
+
+### A regression test that could not fail
+
+`tests/test_evaluation_metrics.py` checked that J = 1e-200 is computed, and not zero, with `pytest.approx(1e-200, rel=1e-15)`. `pytest.approx` also allows an absolute difference of 1e-12 by default, so zero passed it: `0.0 == pytest.approx(1e-200, rel=1e-15)` is true. The computation was right; the test could not have noticed if it went wrong. It now asserts `small.j > 0` and compares with `abs=0.0`, which rejects zero and accepts the J of 1e-200 that the code computes. No other test of I1 compares with an expected value that small.
+
+### Evidence
+
+* Both regression tests of the optimiser fail on `9ea9a76` with the warnings of the suite, with the two overflows above escaping, and pass after the change, each start recorded as a numerical failure. The first also shows that a failed start does not stop the next: the second start of Codex's case fails on its own loss, which is not a double there.
+* Windows, the reference environment: 855 passed, ruff clean, no whitespace error in the diff.
+* Linux, in a throwaway container of the image built with the change, with pytest 9.1.1 installed apart and the tree of the change extracted by `git archive`, run by the user without administrator rights: 851 passed and 4 skipped, the four that need the git executable, which the image does not have.
+* The ordinary smoke run of I1, repeated with the change in a new data directory, with the exports of M0 read only and a fingerprint of them equal before and after: every start converged, no warning was printed, and all 11 444 numbers of its summary equal those of the run of `b5c2838` bit for bit. The run was made from the working tree of this change before it was committed, so its name carries the mark `-dirty`, and its provenance holds the fingerprint of the change.
+
+### Open limitations
+
+* The raised floating-point errors cover the arithmetic of numpy inside the optimiser and inside the rollouts it calls. A failure inside LAPACK, such as a singular value decomposition that does not converge, would raise `LinAlgError`, which is not caught; it has not been seen and would not be silent.
+* Inside a fit, a floating-point error in the code of `solve_ivp` itself ends the start; the same error in a rollout outside a fit gives a warning and then a state that is not finite, recorded as an integration failure. Both are failures, reported differently.
