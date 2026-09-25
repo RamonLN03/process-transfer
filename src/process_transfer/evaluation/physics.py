@@ -128,6 +128,30 @@ class ImpliedTerms:
     heat_flow_bound: FloatArray
     temperature_above_coolant: FloatArray  # sign of T - T_c: -1, 0 or +1, exact
 
+    def __post_init__(self) -> None:
+        """What ``check_implied_terms`` reads is checked here, where it enters: one finite
+        value per point, bounds that are not negative, and signs of -1, 0 or +1. A term that
+        is not finite has no sign to judge, and an infinite bound would call anything zero."""
+        names = ("rate", "rate_bound", "heat_flow", "heat_flow_bound", "temperature_above_coolant")
+        arrays = {name: np.array(getattr(self, name), dtype=np.float64) for name in names}
+        points = len(arrays["rate"])
+        for name, values in arrays.items():
+            if values.ndim != 1 or len(values) != points:
+                raise ValueError(
+                    f"{name} has shape {values.shape}; the implied terms need one value per "
+                    f"point, {points} points"
+                )
+            if not np.all(np.isfinite(values)):
+                raise ValueError(f"{name} must be finite; a term that is not has no sign to judge")
+        for name in ("rate_bound", "heat_flow_bound"):
+            if np.any(arrays[name] < 0.0):
+                raise ValueError(f"{name} is a bound on a rounding error and must not be negative")
+        if not np.all(np.isin(arrays["temperature_above_coolant"], (-1.0, 0.0, 1.0))):
+            raise ValueError("temperature_above_coolant holds the sign of T - T_c: -1, 0 or +1")
+        for name, values in arrays.items():
+            values.setflags(write=False)
+            object.__setattr__(self, name, values)
+
 
 def implied_terms(
     derivatives: FloatArray, states: FloatArray, inputs: FloatArray, known: KnownPlant
@@ -142,32 +166,50 @@ def implied_terms(
     for name, values in (("derivatives", derivatives), ("states", states), ("inputs", inputs)):
         if not np.all(np.isfinite(values)):
             raise ValueError(f"{name} must be finite")
-    # The order of the operations below is the one the rounding counts refer to.
-    dilution = inputs[:, 0] / known.volume  # 1 rounding
-    supply = dilution * (inputs[:, 1] - states[:, 0])  # 3 on this term
-    rate = supply - derivatives[:, 0]  # 4 on the supply, 1 on f_CA
-    heat_per_mole = -known.reaction_enthalpy / (known.density * known.heat_capacity)  # 2
-    thermal_mass = known.volume * known.density * known.heat_capacity  # 2
-    sensible = dilution * (inputs[:, 2] - states[:, 1])  # 3
-    released = heat_per_mole * rate  # 7 on the supply, 4 on f_CA
-    balance = sensible + released - derivatives[:, 1]  # 2 more on each term, 1 on f_T
-    heat_flow = thermal_mass * balance  # 3 more on each term: 12, 9, 8 and 4 at most
-    rate_bound = rounding_factor(4) * (np.abs(supply) + np.abs(derivatives[:, 0]))
-    heat_flow_bound = (
-        rounding_factor(12)
-        * thermal_mass
-        * (
-            np.abs(sensible)
-            + abs(heat_per_mole) * (np.abs(supply) + np.abs(derivatives[:, 0]))
-            + np.abs(derivatives[:, 1])
+    # The order of the operations below is the one the rounding counts refer to. Finite
+    # arguments can still overflow on the way, so the outcome is checked below instead of
+    # trusted; the sign of T - T_c is exact even when its magnitude overflows.
+    with np.errstate(over="ignore", invalid="ignore"):
+        dilution = inputs[:, 0] / known.volume  # 1 rounding
+        supply = dilution * (inputs[:, 1] - states[:, 0])  # 3 on this term
+        rate = supply - derivatives[:, 0]  # 4 on the supply, 1 on f_CA
+        heat_per_mole = -known.reaction_enthalpy / (known.density * known.heat_capacity)  # 2
+        thermal_mass = known.volume * known.density * known.heat_capacity  # 2
+        sensible = dilution * (inputs[:, 2] - states[:, 1])  # 3
+        released = heat_per_mole * rate  # 7 on the supply, 4 on f_CA
+        balance = sensible + released - derivatives[:, 1]  # 2 more on each term, 1 on f_T
+        heat_flow = thermal_mass * balance  # 3 more on each term: 12, 9, 8 and 4 at most
+        rate_bound = rounding_factor(4) * (np.abs(supply) + np.abs(derivatives[:, 0]))
+        heat_flow_bound = (
+            rounding_factor(12)
+            * thermal_mass
+            * (
+                np.abs(sensible)
+                + abs(heat_per_mole) * (np.abs(supply) + np.abs(derivatives[:, 0]))
+                + np.abs(derivatives[:, 1])
+            )
         )
-    )
+        above_coolant = np.sign(states[:, 1] - inputs[:, 3])
+    for name, values in (
+        ("rate", rate),
+        ("rounding bound of the rate", rate_bound),
+        ("heat flow", heat_flow),
+        ("rounding bound of the heat flow", heat_flow_bound),
+    ):
+        wrong = np.flatnonzero(~np.isfinite(values))
+        if wrong.size:
+            i = int(wrong[0])
+            raise ValueError(
+                f"the implied {name} is not representable in double precision at point {i} "
+                f"(derivatives {derivatives[i].tolist()}, state {states[i].tolist()}, inputs "
+                f"{inputs[i].tolist()}); its sign cannot be judged"
+            )
     return ImpliedTerms(
         rate=rate,
         rate_bound=rate_bound,
         heat_flow=heat_flow,
         heat_flow_bound=heat_flow_bound,
-        temperature_above_coolant=np.sign(states[:, 1] - inputs[:, 3]),
+        temperature_above_coolant=above_coolant,
     )
 
 

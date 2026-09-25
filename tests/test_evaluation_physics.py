@@ -9,6 +9,7 @@ import pytest
 
 from m1_support import NOMINAL, corner, observations, p3_inputs
 from process_transfer.evaluation.physics import (
+    ImpliedTerms,
     check_implied_terms,
     implied_terms,
     implied_terms_along,
@@ -201,3 +202,45 @@ def test_non_finite_points_are_refused() -> None:
         implied_terms(np.zeros((1, 2)), np.array([[np.inf, 300.0]]), np.ones((1, 4)), KNOWN)
     with pytest.raises(ValueError, match="one row per point"):
         implied_terms(np.zeros((2, 2)), np.zeros((1, 2)), np.ones((1, 4)), KNOWN)
+
+
+def test_an_implied_heat_flow_that_overflows_is_refused_not_judged() -> None:
+    """Finite derivatives, states and inputs whose implied heat flow and its bound overflow:
+    a sign that cannot be computed is not a heat flow compatible with the physics."""
+    known = KnownPlant("p", 0.1, 1000.0, 100.0, -500000.0, (0.001, 500.0, 350.0, 337.5))
+    with pytest.raises(ValueError, match="not representable"):
+        implied_terms(
+            np.array([[-1e308, 0.0]]),
+            np.array([[100.0, 300.0]]),
+            np.array([[0.001, 500.0, 350.0, 337.5]]),
+            known,
+        )
+
+
+def terms_with(**changes: object) -> ImpliedTerms:
+    fields = {
+        "rate": np.array([1.0]),
+        "rate_bound": np.array([1e-15]),
+        "heat_flow": np.array([10.0]),
+        "heat_flow_bound": np.array([1e-12]),
+        "temperature_above_coolant": np.array([1.0]),
+    }
+    fields.update(changes)
+    return ImpliedTerms(**fields)
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        ({"heat_flow": np.array([np.inf]), "heat_flow_bound": np.array([np.inf])}, "finite"),
+        ({"rate": np.array([np.nan])}, "finite"),
+        ({"heat_flow_bound": np.array([-1.0])}, "negative"),
+        ({"temperature_above_coolant": np.array([0.5])}, "sign"),
+        ({"rate": np.array([1.0, 2.0])}, "one value per point"),
+    ],
+)
+def test_terms_that_are_not_what_the_check_reads_cannot_be_made(
+    changes: dict, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        terms_with(**changes)
