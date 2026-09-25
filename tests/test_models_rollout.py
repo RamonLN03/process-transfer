@@ -124,51 +124,100 @@ def test_structured_models_satisfy_the_validity_bounds_and_the_implied_terms() -
             assert (check.negative_rate, check.incompatible_heat_flow) == (0, 0)
 
 
-def test_the_sensitivities_agree_with_finite_differences_of_rollouts() -> None:
-    """Central differences of rollouts at rtol = 1e-12. Each step balances the truncation of
-    the difference, which grows as its square, against the error of the two integrations
-    divided by the step, about 350e-12 / h: the sensitivity to (E/R) / T_ref is small, a
-    factor 1 - T_ref / T of about 0.014 below that to ln k_350, and needs the larger step.
-    At a step of 1e-5 that noise reached 1 % of it (investigated while writing this test:
-    the difference shrank as the step grew, the same with LSODA, DOP853 and Radau)."""
+def classical_runge_kutta(
+    model: MechanisticModel, x0: np.ndarray, inputs: np.ndarray, steps: int = 60
+) -> np.ndarray:
+    """The states at the ends of the periods of 6 s, integrated by the classical fourth-order
+    Runge-Kutta method with a fixed step of 0.1 s. Every change of the inputs falls on a
+    step, and no step adapts to anything: two integrations from nearby points take the same
+    steps, so their difference carries no error of step selection."""
+    dt = 6.0 / steps
+    x = np.array(x0, dtype=np.float64)
+    states = np.empty((len(inputs), 2))
+    for row, u in enumerate(inputs):
+        for _ in range(steps):
+            k1 = model.rhs(x, u)
+            k2 = model.rhs(x + 0.5 * dt * k1, u)
+            k3 = model.rhs(x + 0.5 * dt * k2, u)
+            k4 = model.rhs(x + dt * k3, u)
+            x = x + dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+        states[row] = x
+    return states
+
+
+def test_the_sensitivities_agree_with_central_differences_of_a_fixed_step_integration():
+    """The sensitivities to the initial state and to the parameters, integrated with the
+    states, against central differences of an independent integration of the same equation.
+
+    Why not differences of the rollout itself. Two adaptive integrations from nearby points
+    take different steps, and their difference carries that noise divided by the step of
+    the difference. With LSODA at rtol = 1e-12 the noise in the initial temperature was
+    about 1e-6 at its best, the size of the tolerance of the first version of this test,
+    which three values exceeded on Linux by up to 1.09e-6 (Codex's audit of a8905dc). The
+    sensitivities themselves were not in doubt: LSODA at 1e-12 and 1e-13, DOP853 at 1e-13 and
+    Radau agree on them to 3.3e-11 for the initial state and 1.6e-9 for the parameters.
+
+    The reference here is classical Runge-Kutta with a fixed step of 0.1 s, which does not
+    adapt, so its differences converge as the square of the step until rounding, about
+    1e-12 of the states after 6600 steps divided by the step, takes over. Each step below
+    lies where both are near 1e-9 of the scale of its sensitivity, the largest magnitude it
+    reaches over the window (measured on 2026-09-25, docs/numerical_robustness.md). The
+    tight rollout must agree to 1e-7 of that scale, fifty to a hundred times the error
+    measured, which at every element is stricter than the tolerance of the first version of
+    this test; the rollout at the settings of the evaluation, whose sensitivities the fits
+    use, to 1e-5 of it, a hundred times the 4e-8 to 8e-8 measured."""
     model = models()[1]
     x0 = np.array([190.0, 355.0])
     inputs = np.vstack([np.tile(corner([1, -1, 1, 1]), (20, 1)), np.tile(NOMINAL, (90, 1))])
-    tight = RolloutSettings("LSODA", 1e-12, 1e-10, 10_000_000)
-    result = rollout(model, x0, inputs, 6.0, tight, True, True)
+    tight = rollout(
+        model, x0, inputs, 6.0, RolloutSettings("LSODA", 1e-12, 1e-10, 10_000_000), True, True
+    )
+    ordinary = rollout(model, x0, inputs, 6.0, EVALUATION_SETTINGS, True, True)
     theta = REESTIMATED.coordinates(None)
-    for j, step in enumerate((1e-4, 3e-3, 1e-4)):
-        up, down = theta.copy(), theta.copy()
-        up[j] += step
-        down[j] -= step
-        states = [
-            rollout(
-                MechanisticModel("MR", KNOWN, MechanisticParameters.from_coordinates(t, None)),
-                x0,
-                inputs,
-                6.0,
-                tight,
-            ).states
-            for t in (up, down)
-        ]
-        numeric = (states[0] - states[1]) / (2 * step)
-        np.testing.assert_allclose(
-            result.parameter_sensitivities[:, :, j], numeric, rtol=1e-4, atol=1e-5
+
+    def at(parameters: np.ndarray) -> MechanisticModel:
+        return MechanisticModel(
+            "MR", KNOWN, MechanisticParameters.from_coordinates(parameters, None)
         )
-    for j, step in enumerate((1e-2, 1e-3)):
+
+    comparisons = []
+    for j, step in ((0, 3e-3), (1, 3e-4)):  # the initial C_A, mol/m^3, and T, K
         up, down = x0.copy(), x0.copy()
         up[j] += step
         down[j] -= step
-        numeric = (
-            rollout(model, up, inputs, 6.0, tight).states
-            - rollout(model, down, inputs, 6.0, tight).states
-        ) / (2 * step)
-        np.testing.assert_allclose(
-            result.initial_state_sensitivities[:, :, j], numeric, rtol=1e-4, atol=1e-6
+        reference = (
+            classical_runge_kutta(model, up, inputs) - classical_runge_kutta(model, down, inputs)
+        ) / (2.0 * step)
+        comparisons.append(
+            (
+                f"initial state {j}",
+                reference,
+                tight.initial_state_sensitivities[:, :, j],
+                ordinary.initial_state_sensitivities[:, :, j],
+            )
         )
+    for j, step in ((0, 1e-5), (1, 3e-4), (2, 1e-5)):  # ln k_350, (E/R) / T_ref, ln UA
+        up, down = theta.copy(), theta.copy()
+        up[j] += step
+        down[j] -= step
+        reference = (
+            classical_runge_kutta(at(up), x0, inputs) - classical_runge_kutta(at(down), x0, inputs)
+        ) / (2.0 * step)
+        comparisons.append(
+            (
+                f"parameter {j}",
+                reference,
+                tight.parameter_sensitivities[:, :, j],
+                ordinary.parameter_sensitivities[:, :, j],
+            )
+        )
+    for label, reference, from_tight, from_ordinary in comparisons:
+        scale = np.max(np.abs(reference))
+        assert np.max(np.abs(from_tight - reference)) <= 1e-7 * scale, label
+        assert np.max(np.abs(from_ordinary - reference)) <= 1e-5 * scale, label
     # the states come out the same with or without sensitivities, to the tolerance
-    plain = rollout(model, x0, inputs, 6.0, tight).states
-    np.testing.assert_allclose(result.states, plain, rtol=1e-9)
+    plain = rollout(model, x0, inputs, 6.0, RolloutSettings("LSODA", 1e-12, 1e-10, 10_000_000))
+    np.testing.assert_allclose(tight.states, plain.states, rtol=1e-9)
 
 
 class Toy:
