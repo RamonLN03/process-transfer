@@ -72,10 +72,10 @@ def test_what_cannot_be_scored_is_refused() -> None:
         score(np.array([[np.nan, 0.0]]), SIGMA, Role.HELD_OUT)
     with pytest.raises(ValueError, match="at least one row"):
         score(np.empty((0, 2)), SIGMA, Role.HELD_OUT)
-    with pytest.raises(ValueError, match="overflow"):
-        score(np.array([[1e200, 0.0]]), SIGMA, Role.HELD_OUT)
-    with pytest.raises(ValueError, match="underflow"):
-        score(np.ones((1, 2)), np.array([1e-200, 0.5]), Role.HELD_OUT)
+    with pytest.raises(ValueError, match="not representable"):
+        score(np.array([[1e200, 0.0]]), SIGMA, Role.HELD_OUT)  # an MSE of 1e400
+    with pytest.raises(ValueError, match="not representable"):
+        score(np.ones((1, 2)), np.array([1e-200, 0.5]), Role.HELD_OUT)  # errors of 1e200 sigmas
 
 
 def test_an_evaluation_by_phase_and_by_window_computed_by_hand() -> None:
@@ -191,3 +191,29 @@ def test_paired_counts_keep_the_failed_replicates() -> None:
     assert (table.failed_windows, table.training_failures) == (2, 0)
     with pytest.raises(ValueError, match="one replicate and budget"):
         paired_counts([(outcome_with(good, "HK", "r1"), outcome_with(good, "MR", "r2"))])
+
+
+def test_scores_are_computed_without_overflow_whenever_they_are_representable() -> None:
+    """Squares, means and normalisation are formed on values scaled by their largest
+    magnitude, so that no intermediate overflows or underflows when the result does not."""
+    large = score(np.array([[1e154, 1e154]]), np.array([1.0, 1.0]), Role.HELD_OUT)
+    assert large.j == pytest.approx(1e154, rel=1e-15)
+    assert large.mse == pytest.approx((1e308, 1e308), rel=1e-15)
+    assert large.rmse == pytest.approx((1e154, 1e154), rel=1e-15)
+    assert large.excess_mse == pytest.approx((1e308, 1e308), rel=1e-15)
+    assert large.excess_j_squared == pytest.approx(1e308, rel=1e-15)
+    small = score(np.array([[1.0, 1.0]]), np.array([1e200, 1e200]), Role.FITTING)
+    assert small.j == pytest.approx(1e-200, rel=1e-15)  # not zero
+    assert small.mse == (1.0, 1.0)
+
+
+def test_a_score_that_is_not_representable_is_refused_not_returned() -> None:
+    # MSE - sigma^2 = 1 - 1e400: the excess over the noise of held-out readings
+    with pytest.raises(ValueError, match="not representable"):
+        score(np.array([[1.0, 1.0]]), np.array([1e200, 1e200]), Role.HELD_OUT)
+    # errors of 1e400 sigmas
+    with pytest.raises(ValueError, match="not representable"):
+        score(np.array([[1e200, 1e200]]), np.array([1e-200, 1e-200]), Role.FITTING)
+    # an MSE of 1e320, although its root would be representable
+    with pytest.raises(ValueError, match="not representable"):
+        score(np.array([[1e160, 0.0]]), np.array([1.0, 1.0]), Role.FITTING)

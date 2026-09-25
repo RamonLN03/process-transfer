@@ -82,33 +82,69 @@ def score(errors: FloatArray, sigma: FloatArray, role: Role) -> Score:
             )
     if not isinstance(role, Role):
         raise ValueError(f"role must be a Role, got {role!r}")
-    # Finite errors and finite positive sigmas can still overflow when squared, or give a
-    # variance that underflows to zero; the outcome is checked instead of trusted.
+    # Errors are squared and averaged after dividing them by their largest magnitude, so that
+    # no square overflows or underflows on the way to a result that is representable; a
+    # result that is not representable is refused, never returned as inf or as zero.
     with np.errstate(over="ignore", under="ignore"):
-        mse = np.mean(errors**2, axis=0)
-        variance = sigma**2
-    if not np.all(variance > 0.0):
-        raise ValueError(f"the squares of the noise levels {sigma.tolist()} underflow to zero")
-    with np.errstate(over="ignore"):
-        normalised = mse / variance
-    if not (np.all(np.isfinite(mse)) and np.all(np.isfinite(normalised))):
+        normalised_errors = errors / sigma
+    if not np.all(np.isfinite(normalised_errors)):
         raise ValueError(
-            "the squared errors overflow double precision; no score is computed for them"
+            "the errors divided by the noise levels are not representable in double "
+            "precision; no score is computed for them"
         )
-    j = float(np.sqrt(np.mean(normalised)))
+    channels = range(len(STATE_NAMES))
+    mse = tuple(_mean_square(errors[:, c]) for c in channels)
+    normalised = tuple(_mean_square(normalised_errors[:, c]) for c in channels)
+    for label, values in (("MSE", mse), ("MSE / sigma^2", normalised)):
+        for name, value in zip(STATE_NAMES, values, strict=True):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"the {label} of {name} is not representable in double precision; no "
+                    "score is computed"
+                )
     excess = excess_j = None
     if role is Role.HELD_OUT:
-        excess = tuple(float(value) for value in mse - variance)
-        excess_j = float(np.mean(normalised) - 1.0)
+        with np.errstate(over="ignore"):
+            variance = sigma * sigma
+        for name, value in zip(STATE_NAMES, variance, strict=True):
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"MSE - sigma^2 of {name} is not representable in double precision: the "
+                    f"square of its noise level, {value!r}, overflows"
+                )
+        excess = tuple(m - v for m, v in zip(mse, variance.tolist(), strict=True))
+        excess_j = sum(n / len(normalised) for n in normalised) - 1.0
     return Score(
         readings=int(errors.shape[0]),
-        mse=tuple(float(value) for value in mse),
-        rmse=tuple(float(value) for value in np.sqrt(mse)),
-        normalised_mse=tuple(float(value) for value in normalised),
-        j=j,
+        mse=mse,
+        rmse=tuple(_root_mean_square(errors[:, c]) for c in channels),
+        normalised_mse=normalised,
+        j=_root_mean_square(normalised_errors.ravel()),
         excess_mse=excess,
         excess_j_squared=excess_j,
     )
+
+
+def _mean_square(values: FloatArray) -> float:
+    """mean(v^2), from the values divided by their largest magnitude m: m (m mean((v/m)^2)).
+    Nothing overflows on the way, the scaled squares lose to underflow only what is below
+    the resolution of the result, and the value is inf only when the result exceeds the
+    largest double."""
+    largest = float(np.max(np.abs(values)))
+    if largest == 0.0:
+        return 0.0
+    with np.errstate(over="ignore", under="ignore"):
+        return largest * (largest * float(np.mean((values / largest) ** 2)))
+
+
+def _root_mean_square(values: FloatArray) -> float:
+    """sqrt(mean(v^2)), scaled the same way. It never exceeds the largest magnitude of the
+    values, so it is always representable."""
+    largest = float(np.max(np.abs(values)))
+    if largest == 0.0:
+        return 0.0
+    with np.errstate(under="ignore"):
+        return largest * float(np.sqrt(np.mean((values / largest) ** 2)))
 
 
 @dataclass(frozen=True)
