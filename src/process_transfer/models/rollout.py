@@ -36,6 +36,7 @@ and the covariance of its estimate.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -162,6 +163,11 @@ def rollout(
     if not np.all(np.isfinite(inputs)):
         raise ValueError("inputs must be finite")
     h = require_positive("sample_period", sample_period)
+    if not math.isfinite(h * len(inputs)):
+        raise ValueError(
+            f"with sample_period = {h!r} s the {len(inputs)} periods of the inputs end beyond "
+            "the largest double; the instants of the rollout are not representable"
+        )
     problem = model.initial_state_problem(x0)
     if problem is not None:
         return RolloutFailure("initial state", problem)

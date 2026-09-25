@@ -11,6 +11,8 @@ from process_transfer.evaluation.windows import (
     P3_LAYOUT,
     STEP_LAYOUT,
     Phase,
+    Window,
+    WindowData,
     WindowLayout,
     find_windows,
     layout_for,
@@ -215,3 +217,45 @@ def test_a_layout_is_checked_when_it_is_made() -> None:
     with pytest.raises(ValueError, match="must end inside the window"):
         WindowLayout("p3", 3, (Phase("a", 2),))
     assert CONTEXT_READINGS == 10
+
+
+def window_with(**changes: object) -> WindowData:
+    """A valid window of P3, with some of its fields replaced."""
+    fields = {
+        "window": Window("target.p3.e0.x1.n0", 1, 10, P3_LAYOUT),
+        "sample_period": 6.0,
+        "noise_std": np.array([5.0, 0.5]),
+        "onset_time": 60.0,
+        "context": np.tile([200.0, 355.0], (10, 1)),
+        "scored": np.tile([200.0, 355.0], (110, 1)),
+        "inputs": np.tile(NOMINAL, (110, 1)),
+    }
+    fields.update(changes)
+    return WindowData(**fields)
+
+
+@pytest.mark.parametrize("period", [np.inf, np.nan, 0.0, -6.0])
+def test_a_sampling_period_that_is_not_finite_and_positive_is_refused(period: float) -> None:
+    with pytest.raises(ValueError, match="sample_period"):
+        window_with(sample_period=period)
+
+
+def test_an_onset_time_that_is_not_finite_is_refused() -> None:
+    with pytest.raises(ValueError, match="onset_time"):
+        window_with(onset_time=np.inf)
+
+
+def test_a_period_whose_scored_instants_overflow_is_refused() -> None:
+    """110 periods of 1e307 s end beyond the largest double: the instants of the scored
+    readings would not be representable."""
+    with pytest.raises(ValueError, match="scored readings"):
+        window_with(sample_period=1e307)
+
+
+def test_the_initial_state_is_the_mean_of_the_context_wherever_that_mean_is_representable():
+    """The sum of ten readings near the largest double overflows; their mean does not."""
+    assert window_with(context=np.full((10, 2), 1e308)).initial_state.tolist() == [1e308] * 2
+    opposite = np.vstack([np.full((5, 2), 1.7e308), np.full((5, 2), -1.7e308)])
+    assert window_with(context=opposite).initial_state.tolist() == [0.0, 0.0]
+    ordinary = window_with(context=np.tile([200.0, 355.0], (10, 1)))
+    np.testing.assert_array_equal(ordinary.initial_state, [200.0, 355.0])

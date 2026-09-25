@@ -237,6 +237,10 @@ def test_arguments_and_settings_are_checked_where_they_enter() -> None:
         rollout(model, np.array([1.0, 350.0]), np.ones((5, 3)), 6.0)
     with pytest.raises(ValueError, match="sample_period"):
         rollout(model, np.array([1.0, 350.0]), np.tile(NOMINAL, (5, 1)), 0.0)
+    # a period whose grid ends beyond the largest double is an invalid argument, not a
+    # failure of the integrator
+    with pytest.raises(ValueError, match="not representable"):
+        rollout(model, np.array([1.0, 350.0]), np.tile(NOMINAL, (110, 1)), 1e307)
     with pytest.raises(ValueError, match="no Jacobians"):
         rollout(
             Toy(lambda x: -x),

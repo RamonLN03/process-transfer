@@ -35,6 +35,7 @@ window never reaches into the scored readings of the window before.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -49,6 +50,7 @@ from process_transfer.cstr_variables import (
 )
 from process_transfer.measurement.observations import Observations
 from process_transfer.sampling_clock import nearest_ticks
+from process_transfer.validation import require_finite, require_positive
 
 CONTEXT_READINGS = 10
 SAMPLE_PERIOD = 6.0  # s, the sensor clock the contract is written for
@@ -332,9 +334,17 @@ class WindowData:
             object.__setattr__(self, name, values)
         if np.any(self.noise_std < 0.0):
             raise ValueError(f"noise_std must not be negative, got {self.noise_std.tolist()}")
-        if not (np.isfinite(self.onset_time) and self.sample_period > 0.0):
-            raise ValueError("the onset time must be finite and the sample period positive")
-        object.__setattr__(self, "initial_state", _read_only(np.mean(self.context, axis=0)))
+        object.__setattr__(self, "onset_time", require_finite("onset_time", self.onset_time))
+        period = require_positive("sample_period", self.sample_period)
+        # The scored readings lie at k periods after the onset, k = 1 ... L, and the rollout
+        # integrates up to the last of them: that instant must be a double.
+        if not math.isfinite(period * length):
+            raise ValueError(
+                f"with sample_period = {period!r} s the {length} scored readings would end "
+                "beyond the largest double; their instants are not representable"
+            )
+        object.__setattr__(self, "sample_period", period)
+        object.__setattr__(self, "initial_state", _read_only(_column_means(self.context)))
 
     @property
     def key(self) -> tuple[str, int]:
@@ -352,6 +362,19 @@ class WindowData:
         """Every row of the run that this window holds something of."""
         window = self.window
         return frozenset((*window.context_ticks, *window.scored_ticks, *window.input_ticks))
+
+
+def _column_means(values: FloatArray) -> FloatArray:
+    """The mean of each column. numpy's sum can overflow for readings near the largest double
+    although their mean is representable; such a column is averaged again after dividing it
+    by its largest magnitude, which cannot overflow. Ordinary readings keep numpy's mean bit
+    for bit."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        means = np.mean(values, axis=0)
+    for column in np.flatnonzero(~np.isfinite(means)):
+        largest = np.max(np.abs(values[:, column]))
+        means[column] = largest * np.mean(values[:, column] / largest)
+    return means
 
 
 def window_data(observations: Observations, windows: Sequence[Window]) -> tuple[WindowData, ...]:
