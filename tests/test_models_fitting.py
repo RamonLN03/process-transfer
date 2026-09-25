@@ -262,3 +262,45 @@ def test_what_a_fit_cannot_use_is_refused():
         FitSettings(max_evaluations=0)
     with pytest.raises(ValueError, match="puts E/R"):
         Start("minus", activation_shift=-9000.0).point(TEXTBOOK)
+
+
+def window_of_readings(value: float, sigma: tuple[float, float] = (5.0, 0.5)) -> WindowData:
+    """A window of P3 at the nominal inputs whose every scored reading is ``value``."""
+    return WindowData(
+        window=Window("target.p3.e0.x1.n0", 1, 10, P3_LAYOUT),
+        sample_period=6.0,
+        noise_std=np.array(sigma),
+        onset_time=60.0,
+        context=np.tile([200.0, 355.0], (CONTEXT_READINGS, 1)),
+        scored=np.full((110, 2), value),
+        inputs=np.tile(NOMINAL, (110, 1)),
+    )
+
+
+def test_readings_that_cannot_be_normalised_are_refused_where_they_enter():
+    """1e308 divided by a sigma of 0.1 is not a double: the loss is not defined on these
+    data for any model, and the fit refuses them before any start."""
+    with pytest.raises(ValueError, match="divided by the noise levels"):
+        fit_mechanistic("MR", (window_of_readings(1e308, (0.1, 0.1)),), KNOWN, MODELLER)
+
+
+def test_a_loss_that_is_not_representable_ends_every_start_as_a_numerical_failure():
+    """Readings of 1e160 normalise to finite numbers, but the sum of the squares of the
+    residuals overflows at every point: every start fails, none is selected, and the fit is
+    a training failure, not a fit with an infinite objective."""
+    settings = FitSettings(starts=DEFAULT_STARTS[:2])
+    fit = fit_mechanistic("MR", (window_of_readings(1e160),), KNOWN, MODELLER, settings)
+    assert [record.outcome for record in fit.starts] == [NUMERICAL_FAILURE] * 2
+    assert all("not representable" in record.message for record in fit.starts)
+    assert fit.selected is None and fit.parameters is None
+    assert "no start of MR converged" in fit.training_failure.reason
+
+
+def test_a_covariance_that_is_not_representable_says_so_instead_of_returning_it():
+    """Noise levels of 1e-306 pass the boundary for readings of 1, but sensitivities of the
+    order of a hundred divided by them are not doubles: there is no covariance to report."""
+    spread = covariance(TRUE, (window_of_readings(1.0, (1e-306, 1e-306)),), KNOWN)
+    assert spread.sandwich is None and spread.exact_initial_state is None
+    assert "not representable" in spread.reason
+    with pytest.raises(ValueError, match="no covariance"):
+        spread.standard_errors()

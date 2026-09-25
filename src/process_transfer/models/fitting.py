@@ -31,7 +31,17 @@ further points, in that order (``DEFAULT_STARTS``). The outcome of each start is
 
     converged           least_squares stopped on one of its tolerances (status 1 to 4)
     budget exhausted    it reached its limit of evaluations (status 0)
-    numerical failure   the rollout of a window failed, or the parameters overflowed
+    numerical failure   at a point the start reached, the parameters overflowed, the rollout
+                        of a window failed, or the residuals, their Jacobian, the loss or its
+                        gradient were not representable in double precision
+
+What is refused before any start, with a ValueError, is what makes the loss undefined
+whatever the model: no window, a window given twice, noise levels that differ between
+windows or are not positive, and scored readings whose values divided by the noise levels
+are not representable. Everything that depends on the point a start has reached is a
+numerical failure of that start, recorded with its cause; the other starts go on. Only the
+exceptions named here are caught: an error of programming is not a numerical failure and
+is not hidden as one.
 
 A failed rollout ends its start. The TRF method of least_squares happens to treat a trial
 point with residuals that are not finite as a rejected step, but that is not documented,
@@ -267,12 +277,29 @@ class _Loss:
                     f"the rollout of window {data.key} failed at theta = {list(theta)}: "
                     f"{result.cause}: {result.detail}"
                 )
-            residuals.append(((result.states - data.scored) / self.sigma).ravel())
-            normalised = result.parameter_sensitivities / self.sigma[None, :, None]
+            with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+                residuals.append(((result.states - data.scored) / self.sigma).ravel())
+                normalised = result.parameter_sensitivities / self.sigma[None, :, None]
             jacobian.append(normalised.reshape(-1, len(model.parameter_names)))
         self.evaluations += 1
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            r = np.concatenate(residuals) * self.scale
+            j = np.vstack(jacobian) * self.scale
+            loss = float(np.dot(r, r))
+            gradient = j.T @ r
+        # least_squares forms the loss and its gradient from these; none may be inf or NaN
+        for name, values in (
+            ("residuals", r),
+            ("Jacobian of the residuals", j),
+            ("loss", loss),
+            ("gradient of the loss", gradient),
+        ):
+            if not np.all(np.isfinite(values)):
+                raise _FitStop(
+                    f"the {name} is not representable in double precision at theta = {list(theta)}"
+                )
         self._key = key
-        self._value = (np.concatenate(residuals) * self.scale, np.vstack(jacobian) * self.scale)
+        self._value = (r, j)
         return self._value
 
     def residuals(self, theta: FloatArray) -> FloatArray:
@@ -295,6 +322,15 @@ def _check_windows(windows: Sequence[WindowData]) -> None:
         raise ValueError(
             f"the loss divides by the noise level of each sensor, and they are {sigma.tolist()}"
         )
+    for data in windows:
+        with np.errstate(over="ignore", under="ignore"):
+            normalised = data.scored / sigma
+        if not np.all(np.isfinite(normalised)):
+            raise ValueError(
+                f"the scored readings of window {data.key} divided by the noise levels "
+                f"{sigma.tolist()} are not representable in double precision; the loss is not "
+                "defined on them for any model"
+            )
 
 
 def select_start(records: Sequence[StartRecord]) -> int | None:
@@ -471,18 +507,31 @@ def covariance(
         if isinstance(result, RolloutFailure):
             reason = f"the rollout of window {data.key} failed: {result.cause}: {result.detail}"
             return Covariance(names, (), None, None, reason)
-        s = (result.parameter_sensitivities / sigma[None, :, None]).reshape(-1, len(names))
-        g = (result.initial_state_sensitivities / sigma[None, :, None]).reshape(-1, 2)
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            s = (result.parameter_sensitivities / sigma[None, :, None]).reshape(-1, len(names))
+            g = (result.initial_state_sensitivities / sigma[None, :, None]).reshape(-1, 2)
+            coupling = s.T @ g  # S_w^T W G_w
+        if not (np.all(np.isfinite(s)) and np.all(np.isfinite(coupling))):
+            reason = (
+                f"the sensitivities of window {data.key} divided by the noise levels are not "
+                "representable in double precision"
+            )
+            return Covariance(names, (), None, None, reason)
         blocks.append(s)
-        couplings.append(s.T @ g)  # S_w^T W G_w
+        couplings.append(coupling)
     stacked = np.vstack(blocks)
     _, singular, right = np.linalg.svd(stacked, full_matrices=False)
     values = tuple(float(v) for v in singular)
     # numpy's convention for the numerical rank of a matrix, not a threshold chosen here
     if singular[-1] <= singular[0] * max(stacked.shape) * np.finfo(np.float64).eps:
         return Covariance(names, values, None, None, "the Jacobian is rank deficient")
-    bread = right.T @ np.diag(1.0 / singular**2) @ right  # (S^T W S)^-1
-    initial_error = sum(m @ context_covariance @ m.T for m in couplings)
-    sandwich = bread + bread @ initial_error @ bread
-    scale = np.outer(units, units)
-    return Covariance(names, values, bread * scale, sandwich * scale, None)
+    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+        bread = right.T @ np.diag(1.0 / singular**2) @ right  # (S^T W S)^-1
+        initial_error = sum(m @ context_covariance @ m.T for m in couplings)
+        sandwich = bread + bread @ initial_error @ bread
+        scale = np.outer(units, units)
+        bread, sandwich = bread * scale, sandwich * scale
+    if not (np.all(np.isfinite(bread)) and np.all(np.isfinite(sandwich))):
+        reason = "the covariance is not representable in double precision"
+        return Covariance(names, values, None, None, reason)
+    return Covariance(names, values, bread, sandwich, None)
