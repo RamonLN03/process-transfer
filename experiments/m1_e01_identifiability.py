@@ -618,49 +618,73 @@ def crossing_bracket(
     crossing: float,
     threshold: float,
 ) -> dict[str, object]:
-    """Where the true crossing of ``threshold`` lies, from the points of the profile alone.
+    """What the points of the profile say about where the increase first exceeds
+    ``threshold`` on the side of ``crossing``, the crossing interpolated by
+    ``profile_interval``. Distances are half-widths from the free estimate.
 
-    On a convex profile the chord lies above the profile, so the interpolated crossing is
-    never outside the true one. The profile also lies above every secant extended beyond its
-    two points, so the true crossing is no further out than the bracketing point outside it,
-    nor than where the secant through the two points inside the bracket, or the one through
-    the two points beyond it, reaches the threshold. The nearest of those is the outer limit,
-    which holds under convexity alone. Where the slopes of those secants do not increase
-    outward the profile is not convex there, and the outer limit is the bracketing point.
-    Distances are half-widths from the free estimate."""
+    The interpolated half-width is a description of the sampled profile. It is a bound only
+    under a hypothesis about the profile between its points, which no finite set of points
+    can show. The hypothesis used is that the profile is convex over the span from the last
+    point on the other side of the estimate to the second point beyond the crossing. Then:
+
+    * the chord of the two points that bracket the crossing lies above the profile, so the
+      interpolated crossing is never outside the true one;
+    * the profile lies above every secant extended beyond its two points, so the true
+      crossing is no further out than the bracketing point outside it, nor than where the
+      secant through the two points inside the bracket, or the one through the two points
+      beyond it, reaches the threshold. The nearest of those is the outer limit.
+
+    A convex profile has secant slopes that do not decrease outward. That is checked on every
+    pair of consecutive points of the span; it is necessary for convexity, not sufficient,
+    so a span that passes is consistent with the hypothesis and does not demonstrate it.
+    The bracket is not evaluable, and no bound is given, when the span lacks a point or a
+    value, or when its sampled slopes decrease somewhere, since the profile is then not
+    convex there and the interpolated crossing may lie outside the true one (Codex's review
+    of ``129063c``)."""
     side = 1.0 if crossing >= estimate else -1.0
-    # outward coordinate: distance from the estimate on the side of the crossing
-    pts = sorted(
-        (side * (x - estimate), v)
-        for x, v in zip(points, increases, strict=True)
-        if v is not None and side * (x - estimate) >= 0.0
-    )
+    # outward coordinate on the side of the crossing: the other side is negative
+    pts = sorted((side * (x - estimate), v) for x, v in zip(points, increases, strict=True))
     c = side * (crossing - estimate)
-    i = max(k for k, (u, _) in enumerate(pts) if u <= c)
-    if i + 1 >= len(pts):
-        return {"half_width_K": c, "outer_limit_K": None, "convex": None, "spacing_K": None}
-    (ua, va), (ub, vb) = pts[i], pts[i + 1]
-    slopes = [(vb - va) / (ub - ua)]
-    limits = [ub]
-    if i >= 1:
-        up, vp = pts[i - 1]
-        inner = (va - vp) / (ua - up)
-        slopes.insert(0, inner)
-        if inner > 0.0:
-            limits.append(ua + (threshold - va) / inner)
-    if i + 2 < len(pts):
-        un, vn = pts[i + 2]
-        outer = (vn - vb) / (un - ub)
-        slopes.append(outer)
-        if outer > 0.0:
-            limits.append(ub - (vb - threshold) / outer)
-    convex = all(a <= b for a, b in zip(slopes, slopes[1:], strict=False))
-    return {
-        "half_width_K": c,
-        "outer_limit_K": min(limits) if convex else ub,
-        "convex": convex,
-        "spacing_K": ub - ua,
+    found: dict[str, object] = {
+        "interpolated_half_width_K": c,
+        "outer_limit_K": None,
+        "evaluable": False,
+        "not_evaluable_because": None,
+        "sampled_slopes": None,
+        "spacing_K": None,
     }
+    inside = [k for k, (u, _) in enumerate(pts) if u <= c]
+    other_side = [k for k, (u, _) in enumerate(pts) if u < 0.0]
+    if not inside or inside[-1] + 2 >= len(pts) or not other_side:
+        found["not_evaluable_because"] = (
+            "the span that tests convexity needs a point on the other side of the estimate and "
+            "two points beyond the crossing, and one of them is not sampled"
+        )
+        return found
+    i = inside[-1]
+    span = pts[other_side[-1] : i + 3]
+    if any(v is None for _, v in span):
+        found["not_evaluable_because"] = "a point of the span has no value: no start converged"
+        return found
+    slopes = [(vb - va) / (ub - ua) for (ua, va), (ub, vb) in itertools.pairwise(span)]
+    (u_before, v_before), (ua, va), (ub, vb), (u_after, v_after) = pts[i - 1 : i + 3]
+    found["sampled_slopes"] = slopes
+    found["spacing_K"] = ub - ua
+    if not all(a <= b for a, b in itertools.pairwise(slopes)):
+        found["not_evaluable_because"] = (
+            "the sampled slopes decrease within the span: the profile is not convex there"
+        )
+        return found
+    limits = [ub]
+    inner = (va - v_before) / (ua - u_before)
+    if inner > 0.0:
+        limits.append(ua + (threshold - va) / inner)
+    outer = (v_after - vb) / (u_after - ub)
+    if outer > 0.0:
+        limits.append(ub - (vb - threshold) / outer)
+    found["outer_limit_K"] = min(limits)
+    found["evaluable"] = True
+    return found
 
 
 def crossing_resolution(
@@ -669,8 +693,8 @@ def crossing_resolution(
     increases: Sequence[float | None],
     estimate: float,
 ) -> dict[str, dict[str, dict[str, object] | None]]:
-    """For each interval and side: the interpolated half-width and the outer limit of the
-    true one (``crossing_bracket``)."""
+    """For each interval and side: the interpolated half-width and, when the bracket is
+    evaluable, the outer limit of the true one under convexity (``crossing_bracket``)."""
     found = {}
     for label, interval in intervals.items():
         if not isinstance(interval, ProfileInterval):
@@ -684,17 +708,38 @@ def crossing_resolution(
     return found
 
 
-def curvature_agrees(entry: dict[str, object]) -> bool | None:
-    """B2 at the threshold 3.84: whether the half-width of 1.96 standard errors with the
-    initial state exact lies, on both sides, between the interpolated half-width and its
-    outer limit. None when it cannot be judged."""
+def curvature_by_side(entry: dict[str, object]) -> dict[str, str] | None:
+    """B2 at the threshold 3.84, side by side: "agrees" when the half-width of 1.96 standard
+    errors with the initial state exact lies between the interpolated half-width and its
+    outer limit, "narrower" when the outer limit is inside it, "wider" when the interpolated
+    half-width is outside it, and "not evaluable" when the bracket is not. Each verdict
+    holds only if the profile is convex over its span (``crossing_bracket``). None when there
+    is no half-width to compare, or a side has no crossing."""
     expected = entry.get("half_widths_with_the_linearised_curvature_K", {}).get("nominal noise")
     sides = entry.get("resolution_of_the_crossings", {}).get("nominal noise")
     if expected is None or not sides or any(v is None for v in sides.values()):
         return None
-    if any(v["outer_limit_K"] is None for v in sides.values()):
+    verdicts = {}
+    for side, bracket in sides.items():
+        if not bracket["evaluable"]:
+            verdicts[side] = "not evaluable"
+        elif bracket["outer_limit_K"] < expected:
+            verdicts[side] = "narrower"
+        elif bracket["interpolated_half_width_K"] > expected:
+            verdicts[side] = "wider"
+        else:
+            verdicts[side] = "agrees"
+    return verdicts
+
+
+def curvature_agrees(entry: dict[str, object]) -> bool | None:
+    """B2 at the threshold 3.84: whether the profile agrees with the linearised curvature on
+    both sides. None when it cannot be judged, on either side: no half-width to compare, no
+    crossing, or a bracket that is not evaluable. Only True lets a pair of B4 be read."""
+    verdicts = curvature_by_side(entry)
+    if verdicts is None or "not evaluable" in verdicts.values():
         return None
-    return all(v["half_width_K"] <= expected <= v["outer_limit_K"] for v in sides.values())
+    return all(verdict == "agrees" for verdict in verdicts.values())
 
 
 def part_two(
@@ -750,6 +795,7 @@ def part_two(
                 [row["increase"] for row in summary["rows"]],
                 fit.parameters.activation_temperature,
             )
+            entry["curvature_by_side"] = curvature_by_side(entry)
             entry["curvature_agrees_with_the_linearised_one"] = curvature_agrees(entry)
             held = check[0]
             entry["check_point"] = {

@@ -442,8 +442,8 @@ def test_the_true_crossing_lies_between_the_interpolated_one_and_its_outer_limit
     available,  # noqa: ANN001
 ) -> None:
     """On convex profiles, quadratic or steeper, sampled on the fine grid with the estimate
-    among the points, the true half-width lies between the interpolated one and the outer
-    limit, which is inside the bracketing point."""
+    among the points, the bracket is evaluable and the true half-width lies between the
+    interpolated one and the outer limit, which is inside the bracketing point."""
     for centre, width, quartic in (
         (9530.0, 40.0, 0.0),
         (9512.3, 13.0, 0.0),
@@ -470,7 +470,122 @@ def test_the_true_crossing_lies_between_the_interpolated_one_and_its_outer_limit
         )
         for side in ("low", "high"):
             entry = found["nominal noise"][side]
-            assert entry["convex"]
-            assert entry["half_width_K"] <= true + 1e-9
+            assert entry["evaluable"] and entry["not_evaluable_because"] is None
+            assert entry["interpolated_half_width_K"] <= true + 1e-9
             assert true <= entry["outer_limit_K"] + 1e-9
-            assert entry["outer_limit_K"] - entry["half_width_K"] <= entry["spacing_K"] + 1e-9
+            width = entry["outer_limit_K"] - entry["interpolated_half_width_K"]
+            assert width <= entry["spacing_K"] + 1e-9
+
+
+def test_a_profile_that_is_not_convex_gives_no_bracket_and_no_verdict(available) -> None:  # noqa: ANN001
+    """Codex's review of 129063c. On x^2 / (1 + x^2), sampled at the integers from -3 to 3,
+    the threshold 0.65 is crossed at sqrt(0.65 / 0.35) = 1.3628, inside the interpolated
+    1.5: the profile is concave there, and the chord lies below it. The bracket of 1.5 to
+    2.0 accepted a half-width of 1.6 as agreeing, although the true crossing is outside it.
+    Now the bracket is not evaluable, and B2 gives no verdict."""
+    x = np.arange(-3.0, 4.0)
+    y = x * x / (1.0 + x * x)
+    interval = profile_interval(x, y, 0.65)
+    found = available.crossing_resolution({"nominal noise": interval}, list(x), list(y), 0.0)
+    true = float(np.sqrt(0.65 / 0.35))
+    for side in ("low", "high"):
+        entry = found["nominal noise"][side]
+        assert entry["interpolated_half_width_K"] == pytest.approx(1.5, abs=1e-12)
+        assert entry["interpolated_half_width_K"] > true
+        assert not entry["evaluable"] and entry["outer_limit_K"] is None
+        assert "not convex" in entry["not_evaluable_because"]
+    profile = {
+        "half_widths_with_the_linearised_curvature_K": {"nominal noise": 1.6},
+        "resolution_of_the_crossings": found,
+    }
+    assert available.curvature_by_side(profile) == {"low": "not evaluable", "high": "not evaluable"}
+    assert available.curvature_agrees(profile) is None
+
+
+@pytest.mark.parametrize(
+    ("points", "increases", "reason"),
+    [
+        # the estimate is the first point: no point on the other side
+        ((0.0, 1.0, 2.0, 3.0), (0.0, 1.0, 4.0, 9.0), "not sampled"),
+        # one point beyond the crossing
+        ((-1.0, 0.0, 1.0, 2.0), (1.0, 0.0, 1.0, 4.0), "not sampled"),
+        # the second point beyond the crossing has no value
+        ((-2.0, -1.0, 0.0, 1.0, 2.0, 3.0), (4.0, 1.0, 0.0, 1.0, 4.0, None), "no value"),
+    ],
+)
+def test_a_bracket_without_the_points_that_test_convexity_is_not_evaluable(
+    available,  # noqa: ANN001
+    points,  # noqa: ANN001
+    increases,  # noqa: ANN001
+    reason,  # noqa: ANN001
+) -> None:
+    """Convexity is tested on the span from the last point on the other side of the estimate
+    to the second point beyond the crossing. A span that lacks one of them cannot test it,
+    and the bracket is not evaluable rather than assumed."""
+    interval = profile_interval(points, increases, 2.5)
+    assert interval.high is not None
+    found = available.crossing_resolution({"nominal noise": interval}, points, increases, 0.0)
+    entry = found["nominal noise"]["high"]
+    assert not entry["evaluable"] and entry["outer_limit_K"] is None
+    assert reason in entry["not_evaluable_because"]
+    profile = {
+        "half_widths_with_the_linearised_curvature_K": {"nominal noise": 1.6},
+        "resolution_of_the_crossings": found,
+    }
+    assert available.curvature_agrees(profile) is None
+
+
+@pytest.mark.parametrize(
+    ("expected", "verdict", "agrees"),
+    [(39.2, "agrees", True), (30.0, "wider", False), (50.0, "narrower", False)],
+)
+def test_the_verdicts_of_b2_on_a_convex_profile(available, expected, verdict, agrees) -> None:  # noqa: ANN001
+    """(x / 20)^2 sampled every 25 K: the true half-width at 3.84 is 39.2 K, the interpolated
+    one 37.15 K and the outer limit 42.29 K, where the secant beyond the bracket reaches the
+    threshold."""
+    points = [float(v) for v in range(-100, 101, 25)]
+    increases = [(v / 20.0) ** 2 for v in points]
+    interval = profile_interval(points, increases, CHI2_ONE_95)
+    found = available.crossing_resolution({"nominal noise": interval}, points, increases, 0.0)
+    for side in ("low", "high"):
+        entry = found["nominal noise"][side]
+        assert entry["evaluable"]
+        assert entry["interpolated_half_width_K"] == pytest.approx(
+            25.0 + (CHI2_ONE_95 - 1.5625) / 4.6875 * 25.0, rel=1e-12
+        )
+        assert entry["outer_limit_K"] == pytest.approx(
+            50.0 - (6.25 - CHI2_ONE_95) / 0.3125, rel=1e-12
+        )
+    profile = {
+        "half_widths_with_the_linearised_curvature_K": {"nominal noise": expected},
+        "resolution_of_the_crossings": found,
+    }
+    assert available.curvature_by_side(profile) == {"low": verdict, "high": verdict}
+    assert available.curvature_agrees(profile) is agrees
+
+
+def test_a_pair_of_b4_is_read_only_when_both_runs_agree_with_the_curvature(available) -> None:  # noqa: ANN001
+    """A run whose B2 is not evaluable, None, or not in agreement, False, leaves every pair
+    it is in unread (the registration, B4)."""
+    profiles = {
+        name: {
+            "free_fit": fake_fit(2.3, activation),
+            "standard_errors_at_the_estimate": {"sandwich": {"E/R": 20.0}},
+            "curvature_agrees_with_the_linearised_one": verdict,
+        }
+        for name, activation, verdict in (
+            ("a", 9500.0, True),
+            ("b", 9550.0, None),
+            ("c", 9600.0, True),
+            ("d", 9650.0, False),
+        )
+    }
+    read = {tuple(pair["pair"]): pair["read"] for pair in available.replicate_differences(profiles)}
+    assert read == {
+        ("a", "b"): False,
+        ("a", "c"): True,
+        ("a", "d"): False,
+        ("b", "c"): False,
+        ("b", "d"): False,
+        ("c", "d"): False,
+    }

@@ -62,7 +62,7 @@ def information(signs, parameters, fixed=None, **options) -> WindowInformation: 
 
 
 POINT = steady_state_parameters(KNOWN, STATE, 8750.0)
-# The context information is S^T S minus a correction, so the context bound carries a
+# The context information is a Gram matrix that is inverted, so the context bound carries a
 # relative error of about the machine epsilon times the square of the condition number of S,
 # some 5e-12 for these windows (docs/numerical_robustness.md, fourteenth review). Comparisons
 # that go through it are asked 1e-9, not 1e-12: a Linux runner gave 1.25e-12 on the same
@@ -366,3 +366,57 @@ def test_the_sandwich_is_formed_as_the_covariance_of_a_fit_forms_it() -> None:
     units = np.array([1.0, 350.0, 1.0])
     expected = (bread @ block.meat @ bread) * np.outer(units, units)
     assert np.allclose(design.sandwich, expected, rtol=1e-8, atol=0.0)
+
+
+class _Drift:
+    """dx/dt = diag(1e-153) theta at theta = 0: the states drift by t 1e-153 per unit of each
+    parameter, and do not depend on their initial values."""
+
+    name = "drift"
+    parameter_names = ("a", "b")
+
+    def rhs(self, x, u):  # noqa: ANN001, ANN201
+        return np.zeros(2)
+
+    def initial_state_problem(self, x0):  # noqa: ANN001, ANN201
+        return None
+
+    def jacobian_state(self, x, u):  # noqa: ANN001, ANN201
+        return np.zeros((2, 2))
+
+    def jacobian_parameters(self, x, u):  # noqa: ANN001, ANN201
+        return np.eye(2) * 1e-153
+
+
+def test_noise_levels_far_from_one_keep_the_cost_of_the_initial_state() -> None:
+    """Codex's review of 129063c. With sigma = 1e-153, Sigma_0^-1 + G^T G overflowed while
+    each term was finite; the solve then dropped the correction, and the context information
+    came out equal to the information with x0 exact, 59 477 220 instead of 17 223 975.
+
+    Reference, by hand: for each channel S is t = 6 k s, k = 1 to 170, and G is the identity
+    over sigma, so the Schur complement is sum t^2 - (sum t)^2 / (170 + 10) and the excess of
+    the sandwich (sum t)^2 / 10."""
+    sigma = np.array([1e-153, 1e-153])
+    found = window_information(_Drift(), np.array([1.0, 350.0]), np.ones((170, 4)), 6.0, sigma)
+    assert isinstance(found, WindowInformation), found
+    t = 6.0 * np.arange(1, 171)
+    square, total = float(np.sum(t**2)), float(np.sum(t))
+    assert square == 59_477_220.0 and total**2 / 180.0 == 42_253_245.0
+    expected = {
+        "exact": square,
+        "context": square - total**2 / 180.0,  # 17 223 975
+        "excess": total**2 / 10.0,
+    }
+    for name, value in expected.items():
+        matrix = getattr(found, name)
+        assert np.allclose(np.diag(matrix), value, rtol=1e-12, atol=0.0), (name, matrix)
+        assert abs(matrix[0, 1]) <= 1e-12 * value and abs(matrix[1, 0]) <= 1e-12 * value
+
+
+def test_noise_levels_whose_ratio_is_not_a_double_are_refused() -> None:
+    """The initial state is carried into units of its context mean by sigma_j / sigma_o; two
+    noise levels 1e314 apart give a ratio beyond the largest double."""
+    with pytest.raises(ValueError, match=r"sqrt\(context_readings\)\) / sigma_o is"):
+        window_information(
+            model_at(POINT), STATE, corner_inputs(SIGNS[0]), PERIOD, (1e154, 1e-160)
+        )

@@ -31,8 +31,15 @@ state, three p x p matrices:
 
 ``context`` is the Schur complement of theta in the Fisher information of (theta, x0) from
 the scored readings and the context mean together; Woodbury's identity turns it into the
-expression above, and it is computed as exact - C (Sigma_0^-1 + G^T G)^-1 C^T with
-C = S^T G, which needs only a 2 x 2 solve. Its inverse is the Cramer-Rao bound, at this
+expression above, exact - C (Sigma_0^-1 + G^T G)^-1 C^T with C = S^T G. It is not computed
+that way. The initial state is counted in standard deviations of its context mean, so that
+G becomes G Sigma_0^(1/2) and Sigma_0 the identity, and the Schur complement is read from
+the QR factorisation of the joint problem: the scored readings, rows [G Sigma_0^(1/2) S],
+and the context mean, rows [I 0]. The block of theta in its triangular factor is a root of
+the context information. Nothing is subtracted, and neither Sigma_0^-1 nor G^T G is formed:
+with noise levels far from one, their sum can overflow while each is finite, and the solve
+would then drop the correction and return the information with x0 exact (Codex's review of
+``129063c``, ``docs/numerical_robustness.md``). Its inverse is the Cramer-Rao bound, at this
 point and to first order, of an estimator that treats x0 as unknown and learns it from the
 context. The estimator of M1 does not: it fixes x0 at the context mean and weights the
 scored readings by 1 / sigma^2, and its covariance is the sandwich exact^-1 meat exact^-1,
@@ -47,12 +54,12 @@ are local. The bound treats the initial state of each window as a free nuisance 
 through its context, not as the model's steady state, which depends on theta: it is the
 bound for estimators that leave the initial state free.
 
-Accuracy. The rank is judged without forming S^T S (below), but the context information is
-S^T S minus a correction, so it carries a relative error of about the machine epsilon times
-the square of the condition number of S: negligible for the condition numbers of the windows
-of P3, of the order of 10^2 to 10^3, and the reason why a design whose S is close to rank
-deficient can be reported as having a singular context information rather than as rank
-deficient.
+Accuracy. The rank is judged without forming S^T S (below), but the context information of
+a design is a sum of Gram matrices R^T R, inverted to give the bound, so the bound carries a
+relative error of about the machine epsilon times the square of the condition number of S:
+negligible for the condition numbers of the windows of P3, of the order of 10^2 to 10^3, and
+the reason why a design whose S is close to rank deficient can be reported as having a
+singular context information rather than as rank deficient.
 
 A design (``design_covariance``). Windows are independent, since their contexts are
 different readings and the noise is independent from sample to sample (D-020), so the
@@ -190,21 +197,23 @@ def window_information(
         raise ValueError(
             f"context_readings = {context_readings!r} is beyond the largest double"
         ) from None
-    # the covariance of the context mean and its inverse enter the information; finite noise
-    # levels can still give a variance, or an inverse, that is not a positive double
+    # the noise model: the variance of a reading and that of the context mean must be
+    # positive doubles, and so must the factors that carry the initial state into units of
+    # the standard deviation of its context mean, ratios of two noise levels
     with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
         variance = sigma**2
         context_variance = variance / readings  # the diagonal of Sigma_0, in state units
-        precision_diagonal = readings / variance  # of Sigma_0^-1
+        # (sigma_j / sqrt(n)) / sigma_o: row o, the channel read; column j, the initial state
+        to_context_units = (sigma[None, :] / sigma[:, None]) / math.sqrt(readings)
     for name, values in (
         ("sigma^2", variance),
         ("sigma^2 / context_readings", context_variance),
-        ("context_readings / sigma^2", precision_diagonal),
+        ("(sigma_j / sqrt(context_readings)) / sigma_o", to_context_units),
     ):
         if not (np.all(np.isfinite(values)) and np.all(values > 0.0)):
             raise ValueError(
                 f"with noise levels {sigma.tolist()} and {context_readings} context readings, "
-                f"{name} is {values.tolist()}, not two positive doubles"
+                f"{name} is {values.tolist()}, not positive doubles"
             )
     result = rollout(
         model,
@@ -220,26 +229,28 @@ def window_information(
     p = len(model.parameter_names)
     with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
         s = (result.parameter_sensitivities / sigma[None, :, None]).reshape(-1, p)
-        g = (result.initial_state_sensitivities / sigma[None, :, None]).reshape(-1, 2)
+        # G Sigma_0^(1/2): the sensitivity to the initial state counted in standard
+        # deviations of its context mean, so that Sigma_0 becomes the identity
+        g = (result.initial_state_sensitivities * to_context_units[None, :, :]).reshape(-1, 2)
         exact = s.T @ s
-        coupling = s.T @ g  # C = S^T G
-        gram = g.T @ g
-        excess = coupling @ np.diag(context_variance) @ coupling.T
+        coupling = s.T @ g  # C Sigma_0^(1/2), C = S^T G
+        excess = coupling @ coupling.T
     for name, values in (
         ("S", s),
-        ("G", g),
+        ("G Sigma_0^(1/2)", g),
         ("S^T S", exact),
-        ("S^T G", coupling),
-        ("G^T G", gram),
+        ("S^T G Sigma_0^(1/2)", coupling),
         ("C Sigma_0 C^T", excess),
     ):
         if not np.all(np.isfinite(values)):
             return NoInformation(f"{name} of the normalised sensitivities is not representable")
     with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
-        # Sigma_0^-1 + G^T G is a sum of a positive diagonal matrix and a positive
-        # semi-definite one, so it is positive definite and the solve is defined
-        correction = coupling @ np.linalg.solve(np.diag(precision_diagonal) + gram, coupling.T)
-        context = exact - correction
+        # the joint least-squares problem of (x0, theta): the scored readings, rows [G S],
+        # and the context mean, rows [I 0]; the block of theta in the triangular factor of
+        # its QR factorisation is the root of the Schur complement, the context information
+        joint = np.block([[g, s], [np.eye(2), np.zeros((2, p))]])
+        context_root = np.linalg.qr(joint, mode="r")[2:, 2:]
+        context = context_root.T @ context_root
         root = np.linalg.qr(s, mode="r")
     if not np.all(np.isfinite(context)):
         return NoInformation("the context information is not representable")
