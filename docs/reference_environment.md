@@ -21,6 +21,11 @@ project's dependency contract, and it is not installed by CI.
   library should state; this lock file is a snapshot for reconstruction, and installing
   it does not change `pyproject.toml`.
 
+Since 2026-09-27 the lock file also holds JAX 0.11.2 and the three packages it
+needs, the extra `learning` (D-035). They were installed into the same environment
+with `--no-deps`, and `pip freeze` before and after differed only in those four
+lines. The registered M0 results do not depend on them.
+
 ## Reconstructing it
 
 Outside any synchronised folder (OneDrive, Dropbox: a venv or an open DuckDB file

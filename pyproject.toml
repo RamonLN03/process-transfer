@@ -22,6 +22,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.5"]
+# the training of the learned models of M1 (D-035); the data path does not need it
+learning = ["jax>=0.11.2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

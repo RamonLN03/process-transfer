@@ -232,7 +232,7 @@ The `docker` job of `.github/workflows/ci.yml` builds the image on every push, g
 
 ## Adding the training dependencies of M1
 
-The framework for the learned models is chosen in I3 (`docs/m1_plan.md`, section 8.6). When it is:
+The framework for the learned models was chosen in I3: JAX, as the optional extra `learning` of `pyproject.toml` (D-035). The image runs the data path, which does not need it, and does not install it. A run of the test suite in a container adds it with pytest. When training has to run in a container:
 
 1. Declare it where the project declares its dependencies, `pyproject.toml`, as a dependency or an optional group such as `train`.
 2. Add its wheels to `docker/requirements.lock.txt` in the same way: one version, the hash of the Linux wheel for CPython 3.13, produced in a throwaway container of the base image. For PyTorch that is the CPU-only wheel from its own index, which avoids the CUDA libraries.

@@ -387,3 +387,47 @@ Clarification of 2026-09-27, after Codex's review of `129063c`. Two points of th
 
 * The context bound is the same quantity, the inverse of the Schur complement. It is no longer computed by Woodbury's identity with a 2 x 2 solve, whose matrix Sigma_0^-1 + G^T G could overflow while each term was finite and drop the cost of the initial state. The initial state is counted in standard deviations of its context mean, and the Schur complement is read from a QR factorisation of the joint problem.
 * "Brackets that hold under convexity alone" is kept, with what it implies made explicit. The points of a profile cannot show that it is convex between them; slopes that do not decrease are consistent with convexity and do not demonstrate it. A bracket is reported only where the sampled slopes over its span do not contradict convexity, and is labelled as conditional on it. Elsewhere it is not evaluable, B2 gives that profile no verdict, and B4 reads no pair that holds its run.
+
+## D-035 The training framework of M1: JAX (2026-09-27, decided by the implementation agent, technical and reversible)
+
+The plan leaves the framework to I3, chosen from a short comparison of two candidates on development data (section 8.6). The owner authorised I3 and asked that the choice follow the evidence on these criteria:
+
+* the correctness of gradients;
+* the treatment of changes of the inputs;
+* reproducibility on a CPU;
+* compatibility with Windows, Docker and Linux, and the Pythons of CI;
+* the cost of installing, integrating and training;
+* the clarity of the equations.
+
+It was not to be chosen for popularity, and a GPU was not to be assumed to help.
+
+Compared: JAX 0.11.2 with diffrax 0.7.2, and PyTorch 2.14.0 on the CPU with torchdiffeq 0.2.5. `experiments/m1_i3_framework_comparison.py` ran both at `28e0936`, on the nine windows of one target run of `m0-e05`; the experiment log has the method and the numbers ("Development runs of I3").
+
+Decision: JAX, with a fixed-step fourth-order Runge-Kutta scheme written in the repository (`models.training`) for the rollouts of training. diffrax is not a dependency. The dependency is `jax`, with jaxlib, ml_dtypes and opt_einsum, as the optional extra `learning`.
+
+Why:
+
+* Correctness does not separate them. Both computed the same losses to 1e-15, gradients that agree with central differences to 3e-7 or better at a generic point, and the same trained weights bit for bit twice and across processes.
+* Cost does. On one CPU thread, a loss and its gradient of HK took 7 ms in JAX and 540 ms in PyTorch, and of BN 23 ms and 184 ms. JAX compiles the loop of a rollout once; PyTorch dispatches each of its many small operations. A benchmark of about a thousand trainings of thousands of steps each makes that ratio decisive.
+* Installation: 292 MB against 652 MB with PyTorch's CPU index. On Linux, PyTorch from PyPI's default index would also bring the CUDA libraries unless CI named the CPU index.
+* Both write the equations as numpy does, and `models.learned` writes them once for numpy and JAX alike, so the model trained and the model evaluated are the same equation.
+* Windows with Python 3.13 was measured here; Linux with Python 3.12 and 3.13 is CI's job. A jaxlib wheel exists for each.
+
+Why a fixed step and not an adaptive solver in training:
+
+* At MR on real windows the fixed-step scheme, two steps per row, differs from the reference rollout by 5e-4 sigma, and diffrax's adaptive Tsit5 at 1e-8 by 2e-5 sigma, at five times the cost for HK.
+* Each row is integrated with its own inputs, so no step crosses a change of the inputs, and the gradient is the exact derivative of the loss computed.
+* What is selected and evaluated is the continuous-time equation, rolled out by the reference integration of `models.rollout`, whatever scheme trained it. Every checkpoint records the largest difference of the two rollouts on V, so that a model whose training scheme drifts from its equation is seen.
+
+Set aside:
+
+* PyTorch, for the cost above.
+* CasADi, not measured. It would write each network as a symbolic expression and estimate with IPOPT. The equations would then be written in its symbolic language, and a rollout of 110 rows of several steps becomes a large expression graph for every window.
+* SciPy with sensitivities written by hand, not measured for networks. It serves MR and BL, whose parameters are few. For a network it integrates two extra states per parameter, several thousand for BN, or needs an adjoint written by hand.
+* A GPU, not tried. The batches hold at most 32 windows of two states, and the steps of a rollout run in sequence.
+
+Consequences:
+
+* Importing `models.training` sets JAX to double precision for the process.
+* JAX changes quickly between versions. `pyproject.toml` states a lower bound, as it does for the other dependencies, and CI tests the current versions. The reference environment adds the versions measured here to its lock file.
+* The image of `docs/docker.md` runs the data path and does not install the extra. A run of the suite in a container adds it, as it adds pytest.

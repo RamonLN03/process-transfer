@@ -989,3 +989,56 @@ A clarification of the result above. It says "the profile is convex at every cro
 * Nothing of M0 or of I1 was changed.
 
 **Interpretation.** Neither defect acted in the registered run, and its reading stands as written, with the clarification about convexity above. The brackets of B2, and so the verdicts of B2 and the gate of B4, hold under a condition the points of a profile cannot show. I2 remains implemented, run and documented, awaiting review.
+
+### Development runs of I3 (2026-09-27)
+
+Software work on the data of M0 and on synthetic data, exploratory like every use of M0's data in M1 (`docs/m1_plan.md`, sections 5.1 and 13). No number here is a result of M1.
+
+#### A short comparison of two training frameworks
+
+Question: which of two candidate frameworks, JAX and PyTorch, should train the learned models of M1, on the criteria of section 8.6 of the plan and those the owner named when authorising I3? The criteria are exact gradients through a rollout with changes of the inputs, the treatment of those changes, reproducibility on a CPU, installation on Windows and Linux with the Pythons of CI, the cost of installing, integrating and training, and whether the equations stay readable. There is no hypothesis about the plants.
+
+Method, `experiments/m1_i3_framework_comparison.py` at `28e0936`, one script with the same task written in each framework:
+
+* The data: the nine windows of `target.p3.e0.x10.n0` of `m0-e05`, each started from its context mean and scored on its 110 readings with J^2 of section 9.1.
+* The models, in double precision on one CPU thread, since the fits of the benchmark will run one per process:
+  * HK at MR, fitted on the same windows, with a kinetic factor exp(N), N of one hidden layer of 16 tanh units and its last layer zero;
+  * BN with two hidden layers of 32.
+  
+  The weights are drawn once with numpy (seed 20260928) and handed to both frameworks.
+* Two integrations:
+  * a fixed-step fourth-order Runge-Kutta scheme written in the script, two steps per row of 6 s, each row with its own inputs;
+  * each library's adaptive solver at rtol = atol = 1e-8, told where the inputs change (diffrax Tsit5 with `jump_ts`, torchdiffeq dopri5 with `jump_t`).
+* Measured:
+  * the agreement of HK at the identity with the reference rollout of the repository;
+  * the gradient against central differences, relative step 1e-6, at the start and at a point where every weight is moved;
+  * whether 200 steps of Adam at a rate of 1e-3 give the same numbers twice;
+  * the time of a loss and its gradient, the median of 20 after the first call.
+
+Installation, measured apart, each in a fresh environment outside the repository on top of `pip install -e ".[dev]"`: JAX 0.11.2 with diffrax 0.7.2 took 27 s and 292 MB, pulling in jaxlib, ml_dtypes, opt_einsum, equinox, lineax, optimistix, jaxtyping and wadler_lindig. PyTorch 2.14.0 from its CPU index, with torchdiffeq 0.2.5, took 62 s and 652 MB, pulling in sympy, networkx, jinja2, filelock and fsspec. On Linux, PyTorch from PyPI's default index also brings the CUDA libraries, several gigabytes, unless the CPU index is named.
+
+Result, run `20260927T212215Z_28e0936` under `C:/Users/rlnsk/pt-data-m1-i3`, both frameworks from the same clean commit:
+
+| | JAX | PyTorch |
+|---|---|---|
+| HK at the identity against the reference rollout, largest difference in sigmas: fixed step / adaptive | 5.0e-4 / 2.0e-5 | 5.0e-4 / 2.0e-5 |
+| a loss and its gradient, HK, fixed step / adaptive | 7.2 ms / 37 ms | 539 ms / 1205 ms |
+| the same, BN | 22.6 ms / 32.7 ms | 184 ms / 445 ms |
+| first call, HK / BN, fixed step (compilation for JAX) | 1.3 s / 0.7 s | 0.49 s / 0.21 s |
+| gradient against central differences, largest relative difference at a moved point: HK / BN | 1e-7 / 1.4e-6 | 3e-7 / 3e-7 |
+| 200 steps of Adam, HK / BN | 2.8 s / 4.9 s | 105 s / 38 s |
+| the same 200 steps twice, and in two processes | identical bit for bit | identical bit for bit |
+| J^2 after 200 steps, HK / BN, from 5.02 / 255.3 | 1.036 / 13.46 | 1.036 / 13.46 |
+
+* Both frameworks compute the same function: the losses agree to about 1e-15 relative, and the trainings end at the same J^2.
+* At the start of HK, the relative difference of about 3e-3 against central differences, in both frameworks, is that of parameters whose gradient is nearly zero. HK starts at MR fitted on the same windows, a minimum of the loss in its mechanistic parameters, where central differences lose their digits to cancellation. At a moved point both agree to 3e-7 or better.
+* An earlier run of the same script from the working tree, `20260927T211402Z_d889398-dirty`, gave the same numbers and the same digests of the trained weights. PyTorch took 77 s for the 200 steps of HK there and 105 s here. The timing of PyTorch varies with what else the machine runs; the ratio of the two frameworks does not change the reading.
+* The fixed-step scheme agrees with the reference to 5e-4 sigma at MR on real windows, in both frameworks. The adaptive solvers reach 2e-5 sigma, at 5 times the cost for HK in JAX.
+* J^2 of HK fell from 5.02 to 1.04 in 200 steps on the windows it was fitted to. It is an in-sample loss on nine windows, with no validation and no selection, and says nothing about a benchmark.
+
+Interpretation:
+
+* On correctness, the two frameworks cannot be told apart: the same function, gradients as exact as central differences can check, the same scheme across changes of the inputs, and bit-for-bit determinism.
+* They differ in cost. On one thread, a loss and its gradient of HK cost about 75 times more in PyTorch than in JAX, and 200 steps of Adam 28 to 37 times more over the two runs; for BN both ratios are about 8. The loop over 110 rows, two steps and four stages makes 880 evaluations of a small right-hand side, and PyTorch dispatches each small operation separately while JAX compiles the loop once. JAX also installs in half the space. The recorded choice is D-035.
+* Readability does not separate them: both write the equations as numpy does.
+* Neither framework was tried on a GPU. With batches of at most 32 windows of two states, and steps that must run in sequence, there is no reason to expect a gain, and none is claimed.

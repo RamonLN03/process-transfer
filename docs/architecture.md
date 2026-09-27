@@ -122,7 +122,7 @@ Reproducibility is tested at the level that matters: identical numerical traject
 
 ## Technology stack
 
-* Python 3.12+, NumPy and SciPy (`solve_ivp`) for simulation. Differentiable dynamics for the learned models of M1: the framework is not chosen yet; candidates and criteria are in `docs/m1_plan.md`, section 8.6. PyTorch with `torchdiffeq` was the charter's first guess, not a decision.
+* Python 3.12+, NumPy and SciPy (`solve_ivp`) for simulation. Differentiable dynamics for the learned models of M1: JAX, chosen in I3 from a comparison with PyTorch on development data (D-035), as the optional extra `learning`. PyTorch with `torchdiffeq` was the charter's first guess, not a decision.
 * Pydantic for configuration validation, YAML for configuration files.
 * DuckDB, Parquet, SQL; Pandas where a dataframe is the right tool.
 * pytest and ruff.

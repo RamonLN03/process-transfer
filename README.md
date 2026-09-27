@@ -2,7 +2,7 @@
 
 Physics-aware transfer of hybrid process models from a data-rich source plant to a related, data-scarce target plant.
 
-**Status:** early research software. The first milestone, M0, a virtual plant and data infrastructure trustworthy enough that later machine-learning results can be believed, was closed on 2026-09-22. The active milestone is M1, black-box and hybrid models fitted on target-plant data only; its plan is `docs/m1_plan.md`. Its first iteration, the evaluation contract and the mechanistic models fitted on the target, is accepted and closed. The second, a diagnostic of what the data determine about the parameters of the mechanistic model, has been run and awaits review. No learned model and no transfer code exist yet.
+**Status:** early research software. The first milestone, M0, a virtual plant and data infrastructure trustworthy enough that later machine-learning results can be believed, was closed on 2026-09-22. The active milestone is M1, black-box and hybrid models fitted on target-plant data only; its plan is `docs/m1_plan.md`. Its first iteration, the evaluation contract and the mechanistic models fitted on the target, is accepted and closed. The second, a diagnostic of what the data determine about the parameters of the mechanistic model, has been run and awaits review. The third, the training framework and the learned models, is in progress. No transfer code exists yet.
 
 ## What the project asks
 
@@ -17,8 +17,10 @@ Read `AGENTS.md` first. It is the operating contract for every agent and person 
 ```
 python -m venv <path-to-venv>
 <activate the venv>
-pip install -e ".[dev]"
+pip install -e ".[dev,learning]"
 ```
+
+The extra `learning` adds JAX, which trains the learned models of M1 (D-035). The data path and its container do not need it.
 
 Keep the virtual environment outside synced folders such as OneDrive.
 
