@@ -542,4 +542,5 @@ Scope. The new module `models/identifiability.py` and the two scripts of M1-E01,
   * a failed or rank-deficient corner in part 1 made the script raise before its summary was written;
   * a failed free fit was still given a minimum;
   * a point below the free fit was not flagged.
+* Found by continuous integration after the experiment was run, on `4454109`: two tests compared quantities that pass through the context bound to 1e-12 relative. That is tighter than the bound's own accuracy of about 5e-12 stated above. A Linux runner with Python 3.12 gave 1.25e-12 where Windows gave 5.7e-13, and the same code had passed at `e166bb5`. The tests now ask 1e-9 of those comparisons. The code of the experiment is unchanged.
 * The oracle's windows start from the mean of ten copies of the exact steady state. That mean can differ from the state in its last bit; the script records whether it does and by how much, and the difference does not matter to a fit whose objective is of the order of one.

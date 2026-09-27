@@ -62,6 +62,12 @@ def information(signs, parameters, fixed=None, **options) -> WindowInformation: 
 
 
 POINT = steady_state_parameters(KNOWN, STATE, 8750.0)
+# The context information is S^T S minus a correction, so the context bound carries a
+# relative error of about the machine epsilon times the square of the condition number of S,
+# some 5e-12 for these windows (docs/numerical_robustness.md, fourteenth review). Comparisons
+# that go through it are asked 1e-9, not 1e-12: a Linux runner gave 1.25e-12 on the same
+# code that gave 5.7e-13 on Windows.
+CONTEXT_ACCURACY = 1e-9
 SIGNS = [(1, -1, 1, 1), (-1, 1, -1, -1), (1, 1, 1, -1)]
 
 
@@ -142,8 +148,10 @@ def test_the_three_covariances_are_ordered() -> None:
     for n in (1, 3):
         design = design_covariance([information(signs, POINT) for signs in SIGNS[:n]])
         exact, bound, sandwich = design.exact_initial_state, design.context_bound, design.sandwich
-        assert loewner_gap(bound, exact) >= -1e-12
-        assert loewner_gap(sandwich, bound) >= -1e-12
+        # the differences have rank two at most, so their smallest eigenvalue is zero up to
+        # the accuracy of the context bound
+        assert loewner_gap(bound, exact) >= -CONTEXT_ACCURACY
+        assert loewner_gap(sandwich, bound) >= -CONTEXT_ACCURACY
         errors = {kind: design.standard_errors(kind) for kind in ("exact", "context", "sandwich")}
         for name in design.names:
             assert errors["exact"][name] < errors["context"][name] <= errors["sandwich"][name]
@@ -183,13 +191,15 @@ def test_blocks_add_and_a_weight_counts_windows() -> None:
     listed = design_covariance([blocks[0]] * 2 + [blocks[1]] * 3)
     weighted = design_covariance(blocks, weights=[2, 3])
     for kind in ("exact", "context", "sandwich"):
-        assert np.allclose(listed._matrix(kind), weighted._matrix(kind), rtol=1e-12, atol=0.0)
+        assert np.allclose(
+            listed._matrix(kind), weighted._matrix(kind), rtol=CONTEXT_ACCURACY, atol=0.0
+        )
     one = design_covariance(blocks[:1])
     many = design_covariance(blocks[:1], weights=[40])
     for kind in ("exact", "context", "sandwich"):
         for name, value in many.standard_errors(kind).items():
             assert value == pytest.approx(
-                one.standard_errors(kind)[name] / math.sqrt(40), rel=1e-12
+                one.standard_errors(kind)[name] / math.sqrt(40), rel=CONTEXT_ACCURACY
             )
     # a zero weight leaves a window out
     alone = design_covariance(blocks, weights=[0, 1])
