@@ -292,3 +292,57 @@ Checked on 2026-09-25: the tests of I1, the smoke run on the exports of M0 and t
 Clarification, 2026-09-25, after Codex's audit of `124c377` to `a8905dc`. Two points of this entry were stated without their limits, and the audit showed what that let through (`docs/numerical_robustness.md`, twelfth review). The domain of a fit: what makes the loss undefined for any model is refused before any start, with a ValueError, now including scored readings whose values divided by the noise levels are not doubles; whatever depends on the point a start has reached, including residuals, Jacobian, loss or gradient that are not doubles, is a numerical failure of that start, recorded with its cause, while the other starts go on. Before, the first case escaped from least_squares as an exception, and readings of 1e160 let every start end as converged with an infinite objective. And the implied terms and the metrics are judged or returned only when they are doubles: squares and means are formed on values scaled by their largest magnitude, and what is not representable is refused, never returned as inf or as zero and never counted as compatible with the physics. The selection among converged starts, the loss, the definitions of the metrics and the rounding bounds are unchanged.
 
 Clarification, later on 2026-09-25, after Codex's review of `9ea9a76`. The optimiser's own arithmetic can overflow on quantities that are all doubles: with `x_scale="jac"` it squares the elements of the Jacobian to scale its steps, and an infinite norm made a scale zero and a start converge by its tolerance on the step without moving. `least_squares` now runs with numpy's floating-point errors raised, and such an error ends the start as a numerical failure, like any other point the loss cannot be computed at; the loss also checks the norms of the columns of the Jacobian. The method, its scales and tolerances, the starts and the selection among converged starts are unchanged (`docs/numerical_robustness.md`, thirteenth review).
+
+## D-033 I1 of M1 accepted and closed (2026-09-27, accepted by the owner)
+
+The owner accepted I1 of M1, the evaluation contract and the mechanistic models MN, MR and MR_F, and authorised its closure on 2026-09-27, once its criteria of acceptance (`docs/m1_plan.md`, section 13) had been checked against the repository. Its code is that of `96945a6`, the last commit that changed it, and its tests are those of `d8bc372`, which corrected one test found by the checks below; the commit that records this entry changes documentation only. Closing I1 does not close M1. I2 is the next iteration.
+
+Who did what, kept apart.
+
+* The owner accepted I1 and authorised its closure. During the corrective iteration the owner had asked that the rule of D-032 marked for the owner be kept: only starts that converged are selectable. It stands.
+* Codex, as read-only reviewer, made three reviews:
+  * an audit of `124c377` to `a8905dc`, which reported six findings (`docs/numerical_robustness.md`, twelfth review);
+  * a review of `9ea9a76`, which reported two points (thirteenth review);
+  * a last review, focused on the two corrections of `96945a6`. It inspected them, ran the tests of the fit and of the metrics, which passed, and found no new reason to extend the corrective iteration.
+
+  That last review was not a new audit of the whole of I1. Codex did not check the continuous integration of `96945a6` itself.
+* Claude Code, as implementation agent, did the following:
+  * It reproduced every finding and corrected it with a regression test.
+  * It ran the suite on the code of `96945a6`. On Windows 855 tests passed. In a container of the image on Linux 851 passed, and 4 were skipped because the image has no git.
+  * It repeated the smoke run of I1 after the last correction, from the working tree before the commit. The 11 444 numbers of its summary equal those of the run before it bit for bit.
+  * It read the continuous integration of `96945a6` on the Actions page of the repository, run 36171775881: test (3.12) and test (3.13) passed 855 tests each, and the docker job succeeded.
+  * On 2026-09-27, before this entry, it checked each criterion of section 13 against the tests again, with read-only sub-agents of its own, and ran the suite at `96945a6`: 855 passed, and ruff was clean. What that check found is below; one test was corrected in `d8bc372`, and the suite passed again after it.
+
+Where each criterion is met:
+
+* The worked example of section 5.7 and the counts of section 5.4 at every budget: `tests/test_evaluation_budgets.py` and `tests/test_evaluation_windows.py`.
+* The metrics against values computed by hand: `tests/test_evaluation_metrics.py`.
+* The error of the rollout below 1 % of sigma, against LSODA and DOP853 at rtol = 1e-12: `tests/test_models_rollout.py`. The largest error found there is below 4e-5 sigma, and 2.5e-5 sigma on real windows in the smoke run.
+* The recovery of the parameters: without noise from an exact initial state, and with the noise of D-020 and the rule of the context within four sandwich standard errors for five declared seeds. Both are in `tests/test_models_fitting.py`. The calibration of those standard errors over 200 seeds was last repeated at `b5c2838`; the two commits of I1 after it change only what happens when a number is not representable.
+* The import graph of `models` and `evaluation`: `tests/test_boundaries.py`. That a fit of MR_F does not read V: `tests/test_models_fitting.py`.
+
+What the checks of 2026-09-27 found beyond the criteria. None of it is a defect in the scientific results of I1. The first item was corrected before the closure. The others do not block it and are recorded so that later work can strengthen the tests where it touches them. The addendum of 2026-09-27 to `docs/numerical_robustness.md` has the details.
+
+* A test compared the rounding bound of the implied heat flow, about 1.2e-13, below the absolute tolerance that `pytest.approx` allows by default, so a bound of zero or eight times too large passed. It is the mechanism of the second point of Codex's review of `9ea9a76`. It was corrected in `d8bc372`, and a run of the suite that recorded every such comparison found no other.
+* The noise-free recovery test asks 1e-5 of theta and of J. The optimiser's tolerances are 1e-10, and the accuracy reached, 2e-7 in (E/R) / 350 K, is set by the integrations, not by the optimiser; "to the tolerance of the optimiser" in the criterion and in the name of the test says more than the test asks.
+* The noisy recovery test fits from the textbook start alone, not from the five declared starts.
+* Several paths are not reached by any test:
+  * the integration failures "integrator" and "non-finite state";
+  * a physical violation carried beside a score in the tables of failures;
+  * per-window and per-phase scores whose windows or phases differ, and the excess over the noise inside them.
+* The test of the import graph reads only import statements that name a module of the simulation or of the generator, so it would not see `from process_transfer import simulation`. No such import exists.
+* With an integrator other than LSODA, which D-032 fixes for the evaluation, a rollout whose right-hand side is huge but finite can raise instead of returning a record.
+* The thirteenth review gives the objective and the endpoint of the silent convergence with numbers that the window of its regression test does not reproduce; the defect and its correction are as described. An open limitation of the eleventh review had been made obsolete by the twelfth.
+
+Carried forward, documented and not blocking:
+
+* the open limitations of the eleventh to thirteenth reviews of `docs/numerical_robustness.md`, among them:
+  * a `LinAlgError` of LAPACK is not caught;
+  * a floating-point error inside `solve_ivp` is reported differently inside and outside a fit;
+  * LSODA's `UserWarning` is printed as SciPy prints it;
+  * a subnormal result keeps only subnormal precision;
+  * I3 has to decide how a window whose implied terms cannot be computed is counted;
+* the difference between the platforms in the test of a steady state that leaves one direction undetermined, recorded in the twelfth review;
+* the test of the exit code of M0-E08, carried from M0 (`docs/roadmap.md`).
+
+The numbers of the development runs of I1 remain development numbers and are not results of M1.
