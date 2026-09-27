@@ -20,7 +20,7 @@ One non-blocking documented limitation carried into M1's backlog: `tests/test_ch
 
 Target-only baseline, black-box model, hybrid physics-plus-ML model. Does hybrid modelling improve data efficiency or extrapolation?
 
-Started 2026-09-22. Question, comparators and exclusions: D-029. The benchmark is planned in `docs/m1_plan.md`; the owner answered its questions on 2026-09-24 (D-030). I1, the evaluation contract and the mechanistic models MN, MR and MR_F, was implemented on 2026-09-25 (D-032), audited by Codex and corrected, and accepted and closed by the owner on 2026-09-27 (D-033). I2, the identifiability diagnostic M1-E01, is next. M1 stays open.
+Started 2026-09-22. Question, comparators and exclusions: D-029. The benchmark is planned in `docs/m1_plan.md`; the owner answered its questions on 2026-09-24 (D-030). I1, the evaluation contract and the mechanistic models MN, MR and MR_F, was implemented on 2026-09-25 (D-032), audited by Codex and corrected, and accepted and closed by the owner on 2026-09-27 (D-033). I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27 (D-034) and awaits review. M1 stays open.
 
 ## M2: Manual transfer learning
 

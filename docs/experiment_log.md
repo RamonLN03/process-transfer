@@ -771,3 +771,187 @@ Commands, from the commit that registers this entry, with a clean working tree a
 In PowerShell, `$env:PT_DATA_DIR = 'C:/Users/rlnsk/pt-data-m1-e01'` first, and the same two commands without the prefix.
 
 Expected cost, from the synthetic run: under a minute for part 1. Part 2 is 220 fits, of two parameters and of three, and takes some minutes on 14 processes; it takes more than on the synthetic data if fits far from the minimum need more evaluations. The oracle takes under two minutes.
+
+#### Result
+
+Both scripts were run on 2026-09-27 from `e166bb5`, the commit that registers this entry, with a clean working tree identified in their provenance. The environment was the reference one, and PT_DATA_DIR was the new directory `C:/Users/rlnsk/pt-data-m1-e01`.
+
+* Parts 1 and 2: run `20260927T182913Z_e166bb5`, 454 s. Part 1 took 44 s, part 2 408 s on 14 processes, and the second point 0.9 s.
+* The oracle: run `20260927T183702Z_e166bb5`, 22.5 s.
+
+Every mandatory check held in both, at both points, and both exit codes were 0. The fingerprints of the exports were the same before and after. The per-run free fits of part 2 were compared with the fits of MR in the smoke run `20260925T180744Z_9ea9a76-dirty` outside the repository: their starts, settings and covariances, 354 numbers, are equal bit for bit. No deviation from the registration was needed.
+
+**Part 1.** The steady state is the mean of the 1201 readings of the steady run: 189.50 mol/m^3 and 355.184 K, with standard errors of 0.14 mol/m^3 and 0.014 K. The mean of the 27 contexts of `m0-e05` is 189.12 mol/m^3 and 355.166 K.
+
+* The point at E/R = 8750 K has k_350 = 0.018960 1/s and UA = 1346.45 W/K. The model's right-hand side there is 1e-15 of the feed terms, and its eigenvalues are -1.26 +- 2.34i 1/min.
+* The information of the 16 corner windows at the settings of the evaluation agrees with the tight integration to 1.7e-7 in every standard error.
+* At this point every window ends within 1e-3 mol/m^3 and 2e-4 K of the steady state; at the second point, within 8e-3 mol/m^3 and 1.2e-3 K.
+
+Standard errors at the textbook point. The columns after n are:
+
+* the standard errors of E/R in K with the initial state exact, from the context bound and in the sandwich;
+* the relative standard errors of ln k_350 and ln UA in the sandwich;
+* the 5 %, 50 % and 95 % quantiles of the sandwich standard error of E/R in K over the 20 000 draws of P3.
+
+MR receives n = b windows and MR_F n = b - n_V.
+
+| n | E/R, exact | E/R, context | E/R, sandwich | ln k_350 | ln UA | draws: 5 % | draws: median | draws: 95 % |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 74.5 | 78.2 | 80.9 | 0.57 % | 0.38 % | 55.7 | 103.5 | 291.7 |
+| 2 | 52.7 | 55.3 | 57.2 | 0.40 % | 0.27 % | 42.1 | 57.9 | 124.5 |
+| 4 | 37.3 | 39.1 | 40.4 | 0.28 % | 0.19 % | 32.4 | 40.9 | 62.4 |
+| 5 | 33.3 | 35.0 | 36.2 | 0.25 % | 0.17 % | 29.4 | 36.4 | 51.9 |
+| 8 | 26.4 | 27.6 | 28.6 | 0.20 % | 0.14 % | 24.1 | 28.8 | 37.3 |
+| 10 | 23.6 | 24.7 | 25.6 | 0.18 % | 0.12 % | 22.0 | 25.7 | 32.1 |
+| 16 | 18.6 | 19.5 | 20.2 | 0.14 % | 0.10 % | 17.8 | 20.3 | 24.0 |
+| 20 | 16.7 | 17.5 | 18.1 | 0.13 % | 0.09 % | 16.1 | 18.1 | 21.0 |
+| 32 | 13.2 | 13.8 | 14.3 | 0.10 % | 0.07 % | 13.1 | 14.3 | 16.0 |
+| 40 | 11.8 | 12.4 | 12.8 | 0.09 % | 0.06 % | 11.8 | 12.8 | 14.1 |
+
+* The cost of the rule for the initial state, as ratios of standard errors to those with the initial state exact, from the context and in the sandwich:
+  * for E/R, 1.049 and 1.085, that is 4.9 % from the context and a further 3.5 % from the rule of the estimator;
+  * for ln k_350, 1.010 and 1.015;
+  * for ln UA, 1.012 and 1.023.
+* No design was rank deficient: 0 of the 20 000 draws had no covariance, at every n.
+* The correlations of the expected design are -0.46 for k_350 with E/R, +0.73 for k_350 with UA and +0.12 for E/R with UA with the initial state exact, and -0.44, +0.72 and +0.17 in the sandwich. The condition number of its correlation matrix is 23.8 with the initial state exact and 23.3 in the sandwich, at every n. Over the draws, the median of the sandwich's is 28 at one window and 23.3 to 23.8 from two windows on. Its largest is 138 at one and two windows and 33 at forty.
+* The singular values of the normalised S of one expected window are 738, 166 and 4.7.
+* One window alone gives a sandwich standard error of E/R from 55.7 K, at the corner `-+--`, to 291.7 K, at `---+`, a factor of 5. The condition numbers of the correlations run from 19 to 138.
+* The designs of the runs of part 2 visit 6, 9 and 7 distinct corners. Their sandwich standard errors of E/R are 26.0, 24.0 and 25.2 K for nine windows, and 14.4 K for the 27 pooled. The expected design at nine windows gives 27.0 K, the n = 1 value divided by 3.
+* At the second point, E/R = 9531.4 K, the pooled estimate of part 2:
+  * k_350 and UA are those of the same steady state, and the point is steady, stable and resolved;
+  * the expected-design sandwich standard error of E/R is 67.6 K at n = 1, 21.4 K at n = 10 and 10.7 K at n = 40, 16 % smaller than at 8750 K. At nine windows it is 20.0, 21.2 and 22.5 K with the initial state exact, from the context and in the sandwich;
+  * the designs of the runs give 23.5, 19.5 and 21.2 K and 12.3 K pooled, 10 % to 19 % smaller;
+  * the correlation of k_350 with E/R is -0.26 in the sandwich, against -0.44.
+
+Figures: `fig1_standard_errors_against_windows.png` and `fig2_one_window_per_corner.png`.
+
+**Part 2.** Every free fit converged from all five starts to one endpoint.
+
+* Every point of every profile has a converged start. One of the three starts of the pooled profile exhausted its budget at 13000 K.
+* At 13000 K the three converged starts of run e1 ended at k_350 8 % apart and UA 3.5 % apart. The one with the lowest loss, which has the highest k_350 and UA, was selected. Elsewhere the endpoints of a point differ by at most 1.5e-5.
+* Each profile's free fit is its minimum, and each lowest grid point lies inside the fine part of the grid.
+* The fits held at the estimates reproduce the free fits' loss within 1.8e-4 in the sum of squared normalised residuals.
+
+| | e0 | e1 | e2 | pooled |
+|---|---|---|---|---|
+| E/R of the free fit, K | 9598.1 | 9436.2 | 9568.3 | 9531.4 |
+| J | 2.241 | 2.665 | 2.361 | 2.436 |
+| lowest grid point, K | 9600 | 9425 | 9575 | 9525 |
+| standard error of E/R at the estimate, initial state exact, K | 18.7 | 17.7 | 18.0 | 10.4 |
+| the same, sandwich, K | 22.7 | 19.5 | 20.5 | 12.0 |
+| at 3.84: interpolated half-widths, low and high, K | 32.0, 32.3 | 29.5, 28.6 | 29.5, 31.6 | 14.5, 18.5 |
+| at 3.84: outer limits, low and high, K | 38.6, 40.0 | 32.9, 33.7 | 35.6, 31.7 | 24.1, 18.6 |
+| 1.96 standard errors with the initial state exact, K | 36.6 | 34.6 | 35.3 | 20.4 |
+| agrees with the linearised curvature at 3.84 (B2) | yes | no: narrower on both sides | no: narrower above | no: narrower above |
+| at 3.84 J_min^2: interpolated half-widths, low and high, K | 76.5, 75.3 | 84.4, 81.6 | 75.2, 73.3 | 43.9, 44.7 |
+| at 3.84 J_min^2: outer limits, low and high, K | 77.9, 75.8 | 84.9, 83.4 | 78.2, 75.6 | 48.3, 45.6 |
+| 1.96 J_min standard errors, K | 82.0 | 92.2 | 83.4 | 49.7 |
+| slope of ln k_350 over the fine grid / that holding k(T_ss) | 1.086 | 0.922 | 1.074 | 1.026 |
+| range of UA over the fine grid, relative to its median | 0.33 % | 0.74 % | 0.39 % | 0.48 % |
+
+* The profile is convex at every crossing.
+* At 3.84, the profile of e0 agrees with the linearised curvature. That of e1 is narrower on both sides, and those of e2 and the pooled windows above: the outer limit of the true half-width lies inside 1.96 standard errors.
+* At 3.84 J_min^2, all four profiles are narrower than 1.96 J_min standard errors on both sides.
+* J rises from its minimum of 2.24 to 2.67 to 4.0 to 4.2 at 6000 K and to 7.1 to 7.8 at 13000 K: the rise is steeper above the minimum.
+* Along the profile:
+  * The slope that holds k at the steady temperature, 1/T_ss - 1/350 K with T_ss the mean of the steady run, is -4.17e-5 per kelvin.
+  * Below the minimum, down to 6000 K, UA stays within 1.2 % of its value at the estimate.
+  * Beyond 10500 to 11000 K, k_350 stops falling and rises again, not monotonically in e2, and UA rises by 12 % to 21 % at 13000 K.
+
+The pairs of B4, with the sandwich standard errors at the estimates:
+
+| pair | difference, K | combined standard error, K | ratio | read |
+|---|---|---|---|---|
+| e0, e1 | 161.9 | 29.9 | 5.41 | no |
+| e0, e2 | 29.8 | 30.6 | 0.97 | no |
+| e1, e2 | -132.1 | 28.3 | -4.67 | no |
+
+As context, not used as a denominator: the combined a priori sandwich standard errors of the runs' own designs are 35.4, 36.2 and 34.7 K at the textbook point, and 30.5, 31.6 and 28.8 K at the pooled estimate. The range of the three estimates is 161.9 K. No pair is read, because only the profile of e0 agrees with the linearised curvature.
+
+Figures: `fig3_profiles.png` and `fig4_compensation_along_the_profile.png`.
+
+**Part 3, the oracle.** A is accepted in all 16 windows, and K and B are physically valid in all of them.
+
+* Anchoring: the rates of both variants equal the true rate at the nominal steady state exactly, and their right-hand side there is 4e-16 of the feed terms.
+* The integration error is at most 6.8e-6 mol/m^3 and 8.3e-7 K, far below every difference compared.
+* The initial state formed from ten copies of the exact steady state differs from it in its last bit, by 5.7e-14 K.
+* Peak temperatures over the windows: A 376.19 K, K 371.36 K, B 377.97 K.
+
+The pseudo-true fit:
+
+* k_350 = 0.017616 1/s, E/R = 9595.2 K and UA = 1324.3 W/K, with J = 2.265. The five starts ended within 0.0042 K in E/R.
+* Root mean square errors of 2.57 sigma_CA and 1.91 sigma_T pooled:
+  * 3.17 and 2.15 in the excursion;
+  * 3.16 and 2.48 in the return;
+  * 0.86 and 0.09 in the settled phase.
+* J per window runs from 1.31 at `+-+-` to 4.75 at `++--`.
+* The fitted model's steady state at the nominal inputs is 193.89 mol/m^3 and 355.20 K, against 189.67 mol/m^3 and 355.17 K for the truth.
+* The singular values of its normalised Jacobian are 3322, 682 and 24.4.
+* Its E/R lies 845.2 K above the 8750 K of the saturating law. That is 10.4 times the sandwich standard error of E/R of the expected design at the textbook point at n = 1, 80.9 K, and 66 times that at n = 40, 12.8 K.
+
+The mismatches alone, against the true plant, in sigmas:
+
+| | K, C_A | K, T | B, C_A | B, T |
+|---|---|---|---|---|
+| root mean square, whole window | 3.04 | 2.26 | 0.354 | 0.466 |
+| root mean square, excursion | 4.71 | 3.60 | 0.58 | 0.89 |
+| root mean square, return | 3.39 | 2.45 | 0.38 | 0.40 |
+| root mean square, settled | 0.055 | 0.048 | 0.022 | 0.024 |
+| largest | 17.8 | 11.7 | 1.84 | 3.52 |
+| largest on the dense grid, physical units | 89.3 mol/m^3 | 5.86 K | 9.22 mol/m^3 | 1.79 K |
+
+M0-E08 measured the thermal mismatch alone on whole runs of the target at up to 1.8 K and 8.8 mol/m^3.
+
+Figures: `fig1_mismatch_alone.png` and `fig2_pseudo_true_residuals.png`.
+
+Each result beside its registered expectation, with no verdict:
+
+* A1:
+  * the quantiles over the draws are 55.7, 103.5 and 291.7 K at n = 1 and 42.1, 57.9 and 124.5 K at n = 2, against 56.7, 104.8 and 292.3 K and 42.8, 58.9 and 124.6 K in the synthetic summary;
+  * the expected design gives 74.5, 78.2 and 80.9 K at n = 1 and 11.8, 12.4 and 12.8 K at n = 40, against 75.5, 79.1 and 81.8 K and 11.9, 12.5 and 12.9 K;
+  * the draws are widest at one and two windows and skewed upward at every n.
+* A2: 4.9 % and a further 3.5 % for E/R, against about 5 % and 3 %.
+* A3: no design is rank deficient. The correlations are -0.46 and +0.73, against -0.48 and +0.73 in section 7.5.
+* A4: at 9531.4 K the expected design at nine windows gives 20.0, 21.2 and 22.5 K, against 20.5, 21.8 and 23.1 K at 9500 K on the synthetic state.
+* B1: the pooled estimate, 9531.4 K, lies between those of the runs.
+* B2: the linearised half-widths are 34.6 to 36.6 K per run at 3.84, 82.0 to 92.2 K at 3.84 J_min^2 and 20.4 K pooled, against about 35 to 39, 78 to 103 and 22 K or less. The profiles themselves are narrower, 28.6 to 32.3 K interpolated at 3.84, and narrower than the linearised curvature in three of four profiles at 3.84 and in all four at 3.84 J_min^2.
+* B3: a reference slope of -4.17e-5 per kelvin, against about -4.2e-5.
+* B4: sandwich standard errors of 19.5 to 22.7 K, against about 18 to 21 K. Ratios of 5.4, 1.0 and 4.7, against about 5.5, 1 and 4.5.
+* The context of the reading rule: a priori values at the textbook point of 26.0, 24.0 and 25.2 K, and 27.0 K for the expected design, against sandwich standard errors at the estimates of 22.7, 19.5 and 20.5 K, where about 27 against 18 to 21 K was expected.
+* C1: 9595 against 9590 K, 1324 against 1326 W/K, and 2.57 and 1.91 against 2.5 and 1.8, section 7.5 having scored 120 readings per window.
+* C2: 3.04 and 2.26 against 2.9 and 2.2, 0.354 and 0.466 against 0.34 and 0.45, and a largest thermal difference of 1.79 K against about 1.8 K.
+
+#### Interpretation
+
+Read by the rules registered above. Parts 1 and 2 are exploratory, since part 1's point is the mean of a development run of M0 and part 2 fits development runs; none of their numbers is a result of M1.
+
+* Part 1, if the first-order model were right, locally at the observed steady state:
+  * No design of P3 at the budgets of the plan is rank deficient: every corner window has a covariance, and so every draw does. The correlations and condition numbers are reported above without a verdict.
+  * The median over the draws of the sandwich standard error of E/R is 58 K for MR at two windows and 13 K at forty. The standard errors of k_350 and UA are below 0.6 % even for one expected window.
+  * The rule for the initial state costs 8.5 % in the standard error of E/R. Of that, 4.9 % is information that ten context readings cannot give about the initial state, and 3.5 % is the price of the estimator's rule. For the other two parameters the cost is 1.5 % to 2.3 %.
+  * The corners matter much more than the rule. At one window the standard error of E/R ranges over a factor of 5 between corners, and its median over the draws, 103 K, lies well above the 81 K of the expected design. Small budgets are read from the draws, as registered.
+  * At the pooled estimate the standard errors of E/R are smaller, 16 % for the expected design and 10 % to 19 % for the designs of the runs, and the correlation of k_350 with E/R is weaker, -0.26 against -0.44. The numbers depend on the point, as information is local.
+  * None of this is a verdict of identifiability, and all of it assumes the model is right.
+* Part 2:
+  * On each run and on the three pooled, the objective of MR over E/R has one minimum between 6000 and 13000 K, located inside the grid by the free fit.
+  * Its 3.84 crossings lie 29 to 40 K from the estimate per run and 15 to 24 K pooled. Neither crossing is a confidence interval.
+  * At 3.84, three of the four profiles are narrower than the linearised curvature predicts on at least one side: e1 on both, e2 and the pooled profile above; e0 agrees. At 3.84 J_min^2 all four are narrower on both sides.
+  * The registration named two possible sources: a loss that is not quadratic over these distances, and the second-order term that the residuals of a wrong structure add to the curvature. This run does not tell them apart. It is the possibility B2 was registered to detect.
+  * Over the fine part of the grid, 9000 to 10000 K, the slope of ln k_350 is 0.92 to 1.09 times the slope that keeps k at the steady temperature fixed, and the range of UA is 0.33 % to 0.74 % of its median. That is the pattern section 7.3 expects if the settled parts of the windows dominate the fit. B3 declared no size of departure, and the experiment does not show which parts of the windows set E/R. Far above the minimum the pattern gives way.
+* Noise against excitation. Under the registered rule no pair of runs is read: the profiles of e1 and e2 do not agree with the linearised curvature on which the sandwich rests. The ratios, 5.4, 1.0 and 4.7 combined standard errors, are reported and not read.
+  * The range, 162 K, is the difference of e0 and e1, a pair that is not read, so it is not interpreted either. This extends the registered gate, which named pairs only.
+  * No conclusion or proposal about the treatment of E/R arises from parts 1 and 2. Each run's profile has one located minimum, with 3.84 crossings 29 to 40 K from the estimate that are not confidence intervals, and the spread between runs is not read.
+* The oracle, apart, and not read about Q1.
+  * On the 16 corner windows, under the objective of section 9.1, the first-order law settles at an E/R 845 K above that of the saturating law. That is 10.4 times the sandwich standard error of E/R of the expected design at the textbook point at n = 1, and 66 times that at n = 40.
+  * This is a diagnostic of scale: the displacement of a wrong law on these windows under this objective. Its distance from 8750 K compares two different laws. It is not the true value of anything, not the bias of MR in the benchmark, and not an argument for any choice.
+  * The pseudo-true model misses the true steady state by 4.2 mol/m^3 in C_A, 0.84 sigma_CA, and its settled phase keeps an error of 0.86 sigma_CA, where either mismatch alone leaves at most 0.06. Under equal weights over these windows, the fit trades the steady state against the transients.
+  * On these 16 corner windows of the target the kinetic mismatch is the larger scale, as section 7.5 had it. Alone, it moves the trajectories by 3.04 and 2.26 sigma in root mean square, 8.6 and 4.8 times the thermal mismatch alone, and by up to 17.8 and 11.7 sigma. Both are almost gone in the settled phase. These are scales, not thresholds of detection.
+* A sharp, well-located minimum is not a recovered mechanism. MR's objective has one, at J of 2.24 to 2.67, and the first-order law it fits is not the law of the plant.
+
+What M1-E01 leaves open:
+
+* The spread of E/R between runs is not read, and three runs could not settle it.
+* Whether the profiles are narrower than the linearised curvature because the loss is not quadratic or because of the residuals' term is not separated.
+* The information of part 1 is local and assumes the right model.
+* The pseudo-true value is not the limit of the benchmark.
+* How any model will score on the benchmark is untouched.
