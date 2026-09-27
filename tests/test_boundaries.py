@@ -8,6 +8,8 @@ The check parses the source, so an import hidden inside a function is caught too
 import ast
 from pathlib import Path
 
+import pytest
+
 import process_transfer
 
 PACKAGE_ROOT = Path(process_transfer.__file__).parent
@@ -198,3 +200,22 @@ def test_the_available_parts_of_m1_e01_read_only_available_information() -> None
     assert "m1_e01_oracle" not in script.read_text(encoding="utf-8").replace(
         "experiments/m1_e01_oracle.py", ""
     )
+
+
+@pytest.mark.parametrize("name", ["m1_i3_framework_comparison.py", "m1_i3_pilot.py"])
+def test_the_development_scripts_of_i3_read_only_available_information(name: str) -> None:
+    """The comparison of frameworks and the pilot of I3 read the exports of M0 and simulate
+    their synthetic runs with the model side's rollout: they never import the simulation,
+    the generator or the private branch, and never mention what reads a plant
+    configuration file."""
+    script = EXPERIMENTS / name
+    modules, has_relative = _imports(script)
+    assert not has_relative
+    for prefix in (
+        "process_transfer.simulation",
+        "process_transfer.generation",
+        "process_transfer.data.private_store",
+    ):
+        assert not {m for m in modules if m.startswith(prefix)}, prefix
+    found = _names_used(script) & _TRUTH_READERS
+    assert not found, f"{script} mentions {sorted(found)}"
