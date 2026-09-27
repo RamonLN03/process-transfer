@@ -179,7 +179,12 @@ def test_implied_terms_computed_by_hand() -> None:
     assert terms.rate.tolist() == [7.0] and terms.heat_flow.tolist() == [68.0]
     assert terms.temperature_above_coolant.tolist() == [1.0]
     assert terms.rate_bound[0] == rounding_factor(4) * (8.0 + 1.0)
-    assert terms.heat_flow_bound[0] == pytest.approx(rounding_factor(12) * 2.0 * 46.0, rel=1e-15)
+    # abs=0.0: the bound is about 1.2e-13, below the absolute tolerance of 1e-12 that
+    # pytest.approx allows by default, which zero or eight times the bound would pass
+    assert terms.heat_flow_bound[0] > 0.0
+    assert terms.heat_flow_bound[0] == pytest.approx(
+        rounding_factor(12) * 2.0 * 46.0, rel=1e-15, abs=0.0
+    )
 
 
 def test_implied_terms_along_a_prediction_use_the_inputs_held_by_the_window() -> None:

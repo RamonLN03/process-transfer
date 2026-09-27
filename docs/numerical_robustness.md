@@ -484,3 +484,27 @@ Why this changes nothing on ordinary data. The smoke run, the run with training 
 
 * The raised floating-point errors cover the arithmetic of numpy inside the optimiser and inside the rollouts it calls. A failure inside LAPACK, such as a singular value decomposition that does not converge, would raise `LinAlgError`, which is not caught; it has not been seen and would not be silent.
 * Inside a fit, a floating-point error in the code of `solve_ivp` itself ends the start; the same error in a rollout outside a fit gives a warning and then a state that is not finite, recorded as an integration failure. Both are failures, reported differently.
+
+## Addendum of 2026-09-27: the checks that closed I1
+
+Four things found while the criteria of I1 were checked again before its closure (D-033). One is a test corrected here; the others correct or complete earlier sections of this record without rewriting them. None changes the code of I1 or a result obtained with it.
+
+### A second regression test that could not fail
+
+`tests/test_evaluation_physics.py`, `test_implied_terms_computed_by_hand`, compared the rounding bound of the implied heat flow, 1.2256862191861743e-13, with `pytest.approx(..., rel=1e-15)`. The expected value lies below the absolute tolerance of 1e-12 that `pytest.approx` allows by default, so the comparison accepted zero, half the bound and eight times the bound; a reviewing agent showed that a bound multiplied by eight passed every test of I1. It is the mechanism of the second point of the thirteenth review, whose closing sentence, that no other test of I1 compares with an expected value that small, was wrong. The test now asserts that the bound is positive and compares with `abs=0.0`: the value the code computes passes, and zero, half and eight times the bound fail. To look for more of them, the whole suite was run with `pytest.approx` wrapped so as to record every comparison whose tolerance was the default absolute one and whose expected value was so small that it dominated: of the 855 tests, this was the only one.
+
+### The numbers of the silent convergence
+
+The table of the thirteenth review says that before its correction the first start converged at its own starting point with an objective of 7.7e140. Reproduced again on `9ea9a76`, with the window of the regression test (`window_the_start_reproduces(1e-155)` in `tests/test_models_fitting.py`) and warnings ignored: with the declared limit of 100 evaluations, the start converged, status 3 by the tolerance on the step, after two evaluations, at a point that had moved from k0 = 1.2e9 1/s to 1.2000085e9 1/s, with an objective of 2.7e149, and it was selected; with a limit of two evaluations it exhausted its budget. The defect, its cause and its correction are as the review describes them. The objective and the endpoint in its sentence are not those of the test's window, and nothing relies on them.
+
+### A rollout under another integrator
+
+`rollout` returns a record for every failure under LSODA, the integrator of the evaluation (D-032). It accepts the other methods of `solve_ivp`. With a right-hand side that returns a huge but finite derivative, [1e308, 0], two of them raise instead of returning a record: Radau and BDF raise `ValueError: array must not contain infs or NaNs` from inside their linear algebra. With the warnings of the suite, RK45, DOP853, Radau and BDF let `RuntimeWarning: overflow encountered in divide` escape. LSODA ends with the work limit, as recorded. No code of the project rolls out with another method except the tight references of the tests and of the smoke run, on models whose derivatives are ordinary.
+
+### A limitation of the eleventh review that no longer holds
+
+The eleventh review lists as open that squared errors beyond about 1e154 are refused and not scored. The correction of finding D in the twelfth review forms squares on values scaled by their largest magnitude, so errors of 1e154 and more are scored whenever the MSE and the MSE divided by sigma^2 are doubles; what is refused is what is not representable, as the table of the twelfth review states.
+
+### Open
+
+* A rollout with a method other than LSODA can raise on a right-hand side that overflows in the integrator's own arithmetic. Before a learned model is rolled out with another method, the rollout needs the treatment the fit received in the thirteenth review.
