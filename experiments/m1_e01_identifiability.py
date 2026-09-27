@@ -336,11 +336,11 @@ def monte_carlo(blocks: Sequence[WindowInformation]) -> dict[str, object]:
         counts = draws(n, rng)
         errors = {kind: [] for kind in KINDS}
         correlations = {kind: [] for kind in ("exact", "sandwich")}
-        conditions, deficient = [], 0
+        conditions, without = [], {}
         for row in counts:
             design = design_covariance(blocks, row)
             if design.reason is not None:
-                deficient += 1
+                without[design.reason] = without.get(design.reason, 0) + 1
                 continue
             for kind in KINDS:
                 errors[kind].append(list(design.standard_errors(kind).values()))
@@ -348,7 +348,15 @@ def monte_carlo(blocks: Sequence[WindowInformation]) -> dict[str, object]:
                 c = design.correlations(kind)
                 correlations[kind].append([c[0, 1], c[0, 2], c[1, 2]])
             conditions.append(_condition(design.correlations("sandwich")))
-        summary = {"draws": DRAWS, "rank_deficient": deficient, "standard_errors": {}}
+        summary = {
+            "draws": DRAWS,
+            "draws_without_covariance": sum(without.values()),
+            "reasons": without,
+            "standard_errors": {},
+        }
+        if not conditions:
+            found[n] = summary
+            continue
         for kind in KINDS:
             values = np.array(errors[kind])
             summary["standard_errors"][kind] = {
@@ -595,30 +603,98 @@ def compensation(rows: list[dict[str, object]], steady_temperature: float) -> di
         "slope_ln_k_350_holding_k_at_the_steady_temperature_per_K": (
             1.0 / steady_temperature - 1.0 / REFERENCE_TEMPERATURE
         ),
+        "ratio_of_the_slope_of_ln_k_350_to_that_slope": float(
+            np.polyfit(a, ln_k, 1)[0] / (1.0 / steady_temperature - 1.0 / REFERENCE_TEMPERATURE)
+        ),
         "slope_ln_ua_per_K": float(np.polyfit(a, np.log(ua), 1)[0]),
         "relative_range_of_ua": float((ua.max() - ua.min()) / np.median(ua)),
     }
 
 
-def spacing_at_crossings(
-    intervals: dict[str, object], points: Sequence[float]
-) -> dict[str, dict[str, float | None]]:
-    """The distance between the two points of the profile that bracket each crossing: the
-    resolution of that crossing, inside which a difference is not read as curvature."""
+def crossing_bracket(
+    points: Sequence[float],
+    increases: Sequence[float | None],
+    estimate: float,
+    crossing: float,
+    threshold: float,
+) -> dict[str, object]:
+    """Where the true crossing of ``threshold`` lies, from the points of the profile alone.
+
+    On a convex profile the chord lies above the profile, so the interpolated crossing is
+    never outside the true one. The profile also lies above every secant extended beyond its
+    two points, so the true crossing is no further out than the bracketing point outside it,
+    nor than where the secant through the two points inside the bracket, or the one through
+    the two points beyond it, reaches the threshold. The nearest of those is the outer limit,
+    which holds under convexity alone. Where the slopes of those secants do not increase
+    outward the profile is not convex there, and the outer limit is the bracketing point.
+    Distances are half-widths from the free estimate."""
+    side = 1.0 if crossing >= estimate else -1.0
+    # outward coordinate: distance from the estimate on the side of the crossing
+    pts = sorted(
+        (side * (x - estimate), v)
+        for x, v in zip(points, increases, strict=True)
+        if v is not None and side * (x - estimate) >= 0.0
+    )
+    c = side * (crossing - estimate)
+    i = max(k for k, (u, _) in enumerate(pts) if u <= c)
+    if i + 1 >= len(pts):
+        return {"half_width_K": c, "outer_limit_K": None, "convex": None, "spacing_K": None}
+    (ua, va), (ub, vb) = pts[i], pts[i + 1]
+    slopes = [(vb - va) / (ub - ua)]
+    limits = [ub]
+    if i >= 1:
+        up, vp = pts[i - 1]
+        inner = (va - vp) / (ua - up)
+        slopes.insert(0, inner)
+        if inner > 0.0:
+            limits.append(ua + (threshold - va) / inner)
+    if i + 2 < len(pts):
+        un, vn = pts[i + 2]
+        outer = (vn - vb) / (un - ub)
+        slopes.append(outer)
+        if outer > 0.0:
+            limits.append(ub - (vb - threshold) / outer)
+    convex = all(a <= b for a, b in zip(slopes, slopes[1:], strict=False))
+    return {
+        "half_width_K": c,
+        "outer_limit_K": min(limits) if convex else ub,
+        "convex": convex,
+        "spacing_K": ub - ua,
+    }
+
+
+def crossing_resolution(
+    intervals: dict[str, object],
+    points: Sequence[float],
+    increases: Sequence[float | None],
+    estimate: float,
+) -> dict[str, dict[str, dict[str, object] | None]]:
+    """For each interval and side: the interpolated half-width and the outer limit of the
+    true one (``crossing_bracket``)."""
     found = {}
     for label, interval in intervals.items():
         if not isinstance(interval, ProfileInterval):
             continue
-        sides = {}
-        for side, x in (("low", interval.low), ("high", interval.high)):
-            if x is None:
-                sides[side] = None
-                continue
-            below = max(v for v in points if v <= x)
-            above = min(v for v in points if v >= x)
-            sides[side] = above - below
-        found[label] = sides
+        found[label] = {
+            side: None
+            if x is None
+            else crossing_bracket(points, increases, estimate, x, interval.threshold)
+            for side, x in (("low", interval.low), ("high", interval.high))
+        }
     return found
+
+
+def curvature_agrees(entry: dict[str, object]) -> bool | None:
+    """B2 at the threshold 3.84: whether the half-width of 1.96 standard errors with the
+    initial state exact lies, on both sides, between the interpolated half-width and its
+    outer limit. None when it cannot be judged."""
+    expected = entry.get("half_widths_with_the_linearised_curvature_K", {}).get("nominal noise")
+    sides = entry.get("resolution_of_the_crossings", {}).get("nominal noise")
+    if expected is None or not sides or any(v is None for v in sides.values()):
+        return None
+    if any(v["outer_limit_K"] is None for v in sides.values()):
+        return None
+    return all(v["half_width_K"] <= expected <= v["outer_limit_K"] for v in sides.values())
 
 
 def part_two(
@@ -667,9 +743,14 @@ def part_two(
                     "nominal noise": 1.96 * exact,
                     "noise scaled by the lack of fit": 1.96 * fit.objective * exact,
                 }
-            entry["grid_spacing_at_the_crossings_K"] = spacing_at_crossings(
-                summary["intervals"], sorted(points)
+            grid_points = [row["activation"] for row in summary["rows"]]
+            entry["resolution_of_the_crossings"] = crossing_resolution(
+                summary["intervals"],
+                grid_points,
+                [row["increase"] for row in summary["rows"]],
+                fit.parameters.activation_temperature,
             )
+            entry["curvature_agrees_with_the_linearised_one"] = curvature_agrees(entry)
             held = check[0]
             entry["check_point"] = {
                 "activation": fit.parameters.activation_temperature,
@@ -698,14 +779,60 @@ def replicate_differences(profiles: dict[str, dict[str, object]]) -> list[dict[s
     }
     pairs = []
     for (a, (ea, sa)), (b, (eb, sb)) in itertools.combinations(estimates.items(), 2):
+        agree = [profiles[name].get("curvature_agrees_with_the_linearised_one") for name in (a, b)]
         pairs.append(
             {
                 "pair": [a, b],
                 "difference_K": ea - eb,
+                "combined_standard_error_K": math.hypot(sa, sb),
                 "in_combined_standard_errors": (ea - eb) / math.hypot(sa, sb),
+                "read": all(value is True for value in agree),
             }
         )
     return pairs
+
+
+def noise_against_excitation(
+    profiles: dict[str, dict[str, object]], part: dict[str, object] | None
+) -> dict[str, object]:
+    """The reading rule of the registration for E/R. For each pair of runs, the difference of
+    their free estimates divided by the combined a priori sandwich standard errors of their
+    own designs of nine windows at the point of ``part``, sqrt(se_a^2 + se_b^2); and the
+    range of the estimates. Nine is the number of windows of each run of part 2."""
+    if part is None:
+        return {"not computed": "no point"}
+    designs = part.get("designs_of_the_runs_of_part_2") or {}
+    estimates = {
+        name: entry["free_fit"].parameters.activation_temperature
+        for name, entry in profiles.items()
+        if name != POOLED and entry["free_fit"].parameters is not None
+    }
+    a_priori = {
+        name: designs[name]["standard_errors"]["sandwich"]["E/R"]
+        for name in estimates
+        if "standard_errors" in designs.get(name, {})
+    }
+    pairs = []
+    for a, b in itertools.combinations(estimates, 2):
+        if a not in a_priori or b not in a_priori:
+            pairs.append({"pair": [a, b], "not computed": "a design has no covariance"})
+            continue
+        combined = math.hypot(a_priori[a], a_priori[b])
+        difference = estimates[a] - estimates[b]
+        pairs.append(
+            {
+                "pair": [a, b],
+                "difference_K": difference,
+                "combined_a_priori_standard_error_K": combined,
+                "in_combined_a_priori_standard_errors": difference / combined,
+            }
+        )
+    values = list(estimates.values())
+    return {
+        "a_priori_standard_errors_of_the_designs_of_the_runs_K": a_priori,
+        "pairs": pairs,
+        "range_of_the_estimates_K": (max(values) - min(values)) if values else None,
+    }
 
 
 # =========================================================================== #
@@ -1086,6 +1213,10 @@ def main() -> int:
         "part_1_at_the_pooled_estimate": secondary,
         "part_2": profiles,
         "replicate_differences": replicate_differences(profiles),
+        "noise_against_excitation": {
+            "at the textbook point": noise_against_excitation(profiles, primary),
+            "at the pooled estimate": noise_against_excitation(profiles, secondary),
+        },
         "checks": checks,
         "figures": [],
         "seconds": {**timings, "total": time.perf_counter() - started},

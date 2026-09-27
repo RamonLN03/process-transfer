@@ -32,7 +32,9 @@ from process_transfer.models.fitting import (
     StartRecord,
 )
 from process_transfer.models.identifiability import (
+    CHI2_ONE_95,
     NoInformation,
+    profile_interval,
     steady_state_parameters,
     window_information,
 )
@@ -138,7 +140,7 @@ def test_part_one_at_a_point_of_the_modellers_model(available, monkeypatch) -> N
         for name in available.NAMES:
             assert errors["exact"][name] < errors["context"][name] <= errors["sandwich"][name]
         draws = found["p3_draws"][n]
-        assert draws["rank_deficient"] == 0 and draws["draws"] == 25
+        assert draws["draws_without_covariance"] == 0 and draws["draws"] == 25
     one = found["expected_design"][1]["standard_errors"]["sandwich"]["E/R"]
     four = found["expected_design"][4]["standard_errors"]["sandwich"]["E/R"]
     assert four == pytest.approx(one / 2.0, rel=1e-12)
@@ -305,9 +307,15 @@ def test_parts_one_and_two_run_from_end_to_end_on_synthetic_exports(
     assert all(summary["checks"].values())
     assert set(summary["part_2"]) == {"target.p3.e0.x3.n0", "target.p3.e1.x3.n0", "pooled"}
     assert len(summary["replicate_differences"]) == 1
+    rule = summary["noise_against_excitation"]["at the textbook point"]
+    (pair,) = rule["pairs"]
+    assert pair["in_combined_a_priori_standard_errors"] == pytest.approx(
+        pair["difference_K"] / pair["combined_a_priori_standard_error_K"]
+    )
     designs = summary["part_1"]["designs_of_the_runs_of_part_2"]
     assert sum(designs["pooled"]["corner_counts"]) == 6  # three windows in each of two runs
     assert summary["provenance"]["oracle"] is False
+    assert summary["provenance"]["data_dir"] == str((tmp_path / "pt-data").resolve())
     assert sorted(path.name for path in run.glob("*.png")) == sorted(summary["figures"])
 
 
@@ -322,6 +330,7 @@ def test_the_oracle_runs_from_end_to_end_on_the_source_plant(oracle, monkeypatch
     (run,) = (tmp_path / "pt-data" / "experiments" / "m1_e01_oracle").iterdir()
     summary = json.loads((run / "summary.json").read_text(encoding="utf-8"))
     assert summary["provenance"]["contains_hidden_parameters"] is True
+    assert summary["provenance"]["data_dir"] == str((tmp_path / "pt-data").resolve())
     assert all(summary["checks"].values())
     assert len(summary["mismatch_alone"]["K"]["sensor_grid_in_sigmas"]["by_window"]) == 16
     assert sorted(path.name for path in run.glob("*.png")) == sorted(summary["figures"])
@@ -427,3 +436,41 @@ def test_a_profile_is_measured_from_its_free_fit_and_only_when_it_is_the_minimum
     assert "no minimum" in failed["intervals"]["not computed"]
     assert all(row["increase"] is None for row in failed["rows"])
     assert failed["lowest_grid_point"] == 9500.0
+
+
+def test_the_true_crossing_lies_between_the_interpolated_one_and_its_outer_limit(
+    available,  # noqa: ANN001
+) -> None:
+    """On convex profiles, quadratic or steeper, sampled on the fine grid with the estimate
+    among the points, the true half-width lies between the interpolated one and the outer
+    limit, which is inside the bracketing point."""
+    for centre, width, quartic in (
+        (9530.0, 40.0, 0.0),
+        (9512.3, 13.0, 0.0),
+        (9488.0, 25.0, 0.0),
+        (9530.0, 40.0, 3.0),
+        (9471.7, 20.0, 10.0),
+    ):
+        points = sorted({*available.FINE_GRID, centre})
+
+        def profile(a: float, centre: float = centre, width: float = width, q: float = quartic):
+            z = (a - centre) / width
+            return z**2 + q * z**4
+
+        increases = [profile(a) for a in points]
+        interval = profile_interval(points, increases, CHI2_ONE_95)
+        # the true crossing, by bisection on the continuous profile
+        lo, hi = 0.0, 500.0
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            lo, hi = (mid, hi) if profile(centre + mid) < CHI2_ONE_95 else (lo, mid)
+        true = lo
+        found = available.crossing_resolution(
+            {"nominal noise": interval}, points, increases, centre
+        )
+        for side in ("low", "high"):
+            entry = found["nominal noise"][side]
+            assert entry["convex"]
+            assert entry["half_width_K"] <= true + 1e-9
+            assert true <= entry["outer_limit_K"] + 1e-9
+            assert entry["outer_limit_K"] - entry["half_width_K"] <= entry["spacing_K"] + 1e-9

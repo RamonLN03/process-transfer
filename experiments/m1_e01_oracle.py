@@ -401,10 +401,11 @@ def figure_traces(
 
 def main() -> int:
     started = time.perf_counter()
-    found, repository = data_dir().resolve(), repository_root().resolve()
-    if found == repository or repository in found.parents:
+    data_directory, repository = data_dir().resolve(), repository_root().resolve()
+    if data_directory == repository or repository in data_directory.parents:
         raise SystemExit(
-            f"PT_DATA_DIR resolves to {found}, inside the repository {repository}; the outputs "
+            f"PT_DATA_DIR resolves to {data_directory}, inside the repository {repository}; the "
+            "outputs "
             "of the oracle hold hidden parameters and must go to a new directory outside it"
         )
     state = git_state()
@@ -517,7 +518,7 @@ def main() -> int:
         "provenance": {
             "experiment": "M1-E01, part 3 (oracle)",
             "run_id": directory.name,
-            "data_dir": str(found),
+            "data_dir": str(data_directory),
             "started_utc": datetime.now(UTC).isoformat(timespec="seconds"),
             "command": " ".join(sys.argv),
             "git": state,
