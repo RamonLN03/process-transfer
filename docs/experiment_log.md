@@ -1080,3 +1080,135 @@ Phase `grid`, the candidate configurations:
 Phase `cost`: the same 16 configurations and MR, MR_F and BL at 20 and 40 windows on the two synthetic runs, 64 trainings, for the time of a fit where the data of M0 cannot say.
 
 Computation: each training is one process with one thread, in a pool of 14 processes on a machine of 16 logical processors. For each phase the summary records the time of every fit, the wall time and the number of processes. The owner set about eight hours for the fits of the pilot, counted as the sum of the times of its fits. No phase is started whose expected sum would pass what remains of that budget.
+
+#### The pilot: result of the phase `rates`
+
+Run `20260927T220405Z_fc563c8` under `C:/Users/rlnsk/pt-data-m1-i3`, from `fc563c8` with a clean working tree. 36 trainings in 14 processes: 214 s of wall time, 2198 s of fits summed, 61 s on average per training. MR_F on the eight fitting windows of each run took 24 s summed. The export was not written to.
+
+Criterion on V, the single ninth window of each run, of the selected checkpoint, runs e0, e1 and e2, and the step selected; no training failed:
+
+| family | rate | criterion on V | median | selected steps |
+|---|---|---|---|---|
+| BN 16 x 16 | 1e-3 | 1.028, 2.357, 3.361 | 2.357 | 3000, 1000, 1100 |
+| | 3e-3 | 1.036, 2.628, 3.500 | 2.628 | 3000, 300, 400 |
+| | 1e-2 | 1.024, 2.412, 3.726 | 2.412 | 300, 300, 100 |
+| HK 8 | 1e-3 | 0.949, 0.991, 0.988 | 0.988 | 3000, 3000, 2900 |
+| | 3e-3 | 0.949, 0.984, 0.985 | 0.984 | 1300, 2600, 2800 |
+| | 1e-2 | 0.948, 0.977, 0.978 | 0.977 | 200, 1700, 1200 |
+| HU 8 | 1e-3 | 1.393, 1.409, 1.850 | 1.409 | 2800, 300, 400 |
+| | 3e-3 | 1.383, 1.600, 1.715 | 1.600 | 3000, 100, 200 |
+| | 1e-2 | 1.354, 1.670, 1.814 | 1.670 | 1700, 500, 100 |
+| HKU 8 | 1e-3 | 0.947, 0.980, 0.988 | 0.980 | 1800, 3000, 2100 |
+| | 3e-3 | 0.945, 0.978, 0.986 | 0.978 | 200, 2900, 1000 |
+| | 1e-2 | 0.947, 0.972, 0.983 | 0.972 | 100, 2600, 900 |
+
+MR_F on the same window: 2.475, 1.695 and 2.464.
+
+By the declared rule:
+
+* BN takes 1e-3, the lowest median.
+* HK takes 1e-2: 3e-3 lies within 1 % of its median, and the larger rate is taken.
+* HU takes 1e-3.
+* HKU takes 1e-2, all three rates lying within 1 %.
+
+No chosen rate had its last checkpoint selected in two of the three runs, so the later phases keep 3000 steps.
+
+What this does not say. V is one window of 110 readings for each run, so a criterion near 1 is what a model that predicted the true state would score on average, and one window scores above or below it by chance. The medians of HK and HKU over the three rates differ by 1 % or less, less than the difference between runs. The rates of BN and HU are chosen by differences that three windows cannot resolve. The rule was declared to make the choice reproducible, not because these differences mean anything.
+
+#### The pilot: result of the phase `grid`
+
+Run `20260927T221514Z_fc563c8`, from `fc563c8` with a clean working tree, with the rates chosen above: BN 1e-3, HK 1e-2, HU 1e-3, HKU 1e-2. 144 trainings and 27 fits of MR, MR_F and BL, in 14 processes: 639 s of wall time, 7763 s of trainings and 172 s of the other fits summed. The export was not written to.
+
+* No training failed, and no fit of MR, MR_F or BL.
+* The criterion on V of the configuration each family's grid would select, and MR_F's, for each run and budget:
+
+| budget | run | MR_F | BN | HK | HU | HKU |
+|---|---|---|---|---|---|---|
+| 2 | e0 | 2.437 | 4.523 | 1.277 | 2.437 | 1.271 |
+| 2 | e1 | 2.482 | 5.737 | 1.024 | 2.482 | 1.019 |
+| 2 | e2 | 2.519 | 3.132 | 1.004 | 2.519 | 1.006 |
+| 5 | e0 | 2.334 | 5.666 | 0.995 | 1.911 | 0.986 |
+| 5 | e1 | 2.046 | 4.176 | 1.057 | 1.790 | 1.037 |
+| 5 | e2 | 3.649 | 0.995 | 0.940 | 1.600 | 0.949 |
+| 9 | e0 | 2.475 | 1.027 | 0.940 | 1.381 | 0.939 |
+| 9 | e1 | 1.695 | 1.185 | 0.977 | 1.409 | 0.972 |
+| 9 | e2 | 2.464 | 2.291 | 0.978 | 1.850 | 0.975 |
+
+* The first checkpoint was the one selected:
+  * for HU, in all 12 trainings at two windows, so its grid ends as MR_F there, and in 1 of 12 at five;
+  * for BN, in 5 of 12 at two windows and 4 of 12 at five. BN's first checkpoint is a model whose state does not move.
+* The last checkpoint was the one selected in at most 3 of 12 trainings of any family and budget.
+* The penalty of 1e-2 against 1e-4, at the same size, run and budget, gave the lower criterion:
+  * HK: 11 of 18, median difference -0.005;
+  * HKU: 10 of 18, median difference -0.004;
+  * BN: 8 of 18, with 4 ties;
+  * HU: 4 of 18, with 6 ties.
+* The larger size against the smaller:
+  * HKU: 12 of 18, median difference -0.005;
+  * HK: 9 of 18;
+  * BN: 8 of 18;
+  * HU: 3 of 18.
+* The largest difference between the training scheme and the reference on V, over every checkpoint:
+  * 0.06 sigma, for HU 8 with lambda 1e-2 on e1 at two windows, at step 1400, a checkpoint that was not selected;
+  * at most 7e-4 sigma at the selected checkpoints of every family.
+* Time of one training, median over its configurations, with 14 at once:
+
+| budget | BN | HK | HU | HKU | MR | MR_F | BL |
+|---|---|---|---|---|---|---|---|
+| 2 | 20 s | 24 s | 23 s | 39 s | 1.9 s | 1.2 s | 2.0 s |
+| 5 | 73 s | 50 s | 52 s | 82 s | 7.6 s | 6.3 s | 6.0 s |
+| 9 | 98 s | 60 s | 56 s | 79 s | 12.2 s | 10.3 s | 9.9 s |
+
+  Of a training's time, compilation takes 5 to 14 s, the 3000 steps 4 to 30 ms each, and the 31 checkpoints on V at most 5 s.
+
+What this can and cannot say:
+
+* V is one window per run and budget here, 110 readings. The criteria near one of HK and HKU, and the differences between configurations, are within what one window scores by chance. They choose nothing and rank nothing.
+* On these three runs of M0, the kinetic factor lowered the criterion on V well below MR_F's at every budget. The thermal factor, alone, did not lower it at two windows, and lowered it less at five and nine. That agrees with what the plan expected from the size of the two mismatches on the target (section 8.2). It is an observation on development data, not a result.
+* BN at two and five windows often did no better on V than a state that does not move. Its criteria at nine windows run from 1.03 to 2.29.
+* Neither the penalty nor the size separated the configurations of any family beyond these windows' resolution. The pilot gives no evidence for changing the owner's proposal, and none that four configurations are needed rather than two.
+
+#### The pilot: result of the phase `cost`, and an estimate of the benchmark
+
+Run `20260927T222728Z_fc563c8`, from `fc563c8` with a clean working tree, with the same rates. 64 trainings and 12 fits of MR, MR_F and BL on the two synthetic runs, in 14 processes: 708 s of wall time, 7304 s of trainings and 782 s of the other fits summed. No training failed, and no fit of MR, MR_F or BL.
+
+Time of one fit, median over its configurations and the two runs, with 14 at once:
+
+| budget | BN | HK | HU | HKU | MR | MR_F | BL |
+|---|---|---|---|---|---|---|---|
+| 20 | 131 s | 66 s | 75 s | 107 s | 56 s | 38 s | 43 s |
+| 40 | 185 s | 99 s | 99 s | 124 s | 95 s | 81 s | 78 s |
+
+The synthetic runs are simulated from a hybrid with a strong kinetic factor, so their criteria do not describe the target. On them, at 40 windows:
+
+* MR_F's criterion on V is 6.6 and 5.4;
+* HK and HKU reach 1.00 to 1.03, HU 3.1 to 3.8 and BN 1.1 to 1.7.
+
+A finding about the training scheme. On the run e9001 at 20 windows, the selected checkpoints of HK and HKU differ from the reference rollout on V by 0.046 to 0.055 sigma, and those of HU by 0.008 to 0.010; at the start, MR_F, by 9e-4. On the data of M0 no selected checkpoint passed 7e-4 sigma. HK 8 with lambda 1e-4 on that run was trained again, which gave the same selection bit for bit, and its rollouts were compared window by window:
+
+* The difference comes from the windows at the corner where every input is high. There the planted plant reaches 386 K, above the 376 K the target reaches under P3, C_A falls to 25 mol/m^3, and the model's dynamics are fast: the largest eigenvalue of its Jacobian is 0.16 per second, 0.48 times a step of 3 s.
+* The windows of F at that corner differ as much, so the training fitted a scheme that departs from its equation there.
+* The largest difference against the reference, in sigmas, on those windows, for 1, 2, 4 and 8 steps per row: 1.9 or 2.0, 5.3e-2 to 5.9e-2, 2.5e-3 to 2.7e-3, and 1.2e-4 to 1.3e-4. On every other window two steps stay below 3e-3 sigma.
+* Selection and evaluation use the reference rollout, so what is scored is the equation. The cost is that training can tune a model to its scheme where the dynamics are fast.
+* A proposal for the registration: four steps per row, which keep the scheme within 3e-3 sigma of its equation on the fastest windows met here. It doubles the time of the steps, and it has not been run.
+
+Summed over the three phases, the pilot's fits took 18 243 s, 5.1 hours, within the eight the owner set, in 26 minutes of wall time. The comparison of frameworks took 406 s more, from its clean commit.
+
+An estimate of the benchmark as the owner sized it: four neural families, four configurations each, ten replicates and seven conditions of training, A10 at b = 2, 5, 10, 20 and 40 and A5 at b = 10 and 40, so 1120 trainings of 3000 steps; and MR, MR_F and BL at each replicate and condition, 210 fits. From the median times above:
+
+| | trainings | MR, MR_F, BL | sum | wall time with 14 processes |
+|---|---|---|---|---|
+| two steps per row, as in the pilot | 27.1 h | 2.0 h | 29.2 h | about 2.1 h |
+| four steps per row, as proposed | 48.0 h | 2.0 h | 50.0 h | about 3.6 h |
+
+With four steps per row the trainings of each family come to BN 18.1 h, HK 8.6 h, HU 8.6 h and HKU 12.7 h.
+
+Its assumptions:
+
+* this laptop, an Intel Core i7-13620H with 10 cores and 16 threads, running 14 processes of one thread each, as in the pilot. The times were measured under that load, in runs of 4 to 12 minutes; hours of it could run slower if the processor throttles;
+* b = 10 costs what the pilot's nine windows cost, F of eight windows, with the time of validation doubled for V of two windows;
+* A5 costs what A10 costs at the same budget;
+* the times at 20 and 40 windows come from the synthetic runs, whose fastest windows are faster than the target's;
+* it leaves out the generation of the data sets, the evaluation on the test sets, the oracle diagnostics, OF and the analysis. The evaluation is one reference rollout per test window and model, a few hundredths of a second each.
+
+Reading of the estimate: the benchmark fits within the owner's orientation of 48 to 72 hours of local computing, however that is counted, with room to spare. Nothing measured here argues for reducing the ten replicates or the four configurations, and nothing in the pilot argues for changing the owner's proposal of sizes and penalties.

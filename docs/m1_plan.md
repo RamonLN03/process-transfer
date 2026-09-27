@@ -1,6 +1,6 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27 and awaits review (section 13, D-034). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27, corrected after Codex's review, and awaits the owner's acceptance (section 13, D-034). I3, the training framework and the learned models, was implemented on 2026-09-27 and 2026-09-28 and awaits review (section 13, D-035, D-036). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
 
 ## 1. The question
 
@@ -494,9 +494,50 @@ The decision on E/R was not left to the diagnostic: Q1 was answered in D-030.
 
 Codex reviewed I2 at `129063c` and reported two defects, neither of which acted in the registered run. One was an overflow that could drop the cost of the initial state from the context information. The other was a bracket of B2 accepted where the sampled profile contradicts the convexity it assumes. Both were reproduced and corrected, with regression tests, in `ddd884c` (`docs/numerical_robustness.md`, fifteenth review; D-034, dated clarification). Parts 1 and 2 were run again from that clean commit. Part 2 is the same bit for bit. In part 1 only rounding differs, at most 3e-11 relative in the context bound, and every check, verdict and reading of the registered run stands (experiment log, the entry after M1-E01). I2 still awaits the owner's acceptance.
 
+Status of I3 on 2026-09-28. The owner authorised I3 on 2026-09-27, once the corrections of I2 were published and their CI verified, and while I2 awaits acceptance. I3 is implemented and its development runs are done. It awaits review and is not accepted.
+
+* The framework: JAX, from a short comparison with PyTorch on development data (D-035; `28e0936`, experiment log).
+* The models:
+  * BL, in `models/linear.py` (`2e61894`);
+  * BN, HK, HU and HKU and their training, in `models/learned.py` and `models/training.py` (`f23b419`).
+
+  D-036 records the choices made where the plan leaves the how open.
+* The pilot, `experiments/m1_i3_pilot.py`, declared in the experiment log in `fc563c8` before it ran. It covers the rates of Adam, the owner's candidate configurations at 2, 5 and 9 windows of the runs of M0, and the cost of a fit at 20 and 40 windows on synthetic runs. It is exploratory; the experiment log has its numbers. From the measured times the benchmark as the owner sized it is estimated at about 50 hours of fits with four steps of the training scheme per row, about 3.6 hours of wall time with 14 processes, and 29 hours with the two steps the pilot used, on this machine.
+
+Where the criteria of section 13 for I3 are met:
+
+* The comparison of two frameworks and the decision: D-035 and the experiment log.
+* BL, BN, HK, HU and HKU, with tests: `tests/test_models_linear.py`, `tests/test_models_learned.py`, `tests/test_models_training.py` and `tests/test_hybrid_recovery.py`.
+* HK with its correction at the identity equals MR_F to the precision of the integrator: `test_a_hybrid_at_the_identity_is_its_mechanistic_model`, with HU and HKU, E/R estimated or held. Every training's first checkpoint scores MR_F's criterion on V.
+* Gradients agree with finite differences: `test_gradients_agree_with_central_differences`, for the four families.
+* Recovery on data simulated by the modeller's model with a planted correction, without the truth, in two separate ways, the trajectories and the mechanism (`tests/test_hybrid_recovery.py`):
+  * the kinetic factor itself, with the parameters held;
+  * the total rate when fitted jointly, noise-free and with the noise of D-020;
+  * the total heat flow of HU, held and joint;
+  * both totals for HKU.
+* BL's convention holds on a rank-deficient case: `tests/test_models_linear.py`.
+* Tests pass on CI with the new dependency: the continuous integration of `fc563c8` passed on Python 3.12 and 3.13, with JAX, and in Docker.
+* The cost of one fit is measured on development data: the pilot, at 2, 5 and 9 windows on the runs of M0, and at 20 and 40 windows on synthetic runs.
+
+Also required by the owner for I3, and where it stands:
+
+* changes of the inputs integrated correctly: `test_the_rollout_of_the_training_follows_the_inputs_row_by_row` and `test_the_scheme_integrates_a_linear_equation_to_its_order`;
+* the identity does not block learning: `test_the_identity_does_not_block_the_gradient`;
+* physical bounds, domains and failures: `test_the_hybrids_are_physically_valid_by_construction` and the tests of failures in `tests/test_models_training.py`;
+* the common reference integrator in selection and evaluation: `test_the_selected_model_is_evaluated_by_the_reference_rollout`;
+* the scripts of I3 read nothing of the truth: `tests/test_boundaries.py`.
+
+What I3 leaves open, for the registration of the benchmark (I5):
+
+* the lists of configurations, the rates, the number of steps of the optimiser, the steps of the training scheme per row (four proposed, D-036) and the base of the seeds, which the pilot informs and does not fix;
+* whether a training that fails at a step keeps its earlier checkpoints (D-036);
+* the budgets of the secondary analysis with E/R held.
+
+A5 is not tried here: it waits for the verification of P3 at A5 (I4).
+
 ## 14. The next iteration, recommended
 
-I2 is implemented and run and awaits review (section 13). Once it is accepted, the next iteration is I3, the training framework and the learned models, as section 13 lists them. The recommendation below, I2, is kept as it was written.
+I2 is implemented, run and corrected, and awaits the owner's acceptance. I3 was implemented on the owner's authorisation while I2 awaits it, and awaits review (section 13). Once both are accepted, the next iteration is I4: the lead and the amplitude A5 in the grammar of identities and the data contract, and the verification of P3 at A5, M1-E02, registered before it is run. The recommendation below, I2, is kept as it was written.
 
 I2, the identifiability diagnostic M1-E01 of section 7.4. I1 is closed (D-033), and I2 needs nothing that I1 did not build: the fit of MR with E/R estimated or held fixed, its covariance with and without the error of the initial state, rollouts with sensitivities, and the windows of the exports of M0. It needs no new dependency and no new data. Concretely:
 
@@ -567,3 +608,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 7, 2026-09-27.** Status only. The header, section 13 and section 14 record that I2 is implemented and run and awaits review. No part of the design changed. D-034 records a precision on section 7.4, whose text is kept. Two of the reasons it gives for the pseudo-true value to differ from the large-budget limit of the benchmark, the draws with replacement and the prefixes of runs, do not act in that limit.
 
 **Revision 8, 2026-09-27.** Status only. Section 13 records the correction of I2 after Codex's review of `129063c`. No part of the design changed.
+
+**Revision 9, 2026-09-28.** Status only. The header, section 13 and section 14 record that I3 is implemented, with the framework chosen (D-035) and its choices recorded (D-036), and awaits review. Section 8.6's open question of the framework is answered by D-035; its text is kept. No part of the design changed.

@@ -480,3 +480,5 @@ BL (`models.linear`):
   * The coordinates are made without units: states in noise levels, time in units of 60 s.
   * The trust region is not rescaled by the Jacobian. On noise-free data of a linear plant the rescaled region left the basin of the true values for a stiff local minimum, and the unscaled one reached them in 11 evaluations (`tests/test_models_linear.py`).
 * `fitting.WindowLoss`, the loss of MR, takes the model at theta from a builder, so that BL uses the same loss; MR's fits are unchanged bit for bit.
+
+Clarification of 2026-09-28, after the pilot of I3 (experiment log, "Development runs of I3"). The pilot ran with two steps of the training scheme per row. On a synthetic run hotter than the target, the selected checkpoints of HK and HKU differed from the reference on V by about 0.05 sigma, at windows where the model's fastest eigenvalue is 0.48 times a step. Four steps per row keep those windows within 3e-3 sigma. The default of `TrainingSettings` stays at two, as the pilot ran; four is proposed for the registration of the benchmark, which fixes it. Four steps double the time of the steps, and the estimate of the benchmark includes them.
