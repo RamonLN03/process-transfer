@@ -314,3 +314,45 @@ def test_the_interval_says_why_a_side_has_no_crossing() -> None:
 def test_invalid_profiles_are_refused(grid, increases, threshold, message) -> None:  # noqa: ANN001
     with pytest.raises(ValueError, match=message):
         profile_interval(grid, increases, threshold)
+
+
+@pytest.mark.parametrize(
+    ("noise", "readings", "message"),
+    [
+        ((1e200, 1e200), 10, r"sigma\^2 is"),  # the variance overflows
+        ((1e-200, 0.5), 10, r"sigma\^2 is"),  # the variance underflows to zero
+        ((5.0, 0.5), 10**400, "beyond the largest double"),
+    ],
+)
+def test_noise_levels_whose_variance_is_not_a_double_are_refused(noise, readings, message) -> None:  # noqa: ANN001
+    """Finite noise levels can still give a variance or its inverse that is not a positive
+    double; the solve that forms the context information would then fail or divide by zero
+    (the review of I2 before its registration)."""
+    with pytest.raises(ValueError, match=message):
+        window_information(model_at(POINT), STATE, corner_inputs(SIGNS[0]), PERIOD, noise, readings)
+
+
+def test_a_design_with_fewer_rows_than_parameters_is_rank_deficient() -> None:
+    """One scored reading gives two rows for three parameters: numpy returns two singular
+    values, and the design is rank deficient, not judged on the smaller of two."""
+    short = window_information(model_at(POINT), STATE, corner_inputs(SIGNS[0])[:1], PERIOD, SIGMA)
+    assert isinstance(short, WindowInformation) and short.rows == 2
+    design = design_covariance([short])
+    assert design.reason == "the design is rank deficient" and len(design.singular_values) == 2
+
+
+def test_weights_whose_rows_overflow_are_refused() -> None:
+    block = information(SIGNS[0], POINT)
+    with pytest.raises(ValueError, match="beyond the largest double"):
+        design_covariance([block, block], weights=[1e306, 1e306])
+
+
+def test_the_sandwich_is_formed_as_the_covariance_of_a_fit_forms_it() -> None:
+    """exact^-1 + exact^-1 excess exact^-1, without forming the middle S^T Sigma S."""
+    block = information(SIGNS[1], POINT)
+    design = design_covariance([block])
+    assert np.allclose(block.meat, block.exact + block.excess, rtol=0.0, atol=0.0)
+    bread = np.linalg.inv(block.exact)
+    units = np.array([1.0, 350.0, 1.0])
+    expected = (bread @ block.meat @ bread) * np.outer(units, units)
+    assert np.allclose(design.sandwich, expected, rtol=1e-8, atol=0.0)

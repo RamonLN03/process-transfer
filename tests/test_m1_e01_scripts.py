@@ -19,11 +19,28 @@ from process_transfer.data import database
 from process_transfer.data.export import export_dataset
 from process_transfer.data.parquet_store import DatasetWriter, open_dataset
 from process_transfer.data.records import RunRecord, known_plant
+from process_transfer.evaluation.outcomes import TrainingFailure
 from process_transfer.evaluation.plant import KnownPlant
 from process_transfer.evaluation.windows import P3_LAYOUT, find_windows, window_data
-from process_transfer.models.fitting import DEFAULT_STARTS, FitSettings
-from process_transfer.models.identifiability import steady_state_parameters
-from process_transfer.models.mechanistic import MechanisticModel, modeller_values
+from process_transfer.models.fitting import (
+    BUDGET_EXHAUSTED,
+    CONVERGED,
+    DEFAULT_FIT_SETTINGS,
+    DEFAULT_STARTS,
+    FitResult,
+    FitSettings,
+    StartRecord,
+)
+from process_transfer.models.identifiability import (
+    NoInformation,
+    steady_state_parameters,
+    window_information,
+)
+from process_transfer.models.mechanistic import (
+    MechanisticModel,
+    MechanisticParameters,
+    modeller_values,
+)
 from process_transfer.simulation.cstr_true import conductance, reaction_rate
 from process_transfer.simulation.protocols import a10_amplitudes, corner_levels, p3_segments
 
@@ -135,7 +152,7 @@ def test_the_profile_of_the_modellers_own_data_finds_its_activation(available, m
     monkeypatch.setattr(available, "GRID", (8700.0, 9200.0, 9700.0))
     monkeypatch.setattr(available, "_WINDOWS", {"r": data, available.POOLED: data})
     monkeypatch.setattr(available, "_CONTEXT", {"known": KNOWN, "modeller": MODELLER})
-    profiles, free = available.part_two(KNOWN, 1, None)
+    profiles, free = available.part_two(KNOWN, 1, None, float(STATE[1]))
     for name in ("r", available.POOLED):
         entry = profiles[name]
         assert free[name].parameters.activation_temperature == pytest.approx(9200.0, abs=0.1)
@@ -155,7 +172,7 @@ def test_the_profile_marks_a_minimum_at_the_end_of_the_grid(available, monkeypat
     monkeypatch.setattr(available, "GRID", (7000.0, 7500.0, 8000.0))
     monkeypatch.setattr(available, "_WINDOWS", {"r": data})
     monkeypatch.setattr(available, "_CONTEXT", {"known": KNOWN, "modeller": MODELLER})
-    profiles, _ = available.part_two(KNOWN, 1, None)
+    profiles, _ = available.part_two(KNOWN, 1, None, float(STATE[1]))
     profile = profiles["r"]["profile"]
     assert profile["lowest_grid_point"] == 8000.0
     assert profile["lowest_at_an_end_of_the_grid"]
@@ -308,3 +325,105 @@ def test_the_oracle_runs_from_end_to_end_on_the_source_plant(oracle, monkeypatch
     assert all(summary["checks"].values())
     assert len(summary["mismatch_alone"]["K"]["sensor_grid_in_sigmas"]["by_window"]) == 16
     assert sorted(path.name for path in run.glob("*.png")) == sorted(summary["figures"])
+
+
+# --------------------------------------------------------------------------- #
+# Failures are records, as the registration says
+# --------------------------------------------------------------------------- #
+
+
+def with_corner_replaced(available, monkeypatch, position, replacement):  # noqa: ANN001, ANN201
+    original = available.corner_blocks
+
+    def replaced(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        blocks = original(*args, **kwargs)
+        blocks[position] = replacement
+        return blocks
+
+    monkeypatch.setattr(available, "corner_blocks", replaced)
+
+
+def test_a_corner_without_information_leaves_only_its_designs_without_covariance(
+    available,
+    monkeypatch,
+    tmp_path,  # noqa: ANN001
+) -> None:
+    monkeypatch.setattr(available, "WINDOW_COUNTS", (1, 4))
+    monkeypatch.setattr(available, "DRAWS", 10)
+    with_corner_replaced(available, monkeypatch, 0, NoInformation("forced for a test"))
+    avoids = np.zeros(16)
+    avoids[1] = 2.0  # a run that never went to the first corner
+    designs = {"avoids": avoids, "holds": np.ones(16)}
+    found = available.part_one(KNOWN, STATE, np.array(SIGMA), 8750.0, "t", True, designs)
+    assert found["failed_windows"] == [{"corner": "++++", "reason": "forced for a test"}]
+    assert found["per_corner"]["++++"] == {"reason": "forced for a test"}
+    assert "standard_errors" in found["per_corner"]["+++-"]
+    assert found["resolution"]["corners_compared"] == 15
+    assert not found["resolution"]["resolved"]
+    assert "reason" in found["expected_design"][1] and "reason" in found["p3_draws"]
+    assert "standard_errors" in found["designs_of_the_runs_of_part_2"]["avoids"]
+    assert "reason" in found["designs_of_the_runs_of_part_2"]["holds"]
+    assert available.figure_standard_errors(found, tmp_path) is None
+    assert available.figure_corners(found, tmp_path).exists()
+
+
+def test_a_rank_deficient_corner_is_reported_and_left_out_of_the_resolution(
+    available,
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    monkeypatch.setattr(available, "WINDOW_COUNTS", (1,))
+    point = steady_state_parameters(KNOWN, STATE, 8750.0)
+    steady = window_information(
+        MechanisticModel("m", KNOWN, point), STATE, np.tile(NOMINAL, (110, 1)), 6.0, SIGMA
+    )
+    with_corner_replaced(available, monkeypatch, 3, steady)
+    found = available.part_one(KNOWN, STATE, np.array(SIGMA), 8750.0, "t", False)
+    label = "".join("+" if s > 0 else "-" for s in available.CORNERS[3])
+    assert found["per_corner"][label]["reason"] == "the design is rank deficient"
+    assert found["resolution"]["corners_compared"] == 15 and not found["resolution"]["resolved"]
+    assert "standard_errors" in found["expected_design"][1]
+
+
+def fake_fit(objective: float | None, activation: float) -> FitResult:
+    parameters = MechanisticParameters.from_k_350(0.0177, activation, 1330.0)
+    outcome = CONVERGED if objective is not None else BUDGET_EXHAUSTED
+    record = StartRecord(
+        start=DEFAULT_STARTS[0],
+        initial=parameters,
+        outcome=outcome,
+        message="",
+        final=parameters,
+        objective=2.0 if objective is None else objective,
+        singular_values=(1.0, 1.0, 1.0),
+        evaluations=1,
+        jacobian_evaluations=1,
+        seconds=0.0,
+    )
+    failure = None if objective is not None else TrainingFailure("no start converged")
+    selected = 0 if objective is not None else None
+    return FitResult("f", (), 990, DEFAULT_FIT_SETTINGS, parameters, (record,), selected, failure)
+
+
+def test_a_profile_is_measured_from_its_free_fit_and_only_when_it_is_the_minimum(
+    available,
+    monkeypatch,  # noqa: ANN001
+) -> None:
+    monkeypatch.setattr(available, "GRID", (9000.0, 9500.0, 10000.0))
+    points = {9000.0: fake_fit(2.4, 9000.0), 10000.0: fake_fit(2.45, 10000.0)}
+    free = fake_fit(2.3, 9480.0)
+    good = available.summarise_profile(
+        free, {**points, 9500.0: fake_fit(2.301, 9500.0), 9480.0: fake_fit(2.3, 9480.0)}, 990, 355.0
+    )
+    assert good["free_fit_is_the_minimum"] and "nominal noise" in good["intervals"]
+    below = available.summarise_profile(
+        free, {**points, 9500.0: fake_fit(2.29, 9500.0), 9480.0: fake_fit(2.3, 9480.0)}, 990, 355.0
+    )
+    assert below["free_fit_is_the_minimum"] is False
+    assert "not its minimum" in below["intervals"]["not computed"]
+    failed = available.summarise_profile(
+        fake_fit(None, 9480.0), {**points, 9500.0: fake_fit(2.3, 9500.0)}, 990, 355.0
+    )
+    assert failed["minimum_objective"] is None and failed["free_fit_is_the_minimum"] is None
+    assert "no minimum" in failed["intervals"]["not computed"]
+    assert all(row["increase"] is None for row in failed["rows"])
+    assert failed["lowest_grid_point"] == 9500.0

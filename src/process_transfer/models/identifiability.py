@@ -26,7 +26,8 @@ state, three p x p matrices:
     exact    S^T S                          information about theta with x0 known exactly
     context  S^T (I + G Sigma_0 G^T)^-1 S   information about theta when x0 is known only
                                             through its n context readings
-    meat     S^T (I + G Sigma_0 G^T) S      the middle of the sandwich of the estimator used
+    excess   C Sigma_0 C^T, C = S^T G       what the error of the context mean adds to the
+                                            middle of the sandwich, S^T (I + G Sigma_0 G^T) S
 
 ``context`` is the Schur complement of theta in the Fisher information of (theta, x0) from
 the scored readings and the context mean together; Woodbury's identity turns it into the
@@ -35,14 +36,23 @@ C = S^T G, which needs only a 2 x 2 solve. Its inverse is the Cramer-Rao bound, 
 point and to first order, of an estimator that treats x0 as unknown and learns it from the
 context. The estimator of M1 does not: it fixes x0 at the context mean and weights the
 scored readings by 1 / sigma^2, and its covariance is the sandwich exact^-1 meat exact^-1,
-which ``fitting.covariance`` computes on real windows. In the order of positive
-semi-definite matrices
+which ``fitting.covariance`` computes on real windows and which is formed here the same way,
+exact^-1 + exact^-1 excess exact^-1. In the order of positive semi-definite matrices
 
     exact^-1  <=  context^-1  <=  exact^-1 meat exact^-1,
 
 the first gap being what ten context readings cannot tell about x0, the second what the
 rule of the estimator adds to it. All three assume that the model is right, and all three
-are local.
+are local. The bound treats the initial state of each window as a free nuisance known only
+through its context, not as the model's steady state, which depends on theta: it is the
+bound for estimators that leave the initial state free.
+
+Accuracy. The rank is judged without forming S^T S (below), but the context information is
+S^T S minus a correction, so it carries a relative error of about the machine epsilon times
+the square of the condition number of S: negligible for the condition numbers of the windows
+of P3, of the order of 10^2 to 10^3, and the reason why a design whose S is close to rank
+deficient can be reported as having a singular context information rather than as rank
+deficient.
 
 A design (``design_covariance``). Windows are independent, since their contexts are
 different readings and the noise is independent from sample to sample (D-020), so the
@@ -137,11 +147,16 @@ class WindowInformation:
     """What one window tells about theta, in the coordinates of the model's parameters."""
 
     rows: int  # of S: one per scored reading and channel
-    root: FloatArray  # R, p x p, with R^T R = S^T S
+    root: FloatArray  # R, with R^T R = S^T S; p x p when S has at least p rows
     exact: FloatArray  # S^T S
     context: FloatArray  # S^T (I + G Sigma_0 G^T)^-1 S
-    meat: FloatArray  # S^T (I + G Sigma_0 G^T) S
+    excess: FloatArray  # C Sigma_0 C^T, C = S^T G
     end_state: FloatArray  # the predicted state at the last scored instant
+
+    @property
+    def meat(self) -> FloatArray:
+        """S^T (I + G Sigma_0 G^T) S, the middle of the sandwich."""
+        return self.exact + self.excess
 
 
 @dataclass(frozen=True)
@@ -169,6 +184,28 @@ def window_information(
         raise ValueError(f"context_readings must be a positive integer, got {context_readings!r}")
     if context_readings < 1:
         raise ValueError(f"context_readings must be a positive integer, got {context_readings!r}")
+    try:
+        readings = float(context_readings)
+    except OverflowError:
+        raise ValueError(
+            f"context_readings = {context_readings!r} is beyond the largest double"
+        ) from None
+    # the covariance of the context mean and its inverse enter the information; finite noise
+    # levels can still give a variance, or an inverse, that is not a positive double
+    with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
+        variance = sigma**2
+        context_variance = variance / readings  # the diagonal of Sigma_0, in state units
+        precision_diagonal = readings / variance  # of Sigma_0^-1
+    for name, values in (
+        ("sigma^2", variance),
+        ("sigma^2 / context_readings", context_variance),
+        ("context_readings / sigma^2", precision_diagonal),
+    ):
+        if not (np.all(np.isfinite(values)) and np.all(values > 0.0)):
+            raise ValueError(
+                f"with noise levels {sigma.tolist()} and {context_readings} context readings, "
+                f"{name} is {values.tolist()}, not two positive doubles"
+            )
     result = rollout(
         model,
         initial_state,
@@ -184,28 +221,34 @@ def window_information(
     with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
         s = (result.parameter_sensitivities / sigma[None, :, None]).reshape(-1, p)
         g = (result.initial_state_sensitivities / sigma[None, :, None]).reshape(-1, 2)
-        context_covariance = np.diag(sigma**2) / context_readings  # Sigma_0, in state units
         exact = s.T @ s
         coupling = s.T @ g  # C = S^T G
         gram = g.T @ g
-        meat = exact + coupling @ context_covariance @ coupling.T
-    for name, values in (("S", s), ("G", g), ("S^T S", exact), ("S^T G", coupling)):
+        excess = coupling @ np.diag(context_variance) @ coupling.T
+    for name, values in (
+        ("S", s),
+        ("G", g),
+        ("S^T S", exact),
+        ("S^T G", coupling),
+        ("G^T G", gram),
+        ("C Sigma_0 C^T", excess),
+    ):
         if not np.all(np.isfinite(values)):
             return NoInformation(f"{name} of the normalised sensitivities is not representable")
     with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
-        precision = np.diag(context_readings / sigma**2)  # Sigma_0^-1
-        correction = coupling @ np.linalg.solve(precision + gram, coupling.T)
+        # Sigma_0^-1 + G^T G is a sum of a positive diagonal matrix and a positive
+        # semi-definite one, so it is positive definite and the solve is defined
+        correction = coupling @ np.linalg.solve(np.diag(precision_diagonal) + gram, coupling.T)
         context = exact - correction
         root = np.linalg.qr(s, mode="r")
-    for name, values in (("the context information", context), ("the meat", meat)):
-        if not np.all(np.isfinite(values)):
-            return NoInformation(f"{name} is not representable")
+    if not np.all(np.isfinite(context)):
+        return NoInformation("the context information is not representable")
     return WindowInformation(
         rows=s.shape[0],
         root=root,
         exact=_symmetric(exact),
         context=_symmetric(context),
-        meat=_symmetric(meat),
+        excess=_symmetric(excess),
         end_state=np.array(result.states[-1]),
     )
 
@@ -273,18 +316,21 @@ def design_covariance(
         raise ValueError(f"{p} parameters, and E/R is {'estimated' if estimated else 'fixed'}")
     units = np.array([1.0, REFERENCE_TEMPERATURE, 1.0] if estimated else [1.0, 1.0])
     used = [(w, b) for w, b in zip(counts, blocks, strict=True) if w > 0.0]
+    rows = math.fsum(float(w) * b.rows for w, b in used)  # Python floats: inf, no warning
+    if not math.isfinite(rows):
+        raise ValueError(f"the weights {weights!r} give a number of rows beyond the largest double")
     stacked = np.vstack([math.sqrt(w) * b.root for w, b in used])
-    rows = sum(w * b.rows for w, b in used)
     _, singular, right = np.linalg.svd(stacked, full_matrices=False)
     values = tuple(float(v) for v in singular)
-    # numpy's convention for the numerical rank, with the rows of the design's S
-    if singular[-1] <= singular[0] * max(rows, p) * np.finfo(np.float64).eps:
+    # numpy's convention for the numerical rank, with the rows of the design's S; fewer
+    # singular values than parameters means fewer rows than parameters
+    if len(singular) < p or singular[-1] <= singular[0] * max(rows, p) * np.finfo(float).eps:
         return DesignCovariance(names, values, None, None, None, "the design is rank deficient")
     with np.errstate(over="ignore", invalid="ignore", under="ignore", divide="ignore"):
         bread = right.T @ np.diag(1.0 / singular**2) @ right
         context = sum(w * b.context for w, b in used)
-        meat = sum(w * b.meat for w, b in used)
-        sandwich = bread @ meat @ bread
+        excess = sum(w * b.excess for w, b in used)
+        sandwich = bread + bread @ excess @ bread  # as fitting.covariance forms it
     eigenvalues, vectors = np.linalg.eigh(_symmetric(context))
     if not eigenvalues[-1] > 0.0 or eigenvalues[0] <= eigenvalues[-1] * p * np.finfo(float).eps:
         reason = "the information with the initial state from its context is singular"

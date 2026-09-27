@@ -59,7 +59,7 @@ from matplotlib.ticker import ScalarFormatter  # noqa: E402
 
 from process_transfer.config import ModellerConfig  # noqa: E402
 from process_transfer.data.export import Export, open_export_directory  # noqa: E402
-from process_transfer.data.paths import repository_root  # noqa: E402
+from process_transfer.data.paths import data_dir, repository_root  # noqa: E402
 from process_transfer.data.provenance import (  # noqa: E402
     copy_with_fingerprints,
     environment,
@@ -86,6 +86,7 @@ from process_transfer.models.identifiability import (  # noqa: E402
     CHI2_ONE_95,
     DesignCovariance,
     NoInformation,
+    ProfileInterval,
     WindowInformation,
     design_covariance,
     profile_interval,
@@ -94,6 +95,7 @@ from process_transfer.models.identifiability import (  # noqa: E402
     window_information,
 )
 from process_transfer.models.mechanistic import (  # noqa: E402
+    REFERENCE_TEMPERATURE,
     MechanisticModel,
     MechanisticParameters,
     modeller_values,
@@ -127,6 +129,9 @@ RESOLUTION = 1e-3
 WIDE_GRID = tuple(float(v) for v in range(6000, 13001, 500))
 FINE_GRID = tuple(float(v) for v in range(9000, 10001, 25))
 GRID = tuple(sorted(set(WIDE_GRID) | set(FINE_GRID)))
+# the point of evaluation is steady to the model if its right-hand side there is at most
+# this fraction of the feed terms, the criterion generation.plants applies to the plants
+STEADY_RESIDUAL = 1e-9
 # the fit held at the estimate of the free fit must reach its loss: the difference of the
 # sums of squared normalised residuals, 2 N (J_held^2 - J_free^2), at most this in absolute
 # value, a thousandth of what a unit of that sum is worth and far below 3.84
@@ -163,6 +168,17 @@ def plain(value: object) -> object:
     if isinstance(value, float) and not math.isfinite(value):
         return str(value)
     return value
+
+
+def refuse_a_data_directory_inside_the_repository() -> None:
+    """The results of an experiment are kept outside the repository: PT_DATA_DIR must be set
+    to a directory that is not inside it (by default the data directory is <repository>/data)."""
+    found, repository = data_dir().resolve(), repository_root().resolve()
+    if found == repository or repository in found.parents:
+        raise SystemExit(
+            f"PT_DATA_DIR resolves to {found}, inside the repository {repository}; set it to a "
+            "new directory outside the repository and outside OneDrive"
+        )
 
 
 def fingerprints(directory: Path) -> dict[str, str]:
@@ -260,6 +276,7 @@ def point_of_evaluation(
         "parameters": parameters,
         "k_350": parameters.k_350,
         "residual_over_feed_terms": (model.rhs(state, nominal) / feed).tolist(),
+        "steady": bool(np.all(np.abs(model.rhs(state, nominal)) <= STEADY_RESIDUAL * feed)),
         "eigenvalues_per_min": [[60.0 * v.real, 60.0 * v.imag] for v in eigenvalues],
         "stable": bool(np.all(eigenvalues.real < 0.0)),
         "model": model,
@@ -381,54 +398,71 @@ def part_one(
     point = point_of_evaluation(known, state, activation)
     model = point.pop("model")
     blocks = corner_blocks(model, known, state, sigma, EVALUATION_SETTINGS)
+    tight = corner_blocks(model, known, state, sigma, TIGHT)
+    labels = ["".join("+" if s > 0 else "-" for s in signs) for signs in CORNERS]
     failed = [
-        {"corner": signs, "reason": block.reason}
-        for signs, block in zip(CORNERS, blocks, strict=True)
+        {"corner": name, "reason": block.reason}
+        for name, block in zip(labels, blocks, strict=True)
         if isinstance(block, NoInformation)
     ]
-    result: dict[str, object] = {"label": label, "activation": activation, "point": point}
-    if failed:
-        result["failed_windows"] = failed
-        return result
-    tight = corner_blocks(model, known, state, sigma, TIGHT)
     per_corner = {}
-    worst = 0.0
-    for signs, block, precise in zip(CORNERS, blocks, tight, strict=True):
+    worst, compared = 0.0, 0
+    for name, block, precise in zip(labels, blocks, tight, strict=True):
+        if isinstance(block, NoInformation):
+            per_corner[name] = {"reason": block.reason}
+            continue
         one = design_covariance([block])
-        per_corner["".join("+" if s > 0 else "-" for s in signs)] = {
+        per_corner[name] = {
             **describe(one),
             "end_state_minus_steady_state": (block.end_state - state).tolist(),
         }
-        if isinstance(precise, NoInformation):
-            worst = math.inf
+        if one.reason is not None or isinstance(precise, NoInformation):
             continue
         reference = design_covariance([precise])
+        if reference.reason is not None:
+            continue
+        compared += 1
         for kind in KINDS:
-            for name in NAMES:
-                a, b = one.standard_errors(kind)[name], reference.standard_errors(kind)[name]
+            for parameter in NAMES:
+                a = one.standard_errors(kind)[parameter]
+                b = reference.standard_errors(kind)[parameter]
                 worst = max(worst, abs(a - b) / b)
-    expected = {
-        n: describe(design_covariance(blocks, np.full(len(CORNERS), n / len(CORNERS))))
-        for n in WINDOW_COUNTS
+    result: dict[str, object] = {
+        "label": label,
+        "activation": activation,
+        "point": point,
+        "failed_windows": failed,
+        "per_corner": per_corner,
+        "resolution": {
+            "corners_compared": compared,
+            "largest_relative_difference_of_standard_errors": worst,
+            "allowed": RESOLUTION,
+            "resolved": compared == len(CORNERS) and worst <= RESOLUTION,
+        },
     }
-    result.update(
-        {
-            "per_corner": per_corner,
-            "expected_design": expected,
-            "resolution": {
-                "largest_relative_difference_of_standard_errors": worst,
-                "allowed": RESOLUTION,
-                "resolved": worst <= RESOLUTION,
-            },
-        }
-    )
+    usable = [block for block in blocks if isinstance(block, WindowInformation)]
+    good = [isinstance(block, WindowInformation) for block in blocks]
+
+    def design(counts: np.ndarray) -> dict[str, object]:
+        """A design that holds a corner without information has no covariance."""
+        missing = [name for name, c, g in zip(labels, counts, good, strict=True) if c > 0 and not g]
+        if missing:
+            return {"reason": f"the corners {missing} have no information"}
+        weights = [c for c, g in zip(counts, good, strict=True) if g]
+        return describe(design_covariance(usable, weights))
+
+    result["expected_design"] = {
+        n: design(np.full(len(CORNERS), n / len(CORNERS))) for n in WINDOW_COUNTS
+    }
     if observed_designs:
         result["designs_of_the_runs_of_part_2"] = {
-            name: {"corner_counts": counts, **describe(design_covariance(blocks, counts))}
+            name: {"corner_counts": counts, **design(counts)}
             for name, counts in observed_designs.items()
         }
     if with_monte_carlo:
-        result["p3_draws"] = monte_carlo(blocks)
+        result["p3_draws"] = (
+            monte_carlo(blocks) if not failed else {"reason": "a corner window has no information"}
+        )
     return result
 
 
@@ -462,19 +496,26 @@ def fit_task(task: tuple[str, float | None]) -> tuple[str, float | None, FitResu
 
 
 def summarise_profile(
-    free: FitResult, points: dict[float, FitResult], readings: int
+    free: FitResult, points: dict[float, FitResult], readings: int, steady_temperature: float
 ) -> dict[str, object]:
     """The profile of one set of windows: its points, the increase of the loss above the
-    minimum, where the increase crosses the declared thresholds, and its lowest point. The
-    points are those of the grid and, when the free fit converged, its own E/R held."""
+    minimum, where the increase crosses the declared thresholds, its lowest point, and how
+    k_350 and UA move along it. The points are those of the grid and, when the free fit
+    converged, its own E/R held.
+
+    The increases are measured from the loss of the free fit. Without a free fit there is
+    no minimum to measure from, and no interval. If a point of the profile lies below the
+    free fit by more than CHECK_POINT, the free fit is not the minimum of the profile, and
+    no interval is computed either: its increases would be measured from the wrong place."""
     grid = sorted(points)
     objectives = [points[a].objective for a in grid]
-    known_values = [j for j in objectives if j is not None]
-    if free.objective is None and not known_values:
-        return {"readings": readings, "rows": [], "not computed": "no fit converged"}
-    minimum = free.objective if free.objective is not None else min(known_values)
-    increases = [None if j is None else 2.0 * readings * (j**2 - minimum**2) for j in objectives]
+    minimum = free.objective
+    increases = [
+        None if j is None or minimum is None else 2.0 * readings * (j**2 - minimum**2)
+        for j in objectives
+    ]
     estimate = None if free.parameters is None else free.parameters.activation_temperature
+    below = [a for a, v in zip(grid, increases, strict=True) if v is not None and v < -CHECK_POINT]
     rows = []
     for activation, j, increase in zip(grid, objectives, increases, strict=True):
         fit = points[activation]
@@ -493,23 +534,33 @@ def summarise_profile(
             }
         )
     on_grid = [
-        (i, v)
-        for i, (a, v) in enumerate(zip(grid, increases, strict=True))
-        if a in GRID and v is not None
+        (i, j)
+        for i, (a, j) in enumerate(zip(grid, objectives, strict=True))
+        if a in GRID and j is not None
     ]
     lowest = min(on_grid, key=lambda item: (item[1], item[0]))[0] if on_grid else None
-    intervals = {}
-    for label, threshold in (
-        ("nominal noise", CHI2_ONE_95),
-        ("noise scaled by the lack of fit", CHI2_ONE_95 * minimum**2),
-    ):
-        try:
-            intervals[label] = profile_interval(grid, increases, threshold)
-        except ValueError as error:
-            intervals[label] = {"not computed": str(error)}
+    intervals: dict[str, object] = {}
+    if minimum is None:
+        intervals["not computed"] = "the free fit has no converged start: no minimum"
+    elif below:
+        intervals["not computed"] = (
+            f"the profile lies below the free fit at E/R = {below} K: the free fit is not its "
+            "minimum"
+        )
+    else:
+        for label, threshold in (
+            ("nominal noise", CHI2_ONE_95),
+            ("noise scaled by the lack of fit", CHI2_ONE_95 * minimum**2),
+        ):
+            try:
+                intervals[label] = profile_interval(grid, increases, threshold)
+            except ValueError as error:
+                intervals[label] = {"not computed": str(error)}
     return {
         "readings": readings,
         "minimum_objective": minimum,
+        "free_fit_is_the_minimum": None if minimum is None else not below,
+        "compensation": compensation(rows, steady_temperature),
         "rows": rows,
         "failed_points": [row["activation"] for row in rows if row["objective"] is None],
         "lowest_grid_point": None if lowest is None else grid[lowest],
@@ -521,8 +572,57 @@ def summarise_profile(
     }
 
 
+def compensation(rows: list[dict[str, object]], steady_temperature: float) -> dict[str, object]:
+    """How k_350 and UA move along the fine part of the grid: the least-squares slopes of
+    their logarithms on E/R, beside the slope of ln k_350 that holds k at the steady
+    temperature fixed, 1/T_ss - 1/350 K, with UA fixed (section 7.3 of the plan), and the
+    relative range of UA."""
+    fine = [
+        r
+        for r in rows
+        if r["on_the_grid"]
+        and FINE_GRID[0] <= r["activation"] <= FINE_GRID[-1]
+        and r["objective"] is not None
+    ]
+    if len(fine) < 2:
+        return {"not computed": "fewer than two converged points on the fine part of the grid"}
+    a = np.array([r["activation"] for r in fine])
+    ln_k = np.log([r["k_350"] for r in fine])
+    ua = np.array([r["ua"] for r in fine])
+    return {
+        "points": len(fine),
+        "slope_ln_k_350_per_K": float(np.polyfit(a, ln_k, 1)[0]),
+        "slope_ln_k_350_holding_k_at_the_steady_temperature_per_K": (
+            1.0 / steady_temperature - 1.0 / REFERENCE_TEMPERATURE
+        ),
+        "slope_ln_ua_per_K": float(np.polyfit(a, np.log(ua), 1)[0]),
+        "relative_range_of_ua": float((ua.max() - ua.min()) / np.median(ua)),
+    }
+
+
+def spacing_at_crossings(
+    intervals: dict[str, object], points: Sequence[float]
+) -> dict[str, dict[str, float | None]]:
+    """The distance between the two points of the profile that bracket each crossing: the
+    resolution of that crossing, inside which a difference is not read as curvature."""
+    found = {}
+    for label, interval in intervals.items():
+        if not isinstance(interval, ProfileInterval):
+            continue
+        sides = {}
+        for side, x in (("low", interval.low), ("high", interval.high)):
+            if x is None:
+                sides[side] = None
+                continue
+            below = max(v for v in points if v <= x)
+            above = min(v for v in points if v >= x)
+            sides[side] = above - below
+        found[label] = sides
+    return found
+
+
 def part_two(
-    known: KnownPlant, workers: int, exports: Path
+    known: KnownPlant, workers: int, exports: Path, steady_temperature: float
 ) -> tuple[dict[str, object], dict[str, FitResult]]:
     names = list(_WINDOWS)
     mapper: Callable[..., Iterable] = map
@@ -548,7 +648,9 @@ def part_two(
         points = {a: f for n, a, f in results if n == name}
         check = [f for n, a, f in results[len(names) * len(GRID) :] if n == name]
         windows = _WINDOWS[name]
-        summary = summarise_profile(fit, points, sum(len(d.scored) for d in windows))
+        summary = summarise_profile(
+            fit, points, sum(len(d.scored) for d in windows), steady_temperature
+        )
         entry: dict[str, object] = {"free_fit": fit, "profile": summary}
         if fit.parameters is not None:
             spread = covariance(fit.parameters, windows, known)
@@ -557,6 +659,16 @@ def part_two(
                 {kind: spread.standard_errors(kind == "sandwich") for kind in ("exact", "sandwich")}
                 if spread.reason is None
                 else None
+            )
+            errors = entry["standard_errors_at_the_estimate"]
+            if errors is not None:
+                exact = errors["exact"]["E/R"]
+                entry["half_widths_with_the_linearised_curvature_K"] = {
+                    "nominal noise": 1.96 * exact,
+                    "noise scaled by the lack of fit": 1.96 * fit.objective * exact,
+                }
+            entry["grid_spacing_at_the_crossings_K"] = spacing_at_crossings(
+                summary["intervals"], sorted(points)
             )
             held = check[0]
             entry["check_point"] = {
@@ -612,9 +724,16 @@ def style(ax: plt.Axes) -> None:
     ax.set_axisbelow(True)
 
 
-def figure_standard_errors(part: dict[str, object], directory: Path) -> Path:
+def figure_standard_errors(part: dict[str, object], directory: Path) -> Path | None:
     """Standard errors against the number of windows, for the three covariances of the
-    expected design, with the range of the sandwich over the draws of P3."""
+    expected design, with the range of the sandwich over the draws of P3. None when a design
+    has no covariance: the summary says why."""
+    designs = [part["expected_design"][n] for n in WINDOW_COUNTS]
+    draws_ = part.get("p3_draws", {})
+    if any("standard_errors" not in d for d in designs) or any(
+        "standard_errors" not in draws_.get(n, {}) for n in WINDOW_COUNTS
+    ):
+        return None
     fig, axes = plt.subplots(1, 3, figsize=(13.0, 4.2), facecolor=SURFACE)
     counts = np.array(WINDOW_COUNTS, dtype=float)
     scales = {"ln k_350": 100.0, "E/R": 1.0, "ln UA": 100.0}
@@ -687,7 +806,12 @@ def figure_corners(part: dict[str, object], directory: Path) -> Path:
     x = np.arange(len(labels))
     width = 0.27
     for offset, kind in zip((-width, 0.0, width), KINDS, strict=True):
-        values = [part["per_corner"][c]["standard_errors"][kind]["E/R"] for c in labels]
+        values = [
+            part["per_corner"][c]["standard_errors"][kind]["E/R"]
+            if "standard_errors" in part["per_corner"][c]
+            else np.nan
+            for c in labels
+        ]
         ax.bar(x + offset, values, width, color=KIND_COLOR[kind], label=KIND_LABEL[kind])
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=8, family="monospace")
@@ -756,8 +880,14 @@ def figure_profiles(profiles: dict[str, dict[str, object]], directory: Path) -> 
 
 
 def figure_compensation(
-    profiles: dict[str, dict[str, object]], textbook: MechanisticParameters, directory: Path
+    profiles: dict[str, dict[str, object]],
+    textbook: MechanisticParameters,
+    steady_temperature: float,
+    directory: Path,
 ) -> Path:
+    """k_350 and UA along each profile; dashed, through the free estimate, the k_350 that
+    keeps k at the steady temperature fixed (section 7.3 of the plan)."""
+    slope = 1.0 / steady_temperature - 1.0 / REFERENCE_TEMPERATURE
     fig, axes = plt.subplots(1, 2, figsize=(13.0, 4.2), facecolor=SURFACE)
     for ax in axes:
         style(ax)
@@ -784,6 +914,13 @@ def figure_compensation(
             markersize=2,
             label=label,
         )
+        free = entry["free_fit"].parameters
+        if free is not None and len(a):
+            span = np.linspace(a.min(), a.max(), 50)
+            expected = free.k_350 * np.exp(slope * (span - free.activation_temperature))
+            axes[0].plot(
+                span, expected / textbook.k_350, color=color, linewidth=0.8, linestyle="--"
+            )
     axes[0].set_ylabel("fitted k_350 / textbook k_350", fontsize=9, color=INK_SECONDARY)
     axes[1].set_ylabel("fitted UA / textbook UA", fontsize=9, color=INK_SECONDARY)
     for ax in axes:
@@ -814,6 +951,7 @@ def main() -> int:
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 2))
     arguments = parser.parse_args()
     started = time.perf_counter()
+    refuse_a_data_directory_inside_the_repository()
     state = git_state()
     directory = new_run_directory("m1_e01", state)
     if not state["code_identified"]:
@@ -851,7 +989,7 @@ def main() -> int:
     timings["part 1, textbook E/R"] = time.perf_counter() - tick
 
     tick = time.perf_counter()
-    profiles, free = part_two(known, arguments.workers, exports)
+    profiles, free = part_two(known, arguments.workers, exports, float(steady_state[1]))
     timings["part 2"] = time.perf_counter() - tick
 
     secondary = None
@@ -871,11 +1009,12 @@ def main() -> int:
 
     after = {name: fingerprints(exports / name) for name in (P3_EXPORT, STEADY_EXPORT)}
     checks = {
-        "every corner window of part 1 has information": "failed_windows" not in primary,
+        "every corner window of part 1 has information": not primary["failed_windows"],
         "part 1 resolved against the tight integration": bool(
             primary.get("resolution", {}).get("resolved", False)
         ),
-        "the point of evaluation is a stable steady state": primary["point"]["stable"],
+        "the point of evaluation is a stable steady state": primary["point"]["stable"]
+        and primary["point"]["steady"],
         "the corners of m0-e05 are corners of the design": design_is_p3,
         "every profile with a free fit reproduces its loss at the estimate": all(
             entry["check_point"]["loss_difference"] is not None
@@ -885,18 +1024,23 @@ def main() -> int:
         ),
         "the exports were not written to": before == after,
     }
-    figures = [
-        figure_standard_errors(primary, directory),
-        figure_corners(primary, directory),
-        figure_profiles(profiles, directory),
-        figure_compensation(profiles, textbook, directory),
-    ]
+    if secondary is not None:
+        checks["at the second point: every corner window has information"] = not secondary[
+            "failed_windows"
+        ]
+        checks["at the second point: resolved against the tight integration"] = bool(
+            secondary["resolution"]["resolved"]
+        )
+        checks["at the second point: a stable steady state"] = (
+            secondary["point"]["stable"] and secondary["point"]["steady"]
+        )
     summary = {
         "what": "M1-E01, parts 1 and 2: available information only. Development data of M0; "
         "not the benchmark of M1.",
         "provenance": {
             "experiment": "M1-E01, parts 1 and 2",
             "run_id": directory.name,
+            "data_dir": str(data_dir().resolve()),
             "command": " ".join(sys.argv),
             "git": state,
             "environment": environment(),
@@ -943,14 +1087,28 @@ def main() -> int:
         "part_2": profiles,
         "replicate_differences": replicate_differences(profiles),
         "checks": checks,
-        "figures": [path.name for path in figures],
+        "figures": [],
         "seconds": {**timings, "total": time.perf_counter() - started},
     }
+    # the summary is written before the figures, so that a figure that cannot be drawn
+    # leaves the numbers on disk; it is written again with the names of the figures
+    text = json.dumps(plain(summary), indent=2)
+    (directory / "summary.json").write_text(text, encoding="utf-8")
+    drawn = [
+        figure_standard_errors(primary, directory),
+        figure_corners(primary, directory),
+        figure_profiles(profiles, directory),
+        figure_compensation(profiles, textbook, float(steady_state[1]), directory),
+    ]
+    summary["figures"] = [path.name for path in drawn if path is not None]
     (directory / "summary.json").write_text(json.dumps(plain(summary), indent=2), encoding="utf-8")
 
     print(f"M1-E01 parts 1 and 2; written to {directory}")
     print(f"steady state from {STEADY_RUN}: {steady_state.tolist()}")
     for n in WINDOW_COUNTS:
+        if "standard_errors" not in primary["expected_design"][n]:
+            print(f"  n = {n:2d}: {primary['expected_design'][n]['reason']}")
+            continue
         e = primary["expected_design"][n]["standard_errors"]
         print(
             f"  n = {n:2d}: se(E/R) exact {e['exact']['E/R']:.1f} K, context "

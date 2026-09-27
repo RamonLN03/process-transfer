@@ -18,9 +18,11 @@ stored every 0.1 s), and again at 1e-11 to estimate the error of the first.
    nominal steady state, with equal weight per corner (one window each, 110 readings each)
    and the objective of section 9.1, by the procedure of MR (``fit_mechanistic``, its five
    declared starts). Its minimiser, called pseudo-true, is defined by these windows and this
-   objective. It is not the true value of any parameter, and it is not the limit of infinite
-   data of the benchmark, whose windows start from noisy context means, whose corners are
-   drawn with replacement and whose fits use prefixes of runs.
+   objective. It is not the true value of any parameter. It would be the limit of MR as the
+   budget grows if the initial states were exact, since uniform draws of the corners tend to
+   equal weights; it differs from that limit through the error of the context means, the
+   state an excursion carries into the next, and at finite budgets the bias of the
+   estimator.
 2. The kinetic mismatch alone, in the manner of M0-E08. Variant K: the true plant with its
    saturating rate replaced by a first-order rate with the same E/R, anchored to give the
    true rate at the nominal steady state (k0 / (1 + K_sat C_A,nominal), K_sat = 0), and the
@@ -55,7 +57,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from process_transfer.config import load_sensors  # noqa: E402
-from process_transfer.data.paths import repository_root  # noqa: E402
+from process_transfer.data.paths import data_dir, repository_root  # noqa: E402
 from process_transfer.data.provenance import (  # noqa: E402
     copy_with_fingerprints,
     environment,
@@ -399,6 +401,12 @@ def figure_traces(
 
 def main() -> int:
     started = time.perf_counter()
+    found, repository = data_dir().resolve(), repository_root().resolve()
+    if found == repository or repository in found.parents:
+        raise SystemExit(
+            f"PT_DATA_DIR resolves to {found}, inside the repository {repository}; the outputs "
+            "of the oracle hold hidden parameters and must go to a new directory outside it"
+        )
     state = git_state()
     directory = new_run_directory("m1_e01_oracle", state)
     if not state["code_identified"]:
@@ -509,6 +517,7 @@ def main() -> int:
         "provenance": {
             "experiment": "M1-E01, part 3 (oracle)",
             "run_id": directory.name,
+            "data_dir": str(found),
             "started_utc": datetime.now(UTC).isoformat(timespec="seconds"),
             "command": " ".join(sys.argv),
             "git": state,
