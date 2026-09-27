@@ -14,7 +14,11 @@ PACKAGE_ROOT = Path(process_transfer.__file__).parent
 
 
 def _imports(py_file: Path) -> tuple[set[str], bool]:
-    """Absolute module names imported by a file, and whether it uses relative imports."""
+    """Absolute module names imported by a file, and whether it uses relative imports.
+
+    ``from package import name`` counts as an import of ``package.name`` too, since the name
+    may be a module (``from process_transfer import simulation``), and a string given to
+    ``importlib.import_module`` or ``__import__`` counts as the module it names."""
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
     modules: set[str] = set()
     has_relative = False
@@ -26,6 +30,14 @@ def _imports(py_file: Path) -> tuple[set[str], bool]:
                 has_relative = True
             elif node.module:
                 modules.add(node.module)
+                modules.update(f"{node.module}.{alias.name}" for alias in node.names)
+        elif isinstance(node, ast.Call):
+            called = node.func
+            name = called.attr if isinstance(called, ast.Attribute) else getattr(called, "id", "")
+            if name in ("import_module", "__import__") and node.args:
+                argument = node.args[0]
+                if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
+                    modules.add(argument.value)
     return modules, has_relative
 
 
@@ -143,3 +155,46 @@ def test_shared_variable_definitions_import_no_physics() -> None:
     assert not has_relative
     assert not {m for m in modules if m.startswith("process_transfer.simulation")}
     assert not {m for m in modules if m.startswith("process_transfer.modeller")}
+
+
+def test_the_import_check_sees_a_module_imported_by_name(tmp_path: Path) -> None:
+    """The check would miss nothing that names a module of the truth: an import of the
+    package's module by name, or a string given to importlib."""
+    probe = tmp_path / "probe.py"
+    lines = [
+        "import importlib",
+        "from process_transfer import simulation",
+        "from process_transfer import generation as g",
+        "importlib.import_module('process_transfer.data.private_store')",
+    ]
+    probe.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    modules, _ = _imports(probe)
+    assert {
+        "process_transfer.simulation",
+        "process_transfer.generation",
+        "process_transfer.data.private_store",
+    } <= modules
+
+
+EXPERIMENTS = PACKAGE_ROOT.parents[1] / "experiments"
+
+
+def test_the_available_parts_of_m1_e01_read_only_available_information() -> None:
+    """Parts 1 and 2 of M1-E01 use available information only (docs/m1_plan.md, section
+    7.4): the script never imports the simulation, the generator or the private branch, and
+    never mentions what reads a plant configuration file. Part 3, the oracle, is another
+    script."""
+    script = EXPERIMENTS / "m1_e01_identifiability.py"
+    modules, has_relative = _imports(script)
+    assert not has_relative
+    for prefix in (
+        "process_transfer.simulation",
+        "process_transfer.generation",
+        "process_transfer.data.private_store",
+    ):
+        assert not {m for m in modules if m.startswith(prefix)}, prefix
+    found = _names_used(script) & _TRUTH_READERS
+    assert not found, f"{script} mentions {sorted(found)}"
+    assert "m1_e01_oracle" not in script.read_text(encoding="utf-8").replace(
+        "experiments/m1_e01_oracle.py", ""
+    )
