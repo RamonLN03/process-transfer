@@ -31,6 +31,7 @@ def linear_plant(x: np.ndarray, u: np.ndarray) -> np.ndarray:
 
 COORDINATES = LinearCoordinates(2, np.array([5.0, 0.5]), np.array([180.0, 352.0]))
 
+
 class LinearPlant:
     """The linear plant as a model of the rollout."""
 

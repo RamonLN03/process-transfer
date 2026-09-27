@@ -431,3 +431,52 @@ Consequences:
 * Importing `models.training` sets JAX to double precision for the process.
 * JAX changes quickly between versions. `pyproject.toml` states a lower bound, as it does for the other dependencies, and CI tests the current versions. The reference environment adds the versions measured here to its lock file.
 * The image of `docs/docker.md` runs the data path and does not install the extra. A run of the suite in a container adds it, as it adds pytest.
+
+## D-036 I3 of M1: how the learned models are built and trained (2026-09-27, decided by the implementation agent, technical and reversible)
+
+These are the choices made in implementing BL, BN, HK, HU and HKU, where the plan leaves the how open. The rate of learning, the number of steps and the lists of configurations are not decided here: the development runs of I3 inform them (experiment log), and they are fixed before the benchmark (section 5.5). None of these choices changes the design of the plan.
+
+The equations (`models.learned`):
+
+* They are written once, on an array module that is numpy or `jax.numpy`. The model trained with JAX and the model evaluated by the reference rollout are the same equation computed by the same operations, not two codings to be kept in step.
+* Each factor of a hybrid is exp(N), N a network with tanh hidden layers and a linear last layer. It is positive whatever the weights and one when the last layer is zero, which is how every network starts. Set aside:
+  * 2 sigmoid(N), bounded in (0, 2), which would put a ceiling on the correction that nothing in the physics sets;
+  * softplus, which is positive but not one at a natural point without an offset.
+* An exponential that overflows is a failure, never a clipped value. In the reference rollout it is a failed right-hand side; in training, a loss that is not finite.
+* The hidden layers start from Glorot's uniform law with zero biases, the last layer from zero. The gradient then reaches the last layer from the first step, and the hidden layers from the second; a test checks both. BN also starts with a zero last layer, as a model whose state does not move.
+* The arguments of the factors are the plan's (section 8.2): C_A and T for the kinetic factor, T and T_c for the thermal one, each centred and scaled by F. BN reads the six variables so scaled, and its output is scaled by D = s_x / 60 s. The plan asks for D computed from F; s_x is, and 60 s is a declared constant, the order of the plant's slowest time constant. It sets only the size of an output of order one.
+* The mechanistic parameters of a hybrid are MR's, in MR's coordinates, trained with the networks from MR_F. E/R can be held, for the secondary analysis of D-030.
+
+The penalty (`models.training`):
+
+* lambda times the sum of the squares of every weight and bias of the networks, added to J_F^2. The mechanistic parameters are not penalised, as MR's are not.
+* The penalty is zero only where every weight is zero, where each factor of a hybrid is one and BN does not move. For a hybrid it therefore pulls toward the mechanistic model it started from. The last layer bounds the departure from the identity everywhere, not only where the data are: |ln g| <= sum |W_L| + |b_L|, since tanh lies in [-1, 1].
+* Set aside: a penalty on ln g at the states of F only. It says nothing about extrapolation, which is where the hypotheses of the plan look.
+
+The training (`models.training`):
+
+* Rollout: a fixed-step fourth-order Runge-Kutta scheme, two steps per row, each row with its own inputs, as D-035 explains.
+* Optimiser: Adam, written out in the module with the usual constants, beta1 = 0.9, beta2 = 0.999 and epsilon = 1e-8, and a constant rate. Nothing clips a gradient.
+* Checkpoints: the step 0 and every `validation_every` steps to `max_steps`, with no early stop. At each checkpoint:
+  * the criterion is J on V by the reference rollout, as the plan asks (section 5.5);
+  * the largest difference between the rollouts of the training scheme and of the reference on V is recorded.
+* Selection of a checkpoint: the lowest criterion among checkpoints whose rollouts of V all completed, the earliest on a tie. Selection among configurations: the lowest selected criterion among those that did not fail, the first in the declared order on a tie. The first checkpoint of a hybrid is MR_F with its factors at one, so a hybrid that does not improve on V ends as MR_F (section 5.5).
+* Failures, following section 8.7, which lists a loss that is not finite as a training failure:
+  * a loss or gradient that is not finite at any step ends the training as a failure of that configuration, and its earlier checkpoints are not used;
+  * a scale of F that is zero refuses the training before any step;
+  * if every checkpoint has a failed rollout of V, the training is a failure.
+
+  The registration may choose otherwise for the first case, keeping the checkpoints before the failure; it would then be a rule declared before any benchmark fit, not a remedy.
+* Seeds: the initial weights of a configuration on a replicate come from `numpy.random.SeedSequence([base, replicate, configuration])`. They are the same at every budget of the replicate, so its budgets start from the same weights. The base is fixed in the registration.
+* `hold_mechanistic` trains the networks of a hybrid with its mechanistic parameters held. It exists for the test of recovery of a planted correction (section 13); the procedure of M1 trains them together.
+
+BL (`models.linear`):
+
+* B is estimated on the span of the levels of the inputs its data excite, and is zero on the complement (section 8.7).
+  * The level of an input is its deviation from nominal over its amplitude in the data of the fit, the largest deviation seen, so that P3's levels are the signs of its corners.
+  * The rank and a basis of the span are computed exactly on the rational levels; the basis is then made orthonormal in floating point.
+* The fit is MR's: `least_squares` with the sensitivities of the reference rollout, on all b windows, from declared starts, keeping the converged endpoint with the lowest objective.
+  * The starts are x_e at the mean of the initial states and A = -I / tau for tau of 60, 20 and 180 s, with C = 0.
+  * The coordinates are made without units: states in noise levels, time in units of 60 s.
+  * The trust region is not rescaled by the Jacobian. On noise-free data of a linear plant the rescaled region left the basin of the true values for a stiff local minimum, and the unscaled one reached them in 11 evaluations (`tests/test_models_linear.py`).
+* `fitting.WindowLoss`, the loss of MR, takes the model at theta from a builder, so that BL uses the same loss; MR's fits are unchanged bit for bit.

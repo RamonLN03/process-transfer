@@ -587,3 +587,37 @@ Regression tests, in `tests/test_m1_e01_scripts.py`: Codex's case, now without a
 ### Open
 
 * The brackets remain conditional on convexity between the points, which the points cannot show. A finer grid would narrow them without removing the condition.
+
+## Review of 2026-09-27, sixteenth: the interfaces of I3
+
+Scope. The modules of I3: `models/learned.py`, `models/training.py` and `models/linear.py`, and the change to `models/fitting.py` that lets BL share the loss of MR. For each interface: its domain, what it refuses where the input enters, what it returns as a record, and the scales that decide its verdicts. Nothing of M0, I1 or I2 changed behaviour. MR's fits on `m0-e05` and `m0-e07`, every start and covariance, are the same bit for bit before and after the change to `fitting.py`.
+
+### Domain and limits of each interface
+
+| Interface | Refused at the boundary | Returned as a record | Computed |
+|---|---|---|---|
+| `learned.fitting_scales` | no window; a standard deviation of a state or an input that is zero or not finite, with the variable named (section 5.8) | none; `train` records the refusal as a training failure | means and population deviations over the readings of the contexts and scored readings of F, and over the inputs of its scored rows |
+| `learned.initial_parameters` | an unknown family; hidden layers that are not positive integers; a hybrid without a start; BN with one | none | Glorot's uniform law for hidden layers, zero biases, a zero last layer, from the given generator |
+| `learned.rhs` | nothing: it is called inside the rollouts | none; an exponential that overflows is an arithmetic error that the reference rollout records, and a value that is not finite in the training rollout makes the loss not finite | the equations of section 8.2 and 8.3 |
+| `learned.LearnedModel` | an unknown family | an initial state at T <= 0 for a hybrid, as for MR | its right-hand side in numpy |
+| `training.Configuration`, `TrainingSettings` | an unknown family; hidden sizes that are not positive integers; a penalty that is negative or not finite; a rate that is not positive; steps and intervals that are not positive integers, or steps that are not a multiple of the interval; betas outside [0, 1); an epsilon that is not positive | none | nothing |
+| `training.train` | no window of F or of V; F and V that share a window; windows of different lengths, periods or noise levels; noise levels that are not positive; holding the parameters of BN | a refused scale; a loss or gradient that is not finite at a step, with the step; a checkpoint whose rollout of V failed, with the failures; every checkpoint failed; each as a training failure or a checkpoint that cannot be selected | the loss, Adam, the checkpoints, the selection |
+| `training.select_configuration` | nothing | None when every configuration failed | the lowest criterion, the first on a tie |
+| `training.training_seed` | a base, replicate or configuration that is not a non-negative integer | none | a seed from `SeedSequence` |
+| `linear.excited_directions` | nominal inputs that are not four finite values; deviations that are not representable | none | amplitudes, the exact rank and a basis of the span of the rational levels |
+| `linear.fit_linear` | what `fitting.check_windows` refuses for MR | each start that stops on the optimiser's arithmetic, a failed rollout or a Jacobian that is not representable, as a numerical failure; a start that uses its evaluations; no converged start, as a training failure | the fit of BL |
+
+### Scales and resolutions, stated as such
+
+* The training scheme. Two steps of the classical fourth-order Runge-Kutta scheme per row of 6 s. At MR on real windows it differs from the reference rollout by 5e-4 sigma (D-035). On a linear equation its error falls sixteen times when the steps are halved, across a change of the inputs (`tests/test_models_learned.py`). A learned model can be stiffer than MR. Each checkpoint therefore records the largest difference between the two rollouts on V, in sigmas, and the model is selected and evaluated by the reference.
+* The gradient is the exact derivative of the computed loss, by automatic differentiation of the scheme. It is checked against central differences with a relative step of 1e-6, to 1e-6 of the largest component, at a point where every weight and parameter is moved. At the start of a hybrid, whose mechanistic parameters are at a minimum of MR's loss, those components are nearly zero and central differences lose their digits to cancellation. The check is made away from it.
+* A hybrid at the identity against MR: their right-hand sides compute the rate by equivalent operations and agree to 1e-13 of the feed terms. Their reference rollouts agree to 1e-6 sigma.
+* Double precision throughout: importing `models.training` sets JAX to 64 bits for the process.
+* BL's coordinates are without units, and the trust region is not rescaled (D-036). Its rank is exact, computed on rationals.
+
+### Open limitations
+
+* The failure of a training at a step ends it and discards its earlier checkpoints, as section 8.7 lists a loss that is not finite as a training failure. The registration may choose to keep them.
+* An Adam step can take a network where its exponential overflows. That ends the training as a failure; nothing restarts it or lowers the rate. A development run with a rate of 1e-2 on a strongly planted correction ended so at step 939.
+* The training scheme has a fixed step, so a learned model whose dynamics become much faster than a few seconds is integrated inaccurately in training. That is seen, not prevented: the difference of the two rollouts is recorded at every checkpoint, and selection and evaluation use the reference.
+* The fourteenth review's limitation on rollouts with methods other than LSODA still holds. The reference rollout of the learned models is LSODA.

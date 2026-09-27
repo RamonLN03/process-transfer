@@ -6,6 +6,10 @@ equations with the textbook values, MN, and with estimated values (``mechanistic
 estimation of MR on all the windows of a budget and of MR_F on its fitting part, with the
 record of every start and the covariance of the estimate (``fitting``).
 
+In I3: BL, the linear black box, fitted like MR (``linear``); the equations of the neural
+black box BN and of the hybrids HK, HU and HKU, written once for numpy and JAX
+(``learned``); and their training with JAX and selection on V (``training``).
+
 This package is on the available side, like ``evaluation``. A model is built from the known
 parameters of an export and the modeller's values of ``configs/modeller_cstr.yaml``, and
 fitted on the ``WindowData`` it is handed. It never imports ``process_transfer.simulation``
