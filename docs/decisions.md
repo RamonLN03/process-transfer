@@ -346,3 +346,39 @@ Carried forward, documented and not blocking:
 * the test of the exit code of M0-E08, carried from M0 (`docs/roadmap.md`).
 
 The numbers of the development runs of I1 remain development numbers and are not results of M1.
+
+## D-034 I2 of M1: how M1-E01 is computed (2026-09-27, decided by the implementation agent, technical and reversible)
+
+These are the choices made in implementing the diagnostic of section 7.4 of the plan, where the plan leaves the how open. The registration of M1-E01 in `docs/experiment_log.md` states them in full; this entry says why, and what was set aside. None of them changes the design of the plan, and none reopens Q1 (D-030). Two read-only reviews by agents of the implementation, before the registration, shaped several of them; the registration lists what those reviews computed.
+
+* The oracle has a script of its own, `experiments/m1_e01_oracle.py`, where the plan asked for one script. With two scripts, a test on the import graph can show that parts 1 and 2 never import the simulation, the generator or the private branch. In one script only a reading could show it.
+* A third covariance joins the two the plan names. Beside the covariance with the initial state exact and the sandwich of the estimator used, part 1 reports the Cramer-Rao bound with the initial state known through its ten context readings: the inverse of the Schur complement of the joint information of the parameters and the initial state, (S^T Sigma^-1 S)^-1.
+  * The two quantities of the plan alone could not say whether the cost of the rule for the initial state is information lost or the price of the estimator's rule; the bound splits the two.
+  * It is the bound for estimators that leave each initial state free, not for one that ties it to the model's steady state.
+  * It needs nothing new: the same sensitivities, and a 2 x 2 solve per window.
+* The point of evaluation. The steady state is the mean of the steady run of `m0-e06`, which M0 generated to verify steady operation and which serves this purpose with 1201 readings; the mean of the contexts of `m0-e05` is a cross-check. E/R is the modeller's textbook value, and k_350 and UA follow from the two balances in closed form. The E/R of the pooled free fit of part 2 gives a second point, because information is local and one point alone would hide how much it depends on the point. Set aside:
+  * the mean of the contexts as the primary estimate: 270 readings against 1201, each taken at the end of a rest with a residue of the excursion before it;
+  * the estimates of the smoke run of I1 as the primary point: they are development numbers of one run each, and the plan asks for the steady state.
+* The designs of part 1 count the windows a fit receives: b for MR, and b - n_V for MR_F. For each count there are two designs:
+  * the expected design, n / 16 windows at each corner, whose information is the mean information of n windows drawn by P3. For the covariance with the initial state exact and for the context bound it is therefore a lower reference for the mean over the draws, by Jensen's inequality for the matrix inverse; for the sandwich it is a reference with no guaranteed order;
+  * 20 000 draws of the corners, with replacement and a declared seed, which give the spread and are what small budgets are read from.
+
+  Beside them are the designs of the corners the runs of part 2 actually visited, at 9 and 27 windows. The windows of part 1 start exactly at the steady state; the residue an excursion leaves after a rest is of millikelvins (M0-E03b). Set aside: an exact enumeration of the draws. It is possible for small n, but not for n = 40, and the 20 000 draws are close enough for the quantiles reported, about 0.15 points in the probability level of a 5 % quantile.
+* The resolution of part 1. The standard errors of every corner window at the settings of the evaluation must agree with those of LSODA at rtol = 1e-12 to 1e-3 relative. The sensitivities at those settings are bounded by the tests at 1e-5 of their scale (`tests/test_models_rollout.py`), and measured at 4e-8 to 8e-8, so 1e-3 leaves a wide margin while keeping the reported values to about three significant digits.
+* The grid of the profile has a wide part, 6000 to 13000 K in steps of 500 K, for the shape, and a fine part, 9000 to 10000 K in steps of 25 K, for the minimum.
+  * The fine part was placed where the smoke run of I1 had found the estimates of MR on the same data. The registration says so, and the minimum is located by the free fit, not by the grid.
+  * The fits held at a point of the grid are those of MR (D-032) with its three starts that do not move E/R, so that the profile is the objective of MR and nothing else.
+  * The sharpness of the minimum is read from brackets that hold under convexity alone, not from the spacing of the grid (the registration, B2).
+
+  Set aside:
+  * a fine grid centred on each free estimate by a declared rule, which would resolve every minimum the same way, but whose points no one could name before the run;
+  * a single uniform grid of 25 K over the whole range: 281 points instead of 53, about five times the cost for no gain in shape;
+  * starting each held fit from its neighbour on the grid, which would make each point depend on the path through the grid.
+* The rule for reading the spread of E/R between runs divides each difference by the combined sandwich standard errors at the two estimates, the estimator's own. The a priori standard errors of each run's design are reported beside them as context. A pair is read only if both runs' profiles agree with the linearised curvature, since the sandwich rests on it.
+* The oracle's kinetic variant keeps the true E/R and the true conductance, and takes k0 / (1 + K_sat C_A,nominal) with K_sat = 0.
+  * Its rate then equals the true rate at the nominal steady state, and the steady state is shared: the anchoring M0-E08 used for the conductance.
+  * Variant B of M0-E08 is recomputed on the same 16 windows, so that the two mismatches are compared on the same windows.
+  * Set aside: anchoring the kinetic variant by fitting it to the trajectories, which would make it a second pseudo-true fit instead of a mismatch alone.
+* A precision on section 7.4 of the plan. It says the pseudo-true value is not the large-budget limit of the benchmark partly because the benchmark's corners are drawn with replacement and its fits use prefixes of runs. Neither acts in that limit, since uniform draws tend to equal weights and prefixes do not change a limit. What does separate the two is the error of the context means, the state an excursion carries into the next, and, at finite budgets, the bias and variance of the estimator. The registration uses this reading. The plan's text is kept and the precision recorded here.
+* The fits of part 2 run in separate processes, one fit per task, each built from the exports themselves. A fit depends on nothing but its windows, its E/R and the declared settings.
+* Both scripts refuse to run when PT_DATA_DIR resolves inside the repository, whose data directory is the default. The outputs of the oracle hold hidden parameters, and the outputs of both belong outside git and outside OneDrive.

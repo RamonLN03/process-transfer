@@ -554,3 +554,220 @@ Run `20260925T180744Z_9ea9a76-dirty`, `experiments/m1_i1_smoke_run.py`, made fro
 **Result.** 11 444 numbers compared, all equal bit for bit; every start converged; no warning was printed. 60.4 s.
 
 **Interpretation.** On the data of M0 the fix is neutral, as the absence of any warning in the earlier runs implied it would be.
+
+### M1-E01 The identifiability diagnostic (registered 2026-09-27)
+
+The minimal diagnostic of section 7.4 of the plan, iteration I2. It asks what the data of P3 can determine about the parameters of the modeller's first-order model, and how the error of that model's structure moves them. It is registered here, from a clean commit that holds its code, before it is run on the data it reads. The results will be added below this registration, and nothing above them will be changed after the run. A change needed after the run is recorded below as a deviation, dated, before anything is run again.
+
+Code: `src/process_transfer/models/identifiability.py`; `experiments/m1_e01_identifiability.py`, parts 1 and 2, available information only; `experiments/m1_e01_oracle.py`, part 3, the oracle. The plan asked for one script. The oracle has its own so that `tests/test_boundaries.py` can show that the script of parts 1 and 2 never imports the simulation, the generator or the private branch (D-034).
+
+Data. No new data is generated, and no future benchmark or test set is read.
+
+* Parts 1 and 2 read two exports of M0, read only, from the data directory of the repository; the script records a fingerprint of every file of them before and after.
+  * From `m0-e06`, the steady run of the target, `target.steady.d7200.n0`, 1201 readings.
+  * From `m0-e05`, the three target runs of P3, `target.p3.e0.x10.n0` to `e2`.
+
+  Both data sets are development data of M0, so parts 1 and 2 are exploratory in the sense of section 5.1 of the plan. None of their numbers is a result of M1, and if one of them informs a later choice, the log will record that choice as exploratory, as section 7.5 does.
+* Part 3 reads `configs/target_cstr.yaml`, with its hidden physics, `configs/sensors_cstr.yaml` and `configs/modeller_cstr.yaml`, and nothing from the exports. Its outputs go under `PT_DATA_DIR/experiments/m1_e01_oracle/` and are marked as holding hidden parameters. Nothing it computes is used to choose or tune an ordinary model, or to argue for such a choice.
+
+Seeds. One: 20260927, for the draws of the corners of P3 in part 1. Nothing else is drawn at random. The noise of the data is that of the exports, drawn in M0.
+
+Environment: the reference environment of the project (D-028), Python 3.13.7, numpy 2.5.3 and scipy 1.18.1, through the interpreter of its virtual environment.
+
+#### What was known before this registration
+
+A good part of this experiment is known before it is run. The registration is not blind to any of the following, and reports as computations, not forecasts, whatever these fix.
+
+* Section 7.5 of the plan, the exploratory check made while writing it, as a whole. It took the initial state as exact and scored 120 readings per window. Among its numbers:
+  * a standard error of E/R of 75 K for one excursion and 24 K for ten;
+  * correlations of k_350 with E/R of -0.48 and with UA of +0.73, and of k_350 with UA of +0.90 with E/R fixed;
+  * the oracle fit at E/R = 9590 K and UA = 1326 W/K, with root mean square errors of 2.5 sigma_CA and 1.8 sigma_T, and of 2.7 and 1.9 with E/R fixed;
+  * the nominal model at 11.8 and 10.6;
+  * the kinetic mismatch alone at 2.9 and 2.2 sigma, the thermal mismatch alone at 0.34 and 0.45;
+  * on the source, an oracle fit at E/R = 9637 K and a thermal mismatch alone at 0.72 and 0.78.
+* The smoke run of I1 on the same three runs of `m0-e05`, a development run. The free fits of part 2 on each run are the fits of MR in that run, with the same windows, code and settings. Known in advance:
+  * E/R = 9598.1, 9436.2 and 9568.3 K;
+  * J = 2.241, 2.665 and 2.361;
+  * the differences between the runs, 162, 132 and 30 K;
+  * the singular values of the normalised Jacobian at those estimates, logged with the run: 2308 to 2519, 485 to 525 and 17.7 to 19.8, in the coordinates of the fit, (ln k_350, (E/R) / 350 K, ln UA).
+
+  The variance of a coordinate is at most one over the square of the smallest singular value, so the standard error of E/R at each run's estimate, with the initial state exact, is at most 350 / 17.7 = 19.8 K. On the synthetic model the bound was attained to 1e-4 by the reviewing agents, so these standard errors are known to lie near 17.7 to 19.8 K. The half-widths of B2 with the curvature of the linearised model follow: about 35 to 39 K per run at the threshold 3.84, 78 to 103 K at the threshold 3.84 J_min^2, and about 22 K or less for the 27 windows pooled. The smoke run also wrote the sandwich covariances at the estimates, which were not studied beyond what these values imply.
+
+  What part 2 adds is the pooled fit, the profiles, and the comparison of the differences with the standard errors. The free fits of the runs are expected to be recomputed bit for bit in the reference environment. The run is compared with the summary of `20260925T180744Z_9ea9a76-dirty` outside the repository, as the earlier repetitions of the smoke run were, and a difference is recorded as a deviation. The fine part of the grid was placed around these estimates, so the grid is no evidence of where the minimum lies; the free fits locate it.
+* The calibration of the sandwich of I1 on synthetic data: a mean standard error of E/R of 30 K for eight windows at E/R = 9200 K, and a spread of E/R understated by about 10 % when the initial state is taken as exact.
+* Part 1 at the textbook point.
+  * The corner windows, the expected designs and the draws depend on the data only through the mean of the steady run, two numbers.
+  * The tests of the module and of the script compute them at a synthetic steady state of 190 mol/m^3 and 355 K, within 0.4 mol/m^3 and 0.2 K of the target's nominal steady state of section 2 of the plan, chosen for that reason.
+  * One run of the script on synthetic exports of the modeller's own model at that state was made outside the repository to exercise its parallel path; it took 297 s, 250 of them in part 2 on 14 processes. It printed the expected-design standard errors of E/R at E/R = 8750 K: 75.5, 79.1 and 81.8 K at n = 1, with the initial state exact, from its context and in the sandwich, and 11.9, 12.5 and 12.9 K at n = 40.
+  * Its summary holds all of part 1 at that point, at a steady mean of 190.04 mol/m^3 and 355.006 K. It also holds part 1 at E/R = 9495 K, the pooled free fit of its synthetic data, near where the pooled estimate of the target is expected.
+  * Its draws used the same seed and the same sequence of calls as the real run, so the 20 000 counts of corners at every n are identical to those the real run will draw. Beyond the printed lines, the implementation agent looked only at the figure of its profiles, which are of the synthetic model.
+  * The reviewing agents read that summary and quoted from it the 5 %, 50 % and 95 % quantiles of the sandwich standard error of E/R over the draws: 56.7, 104.8 and 292.3 K at n = 1, and 42.8, 58.9 and 124.6 K at n = 2.
+  * At that synthetic state they also computed the expected design at nine windows: 20.5, 21.8 and 23.1 K at E/R = 9500 K, and 25.2, 26.4 and 27.3 K at 8750 K. Over 200 random designs of nine windows the sandwich exceeded the standard error with the initial state exact by 7.6 % at 8750 K and 11.7 % at 9500 K in the median, and by up to 25 %.
+  * They showed, by exact enumeration at n = 4, that the sandwich of the expected design is not guaranteed to be below the mean sandwich over the draws (A1).
+
+  Part 1 at the textbook point is therefore known to its last digits, and at the second point approximately.
+* The reviewing agents also ran the script twice on synthetic exports of the source plant, which this experiment does not study:
+  * the per-run estimates of E/R were 9502, 9831 and 9782 K, pooled 9662 K, in one run, and 9409, 9935 and 10039 K, pooled 9709 K, in the other, with J from 1.58 to 1.70;
+  * part 1 there gave expected-design standard errors of E/R at n = 1 of 89.2, 92.1 and 93.3 K, against a median over the draws of 112.4 K, with 54.9 to 226 K between the 5 % and 95 % quantiles.
+* The tests of the oracle's script run it on the source plant with one start. The figure of its mismatches was looked at to check the layout; its numbers were not recorded and play no part here.
+
+Nothing of this experiment was run on the exports it reads before this registration, but for the per-run free fits, which exist from the smoke run of I1. The configuration of the target was used only by tests: they simulate one corner window of the target and check the anchoring of the variants of the target, and the end-to-end test builds its known plant from it. Those tests assert properties and report no number.
+
+#### Hypothesis, questions and expectations
+
+Hypothesis: none about the plants. The questions below have expectations that are descriptive. Each result is reported against its expectation, with no verdict of confirmed or refuted, and the reading rules further down say what each result can and cannot support.
+
+Part 1, information a priori:
+
+* (A1) How do the standard errors of ln k_350, E/R and ln UA fall with the number of windows of P3, if the first-order model were right? Under the expected design they fall as one over the square root of n by construction. At the textbook point they, and the quantiles over the draws, are known from the synthetic summary to within the offset of its point.
+  * The covariance with the initial state exact and the context bound of the expected design are the inverses of the mean information of n windows. By Jensen's inequality for the matrix inverse, each is a lower reference for the mean of its covariance over the draws, not an estimate of it.
+  * The sandwich of the expected design has no such guarantee; it is a reference.
+  * The draws report quantiles, not a mean, and small budgets are read from them.
+* (A2) What does the rule for the initial state cost, and where does the cost come from? The ratios of the standard errors of the context bound and of the sandwich to those with the initial state exact, for each parameter. Known from the synthetic run for E/R: about 5 % from the context and a further 3 % from the rule of the estimator.
+* (A3) Is any design of P3 at these budgets rank deficient? None is expected to be, since every corner moves all four inputs. The condition numbers of the correlation matrices are reported without a verdict. The correlations are expected near those of section 7.5.
+* (A4) How much of this depends on the point? The same computation at the E/R of the pooled free fit of part 2, without the draws. Known approximately from the synthetic run at 9495 K and from the reviewing agents' computation at 9500 K.
+
+Part 2, the profile of the objective against E/R:
+
+* (B1) Where is the minimum of the objective of MR over E/R, and is it inside the grid? For the three runs it is known, as stated above. For the 27 windows pooled, it is expected between the smallest and the largest of the three.
+* (B2) How sharp is the minimum? For each profile and side the half-width is the distance from the free estimate to the crossing of the threshold.
+  * The true half-width lies between the interpolated one and an outer limit. On a convex profile, linear interpolation puts the crossing inside the true one, never outside it. The profile lies above every secant extended beyond its two points, so the true crossing is no further out than the bracketing point outside it, nor than where the secant through the two points inside, or the one through the two points beyond, reaches the threshold. Where the slopes of those secants do not increase outward, the profile is not convex there and the outer limit is the bracketing point.
+  * The half-width at 3.84 is compared with 1.96 times the standard error of E/R at the estimate with the initial state exact, and the one at 3.84 J_min^2 with 1.96 J_min times it. They would be equal if the loss were quadratic near its minimum with the curvature S^T S of the linearised model. The large residuals of a wrong structure add a second-order term to that curvature.
+  * The profile agrees with the linearised curvature when 1.96 standard errors lie between the interpolated half-width and its outer limit on both sides. It is narrower when the outer limit is inside 1.96 standard errors, and wider when the interpolated half-width is outside it.
+  * Expected, from the singular values above: about 35 to 39 K per run at 3.84.
+* (B3) How do k_350 and UA move along the profile? If the settled parts of the windows dominate the fit, the balances at the steady state hold k(T_ss) and UA fixed whatever E/R is (section 7.3). ln k_350 would then move with E/R at a slope of 1/T_ss - 1/350 K, and UA would stay nearly constant. That slope is about -4.2e-5 per kelvin at the nominal steady temperature of section 2, 355.17 K; the script uses the mean of the steady run. Reported, without a declared size of departure:
+  * the least-squares slopes of ln k_350 and ln UA on E/R over the converged points of the fine part of the grid;
+  * the ratio of the first to that slope;
+  * the range of UA relative to its median.
+* (B4) Do the runs agree within what their noise explains? Their differences are known. What is new is each difference divided by the combined sandwich standard errors at the two estimates. From the singular values these standard errors are about 18 to 21 K, so the e0-e1, e1-e2 and e0-e2 pairs are expected at about 5.5, 4.5 and 1 combined standard errors. The sandwich rests on the curvature S^T S, which B2 tests. A pair is read only if both of its runs agree with the linearised curvature at 3.84 in B2; otherwise its ratio is reported and not read.
+
+Part 3, the oracle:
+
+* (C1) Where does the first-order model settle when fitted to the noise-free truth of the 16 corner windows? Each window is started from the exact nominal steady state, with equal weight per corner and the objective of section 9.1 over its 110 scored readings. How far from the truth is the model there? Expected from section 7.5, which scored 120 readings per window: E/R near 9590 K, UA near 1326 W/K, root mean square errors near 2.5 sigma_CA and 1.8 sigma_T.
+* (C2) How far does the kinetic mismatch alone move the trajectories on these windows, beside the thermal mismatch alone? Expected from section 7.5, again on 120 readings per window: about 2.9 and 2.2 sigma in root mean square for the kinetic mismatch, and 0.34 and 0.45 for the thermal. The largest difference in temperature of the thermal mismatch is expected near 1.8 K, as in M0-E08.
+
+#### Method
+
+Part 1:
+
+* The point. The steady state of the target is estimated as the mean of the 1201 readings of `target.steady.d7200.n0`. k_350 and UA are the values with which the modeller's model holds that state steady under the known nominal inputs at E/R = 8750 K, the modeller's textbook value (`steady_state_parameters`). The second point uses the E/R of the free fit of MR on the 27 pooled windows of part 2. At each point the state must be steady to the model, its right-hand side at most 1e-9 of the feed terms, and stable by the eigenvalues of its Jacobian. The mean of the 27 context means of `m0-e05` is reported beside it as a cross-check.
+* The windows. The 16 corners of P3 at the amplitudes A10 (D-018), in the order of `simulation.protocols.corner_levels`, each held 20 rows and followed by 90 at the nominal inputs. These are the 110 scored readings of a P3 window (section 4.3), started exactly at the steady state.
+  * The script checks that every excursion of `m0-e05` that forms a window went to one of these corners, bit for bit.
+  * The information of each window is computed once with the reference integration of the evaluation, and again with LSODA at rtol = 1e-12 and atol = 1e-10 as a check of resolution.
+  * Noise levels: those of the exports, 5 mol/m^3 and 0.5 K. Context: ten readings.
+* Three covariances of a design, in (ln k_350, E/R, ln UA):
+  * with the initial state exact, (S^T S)^-1: the optimistic reference of the plan;
+  * the Cramer-Rao bound with the initial state known through its ten context readings, (S^T Sigma^-1 S)^-1 with Sigma = I + G Sigma_0 G^T. It is the bound for estimators that treat each initial state as a free nuisance known only through its context, not as the model's steady state, which depends on the parameters;
+  * the sandwich of the estimator that M1 uses, which fixes the initial state at the context mean and weights by 1 / sigma^2.
+
+  The first two are information. The third is the covariance of an estimator, and differs from the second by what its rule costs. The plan asked for the first and the third; the second is added so that the two costs can be told apart (D-034). Singular values are those of the normalised S in the coordinates of the fit, (ln k_350, (E/R) / 350 K, ln UA), as `fitting` reports them.
+* The designs:
+  * the numbers of windows that MR (n = b) and MR_F (n = b - n_V) receive at the budgets of the plan, b = 2, 5, 10, 20 and 40, that is n = 1, 2, 4, 5, 8, 10, 16, 20, 32 and 40;
+  * for each n, the expected design, n / 16 windows at each corner;
+  * for each n, 20 000 draws of the corners as P3 draws them, independently and with replacement, from `numpy.random.default_rng(20260927)`;
+  * the designs of the corners that each run of part 2, and the three pooled, actually visited, at 9 and 27 windows.
+* Reported:
+  * standard errors, correlations, singular values and the condition number of each correlation matrix, for every corner window, every expected design and the designs of the runs;
+  * over the draws: the 5 %, 50 % and 95 % quantiles and the extremes of each standard error of each covariance; the median correlations of the exact and sandwich covariances; the median and largest condition number of the sandwich correlations; the number of draws without a covariance, with their reasons; and the number of distinct corners.
+
+Part 2:
+
+* Profiles: each of the three runs, with its nine windows as MR fits them in the smoke run of I1 (the first excursion of a run of M0 has no context), and the 27 windows pooled.
+* The free fit: MR as declared in D-032, with the five starts and E/R estimated. Its covariance at the estimate is computed by `fitting.covariance`.
+* The grid, in K: 6000 to 13000 in steps of 500, and 9000 to 10000 in steps of 25, 53 points in all. At each point E/R is held, and k_350 and UA are fitted by the procedure of MR, with its settings and its three starts that do not move E/R. The fit held at the estimate of the free fit is added as a point of each profile; it must reach the free fit's loss within 1e-3 in the sum of squared normalised residuals.
+* Reported for each point: the outcome of every start, J, k_350, UA and the spread over converged starts. For each profile:
+  * the increase 2 N (J^2 - J_min^2), with N scored readings and J_min the objective of the free fit;
+  * the lowest point of the grid, and whether it is at an end of the grid;
+  * the crossings of 3.84 and of 3.84 J_min^2 by linear interpolation (`profile_interval`), each with its half-width, the spacing of the two points of the profile, grid or estimate, that bracket it, its outer limit and whether the profile is convex there;
+  * the half-widths from the linearised curvature, and whether the profile agrees with them (B2);
+  * the slopes of B3;
+  * for B4 and the reading rule, the pairwise comparisons, with the sandwich standard errors at the estimates and, beside them, the a priori ones of each run's own design at both points.
+* The fits are independent of each other and run in separate processes, each built from the exports themselves.
+
+Part 3:
+
+* The true plant is loaded with its verified nominal steady state (`load_virtual_plant`).
+* Each corner window is 120 s at the corner and then the nominal inputs to 660 s. It is integrated as in M0, with LSODA at rtol = atol = 1e-9, restarted at the change and stored every 0.1 s, and again at 1e-11. The scored states are the samples at 6 s to 660 s.
+* The pseudo-true fit is `fit_mechanistic` with the settings of MR (D-032) on the 16 windows, whose context is ten copies of the exact steady state and whose scored readings are the exact states. Reported:
+  * the parameters and J;
+  * the root mean square error in sigmas per channel, pooled and per phase;
+  * J per window;
+  * the spread over the starts;
+  * the steady states of the fitted model at the nominal inputs.
+* The two variants, each compared with the true plant, A:
+  * Variant K is the true plant with its saturating rate replaced by a first-order rate with the same E/R and a pre-exponential factor of k0 / (1 + K_sat C_A,nominal), so that the rate equals the true one at the nominal steady state. It keeps the true conductance UA(T).
+  * Variant B is that of M0-E08: the true kinetics with a constant conductance equal to UA_true(T_nominal), recomputed on these 16 windows so that the two mismatches are compared on the same windows. M0-E08's own numbers, on whole runs, are quoted beside it.
+  * Reported for each: the differences at the scored instants in sigmas, largest and root mean square per channel, pooled, per phase and per window; and the largest difference on the dense grid, in physical units.
+
+#### Mandatory checks, failures, and what is then not read
+
+A mandatory check that fails makes the exit code of its script 1, and the run is reported as it came.
+
+| Check | If it fails, not read |
+|---|---|
+| every corner window has information, at each point | at that point, the designs that hold a failed corner, and all the draws, which are not computed |
+| every corner window is compared with the tight integration, and their standard errors agree to 1e-3 relative, at each point | the standard errors of part 1 at that point |
+| the point is steady to the model and stable, at each point | part 1 at that point |
+| every excursion of `m0-e05` that forms a window went to a corner of the design | the designs of the runs of part 2 |
+| every profile with a free fit reproduces the free fit's loss at its estimate | the intervals of that profile |
+| the exports were not written to | the run, which is then repeated from fresh copies |
+| A is accepted in every window by `check_trajectory` | part 3 |
+| K and B are physically valid (`comparison_is_valid`) | the differences of the invalid variant |
+| K and B are anchored: their right-hand side at the nominal steady state is within 1e-9 of the feed terms | the differences of the unanchored variant |
+| the largest integration error of A and of each variant is at most 1 % of the largest difference it is compared with, as in M0-E08 | the differences of the unresolved variant |
+| a pseudo-true fit is selected | the pseudo-true fit |
+
+Failures that are not checks are recorded as they come:
+
+* A grid point where no start converged is a gap in its profile. It is not interpolated across and not run again with other settings.
+* A free fit with no converged start leaves its profile without a minimum: no increase and no interval is computed, and the profile is reported by J. If it is the pooled fit, there is no second point, and so no A4.
+* A point of a profile more than 1e-3 below the free fit's loss says that the free fit is not the minimum of its profile. The profile is flagged, no interval is computed, and B1 and B2 are not read for it.
+* A covariance at an estimate that cannot be computed leaves that profile without the half-widths of B2 and its run without the pairs of B4.
+* A minimum at an end of the grid is reported as not located. Any extension of the grid is registered here, dated, before it is run.
+* A failed rollout in part 1 leaves that corner without information, as in the table.
+
+No seed, tolerance, grid or setting is changed after a result has been seen in order to change it.
+
+#### How the results will be read
+
+* Part 1 describes what the data could determine if the model were right, locally, at one point. It is not a verdict of identifiability, and no threshold turns a standard error into "identifiable".
+* Neither crossing of part 2 is a confidence interval. The 3.84 crossing would be one only if the model were right and the initial states exact. The 3.84 J_min^2 crossing also treats the lack of fit as independent noise, which a systematic misfit, correlated in time, is not. Both describe the sharpness of the minimum.
+* Noise against excitation, for E/R, from parts 1 and 2 only.
+  * What is read: for each pair of runs, the difference of their free estimates divided by sqrt(se_a^2 + se_b^2), where se is the sandwich standard error of E/R at each run's own estimate; and the range of the three estimates.
+  * Reported beside them as context, and not used as a denominator: the a priori sandwich standard error of E/R of each run's own nine windows at the textbook point and at the pooled estimate, and that of the expected design at nine windows, the n = 1 value divided by 3. The a priori values at the textbook point are expected to be larger than the standard errors at the estimates, about 27 K against 18 to 21 K, since the estimates lie at larger E/R.
+  * A pair is read only if both of its runs agree with the linearised curvature in B2. Otherwise its ratio is reported and not read, because an excess could then come from standard errors built on the wrong curvature.
+  * Three runs give two independent differences, so nothing is concluded from these ratios. In a pair that is read, a ratio within 2 is described as not distinguishable from the noise the sandwich describes. A larger ratio is described as a difference that this noise does not account for. The excursions each run happened to have could explain it, and so could a curvature finer than B2 resolves.
+  * In the benchmark, where replicates are independent draws of P3, a dependence of the estimate on the excursions adds to the variance of MR over replicates. At finite budgets it can also move the mean, since the estimate is a nonlinear function of the frequencies of the corners drawn.
+  * Any conclusion or proposal about the treatment of E/R rests on parts 1 and 2 alone.
+* The oracle, apart.
+  * The distance of the pseudo-true E/R from the 8750 K of the saturating law is reported in kelvin, and divided by the sandwich standard error of E/R of the expected design at the textbook point at n = 1 and at n = 40. It is a diagnostic of scale: the displacement of a wrong law on the 16 corner windows under this objective. It is not read about Q1, and it is not an argument for any choice about MR, MR_F or the hybrids.
+  * The pseudo-true value would be the limit of MR as the budget grows if every window started exactly at the nominal steady state and the model were given that state. With corners drawn uniformly their frequencies tend to 1/16, and the prefixes of runs do not change the limit.
+  * The MR of the benchmark tends to another limit, through the error of the context means and the state an excursion carries into the next; at finite budgets it also differs from its limit by the bias and variance of the estimator.
+  * Section 7.4 of the plan also names the draws with replacement and the prefixes as reasons; they do not act in that limit (D-034).
+* A good fit is not a recovered mechanism. The E/R and UA that fit best are the values with which a wrong law imitates the truth on these windows. The pseudo-true E/R is not the true value of anything, and its distance from 8750 K compares two different laws.
+* The kinetic and thermal mismatches are compared as scales on the same windows, in sigmas; neither is a threshold of detection.
+* Q1 was answered in D-030: E/R is estimated. This experiment does not reopen that answer. If its results argued for reconsidering it, that would go to the owner as an explicit proposal, resting on parts 1 and 2 only.
+
+What it cannot conclude:
+
+* how the models of M1 will score on the benchmark;
+* whether a hybrid can learn the missing kinetics;
+* anything about the source plant, about the amplitude A5 or about designs other than P3;
+* global identifiability away from the points computed;
+* what E/R "really" is for a first-order law, which has no true value here.
+
+#### Outputs and commands
+
+* `PT_DATA_DIR/experiments/m1_e01/<run id>/`: `summary.json` and four figures, which show the standard errors against the number of windows, one window per corner, the profiles, and k_350 and UA along the profiles.
+* `PT_DATA_DIR/experiments/m1_e01_oracle/<run id>/`: `summary.json` and two figures, which show the two mismatches alone and the residuals of the pseudo-true fit.
+
+PT_DATA_DIR is a new directory, `C:/Users/rlnsk/pt-data-m1-e01`, outside the repository and outside OneDrive. Both scripts refuse to run when it resolves inside the repository, and both record it in their provenance.
+
+Commands, from the commit that registers this entry, with a clean working tree and the interpreter of the reference environment, first the available parts and then the oracle. In Git Bash:
+
+    PT_DATA_DIR=C:/Users/rlnsk/pt-data-m1-e01 <venv>/Scripts/python.exe experiments/m1_e01_identifiability.py --exports <repository>/data/available/exports
+    PT_DATA_DIR=C:/Users/rlnsk/pt-data-m1-e01 <venv>/Scripts/python.exe experiments/m1_e01_oracle.py
+
+In PowerShell, `$env:PT_DATA_DIR = 'C:/Users/rlnsk/pt-data-m1-e01'` first, and the same two commands without the prefix.
+
+Expected cost, from the synthetic run: under a minute for part 1. Part 2 is 220 fits, of two parameters and of three, and takes some minutes on 14 processes; it takes more than on the synthetic data if fits far from the minimum need more evaluations. The oracle takes under two minutes.
