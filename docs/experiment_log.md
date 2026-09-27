@@ -955,3 +955,37 @@ What M1-E01 leaves open:
 * The information of part 1 is local and assumes the right model.
 * The pseudo-true value is not the limit of the benchmark.
 * How any model will score on the benchmark is untouched.
+
+### M1-E01, corrections after Codex's review of `129063c` (2026-09-27)
+
+This entry adds to the registration and the result above and changes neither. Codex reviewed I2 at `129063c` and reported two defects, each with a reproduction. Both were reproduced on `129063c` and corrected in `ddd884c`, with regression tests (`docs/numerical_robustness.md`, fifteenth review):
+
+* A. The context information could come out equal to the information with the initial state exact, finite and accepted, when the noise levels were far from one. It is now read from a QR factorisation of the joint problem, and nothing overflows before it.
+* B. B2 could call a profile in agreement with the linearised curvature on a bracket that assumed a convexity the sampled slopes contradicted. A bracket is now reported only where the sampled slopes over its span do not contradict convexity. Elsewhere it is not evaluable, B2 gives that profile no verdict, and B4 reads no pair that holds its run.
+
+A clarification of the result above. It says "the profile is convex at every crossing". What was checked is that the sampled slopes do not decrease, which is necessary for convexity and does not show it. The sentence should be read as "the sampled slopes are consistent with convexity at every crossing". The brackets of B2, and the verdicts read from them, hold if the profile is convex between its points, which the points cannot show. The rule of B2 in the registration, that where the slopes decrease the outer limit is the bracketing point, is replaced by the correction of B: such a bracket is not evaluable.
+
+**Run.** Parts 1 and 2 were run again on 2026-09-27 from `ddd884c`, with a clean working tree identified in the provenance, the same interpreter, the same exports and the same PT_DATA_DIR. The run is `20260927T210021Z_ddd884c`, 437 s: part 1 took 39 s, part 2 396 s on 14 processes, and the second point 0.8 s. The oracle was not run again: its script uses neither function that was corrected.
+
+**Comparison with the registered run** `20260927T182913Z_e166bb5`, every number of the two summaries walked side by side, leaving out provenance, timings and the names of the figures:
+
+* Every mandatory check held, and the exit code was 0.
+* Part 2 is the same bit for bit: every fit, point, increase, crossing, outer limit, standard error at an estimate and ratio of B4.
+* The B2 brackets change only in what they are called. The interpolated half-width, formerly `half_width_K`, is now `interpolated_half_width_K`, and the flag `convex` is replaced by `evaluable`, the reason when a bracket is not evaluable, and the sampled slopes. All eight brackets at 3.84 and 3.84 J_min^2 are evaluable, with the outer limits of the registered run.
+* The verdicts are those of the registered run: e0 agrees on both sides; e1 is narrower on both; e2 and the pooled windows agree below and are narrower above. The new field `curvature_by_side` states them. No pair of B4 is read, and the ratios are 5.41, 0.97 and -4.67 as before.
+* In part 1, 1412 of 6608 numbers differ, all in the rounding of the covariances that involve the initial state:
+  * the covariance with the initial state exact is the same bit for bit;
+  * the context bound differs by at most 3.0e-11 relative, in a correlation of 0.004, and its standard errors by at most 3.0e-12;
+  * the sandwich differs by at most 4.1e-14, since its excess is now formed from the scaled coupling;
+  * the largest relative difference of the resolution check, 1.007e-7, differs in its ninth digit.
+* No number reported in the result above changes at the precision it is reported.
+
+**Also checked, on `ddd884c`:**
+
+* The suite on Windows: 922 tests pass, the 912 of `129063c` and 10 new.
+* ruff finds nothing.
+* In a throwaway container of the image built from `ddd884c`, with pytest 9.1.1 added and `tests/` and `AGENTS.md` mounted read-only: 918 pass and 4 are skipped, those that need git.
+* The separation of available and oracle information is unchanged: `tests/test_boundaries.py` passes, and the script of parts 1 and 2 imports nothing new.
+* Nothing of M0 or of I1 was changed.
+
+**Interpretation.** Neither defect acted in the registered run, and its reading stands as written, with the clarification about convexity above. The brackets of B2, and so the verdicts of B2 and the gate of B4, hold under a condition the points of a profile cannot show. I2 remains implemented, run and documented, awaiting review.

@@ -492,6 +492,8 @@ Where the criteria of section 13 for I2 are met:
 
 The decision on E/R was not left to the diagnostic: Q1 was answered in D-030.
 
+Codex reviewed I2 at `129063c` and reported two defects, neither of which acted in the registered run. One was an overflow that could drop the cost of the initial state from the context information. The other was a bracket of B2 accepted where the sampled profile contradicts the convexity it assumes. Both were reproduced and corrected, with regression tests, in `ddd884c` (`docs/numerical_robustness.md`, fifteenth review; D-034, dated clarification). Parts 1 and 2 were run again from that clean commit. Part 2 is the same bit for bit. In part 1 only rounding differs, at most 3e-11 relative in the context bound, and every check, verdict and reading of the registered run stands (experiment log, the entry after M1-E01). I2 still awaits the owner's acceptance.
+
 ## 14. The next iteration, recommended
 
 I2 is implemented and run and awaits review (section 13). Once it is accepted, the next iteration is I3, the training framework and the learned models, as section 13 lists them. The recommendation below, I2, is kept as it was written.
@@ -563,3 +565,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 6, 2026-09-27.** Status only. The header and section 13 record that I1 is accepted and closed (D-033), and section 14 now recommends I2 instead of I1. No part of the design changed.
 
 **Revision 7, 2026-09-27.** Status only. The header, section 13 and section 14 record that I2 is implemented and run and awaits review. No part of the design changed. D-034 records a precision on section 7.4, whose text is kept. Two of the reasons it gives for the pseudo-true value to differ from the large-budget limit of the benchmark, the draws with replacement and the prefixes of runs, do not act in that limit.
+
+**Revision 8, 2026-09-27.** Status only. Section 13 records the correction of I2 after Codex's review of `129063c`. No part of the design changed.
