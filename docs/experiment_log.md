@@ -1042,3 +1042,41 @@ Interpretation:
 * They differ in cost. On one thread, a loss and its gradient of HK cost about 75 times more in PyTorch than in JAX, and 200 steps of Adam 28 to 37 times more over the two runs; for BN both ratios are about 8. The loop over 110 rows, two steps and four stages makes 880 evaluations of a small right-hand side, and PyTorch dispatches each small operation separately while JAX compiles the loop once. JAX also installs in half the space. The recorded choice is D-035.
 * Readability does not separate them: both write the equations as numpy does.
 * Neither framework was tried on a GPU. With batches of at most 32 windows of two states, and steps that must run in sequence, there is no reason to expect a gain, and none is claimed.
+
+#### The pilot of the learned models: what is declared before it runs
+
+Written on 2026-09-27 before any phase of `experiments/m1_i3_pilot.py` was run. The pilot is exploratory, on development data. It informs choices that the registration of the benchmark (I5) fixes. None of its numbers is a result, and no benchmark data exist.
+
+Data and seeds:
+
+* The three target runs of `m0-e05`, nine windows each. Budgets of 2, 5 and 9 windows, divided into F and V by the rule of section 5.5, so V is one window at every one of them.
+* Two synthetic P3 runs of 40 excursions with the lead of M1, for the budgets of 20 and 40 windows that the data of M0 do not reach. They are simulated by the model side's rollout from a hybrid of the modeller's model: E/R = 9000 K, k_350 = 0.0177 1/s, UA = 1330 W/K, and a kinetic factor exp(-0.25 (C_A - 190) / 100 + 0.01 (T - 355)), with the noise of D-020. Corners from seed 20260930, noise from seed 20260931.
+* The initial weights come from `training_seed(20260929, replicate, configuration)`, the replicate being the position of the run and the configuration its position in its family's list.
+
+Phase `rates`, the rate of Adam for each family:
+
+* Rates of 1e-3, 3e-3 and 1e-2.
+* One configuration per family, BN 16 x 16 and the hybrids 8, with lambda = 1e-4.
+* 3000 steps, V every 100 steps, at nine windows on each of the three runs: 36 trainings.
+* The rule, declared now. Among the rates with no training failure on any run, the family takes the one with the lowest median over the runs of the selected criterion on V. Rates within 1 % of that median count as tied, and the largest of them is taken, since it needs fewer steps.
+* If that rate's selected checkpoint is the last one in two of the three runs, the criterion was still falling when the training stopped. The later phases then run 6000 steps instead of 3000.
+
+Phase `grid`, the candidate configurations:
+
+* Four per family, the owner's proposal:
+  * BN with two hidden layers of 16 or 32;
+  * HK and HU with one of 8 or 16;
+  * HKU with each size applied to both factors;
+  * each size with lambda of 1e-4 and 1e-2.
+* The rates chosen in `rates`, at 2, 5 and 9 windows on the three runs: 144 trainings. MR, MR_F and BL are fitted beside them, as references and for their cost.
+* Reported:
+  * failures;
+  * the step of each selected checkpoint;
+  * the criterion on V of every configuration, and the spread over configurations and runs;
+  * the difference the penalty makes;
+  * the time of each fit.
+* Nothing chooses the lists of the benchmark automatically. Any change to the owner's proposal is proposed afterwards, with this evidence, labelled exploratory, and fixed in the registration.
+
+Phase `cost`: the same 16 configurations and MR, MR_F and BL at 20 and 40 windows on the two synthetic runs, 64 trainings, for the time of a fit where the data of M0 cannot say.
+
+Computation: each training is one process with one thread, in a pool of 14 processes on a machine of 16 logical processors. For each phase the summary records the time of every fit, the wall time and the number of processes. The owner set about eight hours for the fits of the pilot, counted as the sum of the times of its fits. No phase is started whose expected sum would pass what remains of that budget.
