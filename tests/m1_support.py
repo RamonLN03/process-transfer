@@ -82,16 +82,20 @@ def modeller_run(
     corners: Sequence[Sequence[int]],
     noise_seed: int | None,
     run: str = "target.p3.e0.x8.n0",
+    initial_state: np.ndarray | None = None,
 ) -> Observations:
     """A P3 run with the lead of M1, simulated with the modeller's equations from their
     steady state at the nominal inputs, on the truth side of the tests. Readings with the
     noise of D-020 drawn from ``noise_seed``, or exact when it is None. ``f`` is the
-    right-hand side of the modeller's model at the values chosen by the test."""
-    (steady,) = find_steady_states(lambda x: f(x, NOMINAL), c_a_upper=NOMINAL[1])
+    right-hand side of the modeller's model at the values chosen by the test, or of another
+    plant of the test, which then gives its steady state as ``initial_state``."""
+    if initial_state is None:
+        (steady,) = find_steady_states(lambda x: f(x, NOMINAL), c_a_upper=NOMINAL[1])
+        initial_state = steady.state
     segments = [InputSegment(60.0, NOMINAL)]
     for signs in corners:
         segments += [InputSegment(120.0, corner(signs)), InputSegment(600.0, NOMINAL)]
-    truth = simulate_piecewise(f, steady.state, segments, sample_period=6.0)
+    truth = simulate_piecewise(f, initial_state, segments, sample_period=6.0)
     readings = np.array(truth.states)
     if noise_seed is not None:
         rng = np.random.default_rng(noise_seed)

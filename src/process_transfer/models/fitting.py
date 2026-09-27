@@ -82,7 +82,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -102,6 +102,7 @@ from process_transfer.models.mechanistic import (
 )
 from process_transfer.models.rollout import (
     EVALUATION_SETTINGS,
+    DifferentiableModel,
     RolloutFailure,
     RolloutSettings,
     rollout,
@@ -241,24 +242,38 @@ class FitResult:
         return {name: (min(found), max(found)) for name, found in values.items()}
 
 
-class _FitStop(Exception):
+class FitStop(Exception):
     """A point at which the loss cannot be evaluated; it ends the start."""
 
 
-class _Loss:
+def mechanistic_builder(
+    name: str, known: KnownPlant, fixed_activation: float | None
+) -> Callable[[FloatArray], MechanisticModel]:
+    """The modeller's model at theta. Parameters that overflow end the start."""
+
+    def build(theta: FloatArray) -> MechanisticModel:
+        try:
+            parameters = MechanisticParameters.from_coordinates(theta, fixed_activation)
+        except OverflowError:
+            raise FitStop(f"the parameters overflow at theta = {theta.tolist()}") from None
+        return MechanisticModel(name, known, parameters, fixed_activation)
+
+    return build
+
+
+class WindowLoss:
     """Residuals and their Jacobian at theta, computed together and kept for the last theta,
-    since least_squares asks for both at every point it accepts."""
+    since least_squares asks for both at every point it accepts. ``build`` gives the model at
+    theta, a model that states its Jacobians, and raises ``FitStop`` where there is none; the
+    same loss serves MR and BL."""
 
     def __init__(
         self,
-        name: str,
         windows: Sequence[WindowData],
-        known: KnownPlant,
-        fixed_activation: float | None,
+        build: Callable[[FloatArray], DifferentiableModel],
         settings: RolloutSettings,
     ) -> None:
-        self.name, self.windows, self.known = name, windows, known
-        self.fixed_activation, self.settings = fixed_activation, settings
+        self.windows, self.build, self.settings = windows, build, settings
         self.sigma = windows[0].noise_std
         self.scale = 1.0 / math.sqrt(2.0 * sum(len(data.scored) for data in windows))
         self.evaluations = 0
@@ -273,12 +288,8 @@ class _Loss:
             return self._value
         self.last_theta = theta.tolist()
         if not np.all(np.isfinite(theta)):
-            raise _FitStop(f"the optimiser proposed a point that is not finite: {theta.tolist()}")
-        try:
-            parameters = MechanisticParameters.from_coordinates(theta, self.fixed_activation)
-        except OverflowError:
-            raise _FitStop(f"the parameters overflow at theta = {theta.tolist()}") from None
-        model = MechanisticModel(self.name, self.known, parameters, self.fixed_activation)
+            raise FitStop(f"the optimiser proposed a point that is not finite: {theta.tolist()}")
+        model = self.build(theta)
         residuals, jacobian = [], []
         for data in self.windows:
             result = rollout(
@@ -290,7 +301,7 @@ class _Loss:
                 parameter_sensitivities=True,
             )
             if isinstance(result, RolloutFailure):
-                raise _FitStop(
+                raise FitStop(
                     f"the rollout of window {data.key} failed at theta = {theta.tolist()}: "
                     f"{result.cause}: {result.detail}"
                 )
@@ -319,7 +330,7 @@ class _Loss:
             ),
         ):
             if not np.all(np.isfinite(values)):
-                raise _FitStop(
+                raise FitStop(
                     f"{description} not representable in double precision at theta = "
                     f"{theta.tolist()}"
                 )
@@ -334,7 +345,8 @@ class _Loss:
         return self._evaluate(theta)[1]
 
 
-def _check_windows(windows: Sequence[WindowData]) -> None:
+def check_windows(windows: Sequence[WindowData]) -> None:
+    """Refuse what makes the loss undefined whatever the model."""
     if len(windows) == 0:
         raise ValueError("a fit needs at least one window")
     keys = [data.key for data in windows]
@@ -359,7 +371,7 @@ def _check_windows(windows: Sequence[WindowData]) -> None:
 
 
 def _numerical_failure(
-    start: Start, initial: MechanisticParameters, message: str, loss: _Loss, began: float
+    start: Start, initial: MechanisticParameters, message: str, loss: WindowLoss, began: float
 ) -> StartRecord:
     return StartRecord(
         start=start,
@@ -393,7 +405,7 @@ def fit_mechanistic(
 ) -> FitResult:
     """Estimate the modeller's parameters on ``windows``, from every declared start."""
     windows = tuple(windows)
-    _check_windows(windows)
+    check_windows(windows)
     fixed = settings.fixed_activation_temperature
     textbook = MechanisticParameters.textbook(modeller)
     if fixed is None:
@@ -405,7 +417,7 @@ def fit_mechanistic(
         initial = start.point(textbook)
         if fixed is not None:
             initial = MechanisticParameters.from_k_350(initial.k_350, fixed, initial.ua)
-        loss = _Loss(name, windows, known, fixed, settings.rollout)
+        loss = WindowLoss(windows, mechanistic_builder(name, known, fixed), settings.rollout)
         began = time.perf_counter()
         try:
             with np.errstate(over="raise", invalid="raise", divide="raise"):
@@ -424,7 +436,7 @@ def fit_mechanistic(
                     tr_solver="exact",
                     verbose=0,
                 )
-        except _FitStop as stop:
+        except FitStop as stop:
             records.append(_numerical_failure(start, initial, str(stop), loss, began))
             continue
         except FloatingPointError as error:
@@ -523,7 +535,7 @@ def covariance(
 ) -> Covariance:
     """The covariance of the weighted least-squares estimate at ``parameters``."""
     windows = tuple(windows)
-    _check_windows(windows)
+    check_windows(windows)
     model = MechanisticModel("covariance", known, parameters, fixed_activation)
     estimated = fixed_activation is None
     names = ("ln k_350", "E/R", "ln UA") if estimated else ("ln k_350", "ln UA")
