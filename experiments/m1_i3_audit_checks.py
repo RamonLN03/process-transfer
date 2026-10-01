@@ -165,9 +165,14 @@ def main() -> int:
         phase: json.loads((arguments.pilot / run / f"summary_{phase}.json").read_text())
         for phase, run in (("grid", GRID_RUN), ("cost", COST_RUN))
     }
-    items = [(*item, 2) for item in REPRODUCE] + [
-        (*item, substeps) for item in SUBSTEPS for substeps in (4,)
-    ]
+    # two steps per row for every case, the reproduced ones and those of SUBSTEPS that are
+    # not among them; then four steps for the cases of SUBSTEPS
+    extra = [item for item in SUBSTEPS if item not in REPRODUCE]
+    items = (
+        [(*item, 2) for item in REPRODUCE]
+        + [(*item, 2) for item in extra]
+        + [(*item, 4) for item in SUBSTEPS]
+    )
     with ProcessPoolExecutor(
         arguments.workers, initializer=_initialise, initargs=(str(arguments.exports),)
     ) as pool:
@@ -189,9 +194,9 @@ def main() -> int:
             }
         )
     # two steps per row: the reproduced trainings of the two cases of SUBSTEPS
-    two = {(r["configuration"], r["run"], r["budget"]): r for r in results[: len(REPRODUCE)]}
+    two = {(r["configuration"], r["run"], r["budget"]): r for r in results if r["substeps"] == 2}
     substeps = []
-    for result in results[len(REPRODUCE) :]:
+    for result in (r for r in results if r["substeps"] == 4):
         key = (result["configuration"], result["run"], result["budget"])
         for found in (two[key], result):
             substeps.append(
