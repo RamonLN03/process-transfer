@@ -327,7 +327,11 @@ def test_a_moment_of_adam_that_overflows_ends_the_training() -> None:
     record = train(
         Configuration("BN", (4,), 0.0), TrainingSettings(1e-3, 2, 1), fitting, validation, KNOWN, 1
     )
-    assert record.checkpoints[0].fitting_loss == pytest.approx(2.7409467027186302e302, rel=1e-12)
+    # the loss itself is finite and huge. Its value amplifies by 1e300 the differences of the
+    # integrator between platforms in the simulated data: 2.74094670e302 on Windows and
+    # 2.74094668e302 on the Linux of CI. So only its size is asked here
+    loss = record.checkpoints[0].fitting_loss
+    assert math.isfinite(loss) and loss > 1e302
     assert record.failure is not None and record.selected is None
     assert "second moment of Adam is not representable at step 1" in record.failure.reason
 
