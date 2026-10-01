@@ -65,6 +65,7 @@ from process_transfer.data.export import open_export_directory  # noqa: E402
 from process_transfer.data.paths import data_dir, repository_root  # noqa: E402
 from process_transfer.data.provenance import environment, git_state, new_run_directory  # noqa: E402
 from process_transfer.evaluation.budgets import excitation, split_budget  # noqa: E402
+from process_transfer.evaluation.outcomes import TrainingFailure  # noqa: E402
 from process_transfer.evaluation.plant import KnownPlant, read_known_plant  # noqa: E402
 from process_transfer.evaluation.windows import (  # noqa: E402
     WindowData,
@@ -341,9 +342,41 @@ def training_task(task: dict[str, object]) -> dict[str, object]:
         "mechanistic": None
         if record.parameters is None or "theta" not in record.parameters
         else record.model(known).mechanistic_parameters(),
+        "fitting_schemes_differ_in_sigmas": record.fitting_schemes_differ_in_sigmas,
+        "bound_steps": record.bound_steps,
         "seconds": record.seconds,
         "wall_seconds": seconds,
     }
+
+
+def blocked_outcome(task: dict[str, object], reason: str) -> dict[str, object]:
+    """The outcome of a hybrid that could not be trained because its start, MR_F of the
+    same run and budget, failed: a training failure, recorded like any other."""
+    configuration = task["configuration"]
+    return {
+        "run": task["run"],
+        "budget": task["budget"],
+        "configuration": configuration.label,
+        "family": configuration.family,
+        "rate": task["rate"],
+        "seed": task["seed"],
+        "network_size": None,
+        "failure": TrainingFailure(
+            f"{configuration.label}: not trained, since its start failed: {reason}"
+        ),
+        "selected_step": None,
+        "criterion": None,
+        "checkpoints": [],
+        "mechanistic": None,
+        "fitting_schemes_differ_in_sigmas": None,
+        "bound_steps": 0,
+        "seconds": {},
+        "wall_seconds": 0.0,
+    }
+
+
+def outcome_key(outcome: dict[str, object]) -> tuple[str, int, str, float]:
+    return (outcome["run"], outcome["budget"], outcome["configuration"], outcome["rate"])
 
 
 # --------------------------------------------------------------------------- #
@@ -362,12 +395,23 @@ def run_tasks(function, tasks: Sequence, workers: int, context: dict) -> tuple[l
     return results, time.perf_counter() - began
 
 
-def starts_of(mechanistic: list[dict[str, object]]) -> dict[tuple[str, int], MechanisticParameters]:
-    return {
-        (m["run"], m["budget"]): m["parameters"]
-        for m in mechanistic
-        if m["kind"] == "MR_F" and m["parameters"] is not None
-    }
+def starts_of(
+    mechanistic: list[dict[str, object]],
+) -> dict[tuple[str, int], MechanisticParameters | str]:
+    """MR_F of each run and budget, or why there is none."""
+    found: dict[tuple[str, int], MechanisticParameters | str] = {}
+    for m in mechanistic:
+        if m["kind"] != "MR_F":
+            continue
+        key = (m["run"], m["budget"])
+        if m["parameters"] is not None:
+            found[key] = m["parameters"]
+        else:
+            failure = m["failure"]
+            found[key] = f"MR_F of {key[0]} at {key[1]} windows: " + (
+                failure.reason if failure is not None else "no parameters"
+            )
+    return found
 
 
 def trainings(
@@ -375,33 +419,55 @@ def trainings(
     rates: dict[str, float],
     runs: Sequence[str],
     budgets: Sequence[int],
-    starts: dict[tuple[str, int], MechanisticParameters],
+    starts: dict[tuple[str, int], MechanisticParameters | str],
     steps: int,
     every: int,
-) -> list[dict[str, object]]:
-    tasks = []
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """The trainings to run, and the outcomes of those that cannot run: a hybrid whose
+    MR_F failed, or was never fitted, is a training failure with that reason, never left
+    out of the count."""
+    tasks, blocked = [], []
     for replicate, run_id in enumerate(runs):
         for budget in budgets:
             for family, listed in configurations.items():
                 for index, configuration in enumerate(listed):
-                    start = None
+                    task = {
+                        "run": run_id,
+                        "budget": budget,
+                        "configuration": configuration,
+                        "rate": rates[family],
+                        "steps": steps,
+                        "every": every,
+                        "start": None,
+                        "seed": training_seed(SEED_BASE, replicate, index),
+                    }
                     if family != "BN":
-                        start = starts.get((run_id, budget))
-                        if start is None:
-                            continue  # MR_F failed: the hybrid has no start
-                    tasks.append(
-                        {
-                            "run": run_id,
-                            "budget": budget,
-                            "configuration": configuration,
-                            "rate": rates[family],
-                            "steps": steps,
-                            "every": every,
-                            "start": start,
-                            "seed": training_seed(SEED_BASE, replicate, index),
-                        }
-                    )
-    return tasks
+                        start = starts.get(
+                            (run_id, budget), f"MR_F of {run_id} at {budget} windows: not fitted"
+                        )
+                        if isinstance(start, str):
+                            blocked.append(blocked_outcome(task, start))
+                            continue
+                        task["start"] = start
+                    tasks.append(task)
+    return tasks, blocked
+
+
+def expected_outcomes(
+    configurations: dict[str, list[Configuration]],
+    rates: Sequence[dict[str, float]],
+    runs: Sequence[str],
+    budgets: Sequence[int],
+) -> set[tuple[str, int, str, float]]:
+    """Every run, budget, configuration and rate that must have an outcome."""
+    return {
+        (run_id, budget, configuration.label, chosen[family])
+        for chosen in rates
+        for run_id in runs
+        for budget in budgets
+        for family, listed in configurations.items()
+        for configuration in listed
+    }
 
 
 def main() -> int:
@@ -440,17 +506,14 @@ def main() -> int:
             context,
         )
         starts = starts_of(mechanistic)
-        tasks = []
-        for rate in RATES:
-            tasks += trainings(
-                configurations,
-                {f: rate for f in configurations},
-                run_ids,
-                budgets,
-                starts,
-                RATE_STEPS,
-                RATE_EVERY,
+        tasks, blocked = [], []
+        rate_lists = [{f: rate for f in configurations} for rate in RATES]
+        for chosen in rate_lists:
+            found, held = trainings(
+                configurations, chosen, run_ids, budgets, starts, RATE_STEPS, RATE_EVERY
             )
+            tasks += found
+            blocked += held
         steps, every = RATE_STEPS, RATE_EVERY
     else:
         if set(rates) != set(GRID):
@@ -473,9 +536,20 @@ def main() -> int:
         kinds = [(k, r, b) for r in run_ids for b in budgets for k in ("MR_F", "MR", "BL")]
         mechanistic, mech_wall = run_tasks(mechanistic_task, kinds, arguments.workers, context)
         starts = starts_of(mechanistic)
-        tasks = trainings(GRID, rates, run_ids, budgets, starts, GRID_STEPS, GRID_EVERY)
+        configurations, rate_lists = GRID, [rates]
+        tasks, blocked = trainings(GRID, rates, run_ids, budgets, starts, GRID_STEPS, GRID_EVERY)
         steps, every = GRID_STEPS, GRID_EVERY
     results, train_wall = run_tasks(training_task, tasks, arguments.workers, context)
+    results += blocked
+    # every expected outcome is recorded once: a failure does not leave the denominator
+    expected = expected_outcomes(configurations, rate_lists, run_ids, budgets)
+    recorded = [outcome_key(r) for r in results]
+    summary["accounting"] = {
+        "expected": len(expected),
+        "recorded": len(recorded),
+        "blocked": len(blocked),
+        "complete": set(recorded) == expected and len(recorded) == len(expected),
+    }
     summary["excitation"] = {
         f"{r} b={b}": plain(excitation(_part_of(runs, r, b), known.nominal_inputs))
         for r in run_ids
@@ -509,7 +583,7 @@ def main() -> int:
     )
     print(directory)
     print(json.dumps(plain(summary["cost"]), indent=1))
-    return 0 if summary["exports_unchanged"] else 1
+    return 0 if summary["exports_unchanged"] and summary["accounting"]["complete"] else 1
 
 
 def _part_of(runs, run_id: str, budget: int) -> tuple[WindowData, ...]:  # noqa: ANN001
