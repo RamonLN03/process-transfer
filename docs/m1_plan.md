@@ -1,6 +1,6 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27, corrected after Codex's review, and awaits the owner's acceptance (section 13, D-034). I3, the training framework and the learned models, was implemented on 2026-09-27 and 2026-09-28 and awaits review (section 13, D-035, D-036). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27, corrected after Codex's review, and awaits the owner's acceptance (section 13, D-034). I3, the training framework and the learned models, was implemented on 2026-09-27 and 2026-09-28, corrected after Codex's audit, and closed on 2026-10-01 (section 13, D-035 to D-037). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
 
 ## 1. The question
 
@@ -494,6 +494,8 @@ The decision on E/R was not left to the diagnostic: Q1 was answered in D-030.
 
 Codex reviewed I2 at `129063c` and reported two defects, neither of which acted in the registered run. One was an overflow that could drop the cost of the initial state from the context information. The other was a bracket of B2 accepted where the sampled profile contradicts the convexity it assumes. Both were reproduced and corrected, with regression tests, in `ddd884c` (`docs/numerical_robustness.md`, fifteenth review; D-034, dated clarification). Parts 1 and 2 were run again from that clean commit. Part 2 is the same bit for bit. In part 1 only rounding differs, at most 3e-11 relative in the context bound, and every check, verdict and reading of the registered run stands (experiment log, the entry after M1-E01). I2 still awaits the owner's acceptance.
 
+Status of I3 on 2026-10-01: closed (D-037). Codex audited `1a9fad4` and reported five defects. They were reproduced and corrected with regression tests in `436a811` and `44f37a8` (`docs/numerical_robustness.md`, seventeenth review), with further checks after them. The owner authorised the closure on the conditions that the criteria below hold and the defects are resolved with evidence; both were checked. Codex has not reviewed the corrections. The paragraphs below were written on 2026-09-28, before the audit, and are kept; the code of I3 is now that of `eee1c8d`, and its suite has 999 tests.
+
 Status of I3 on 2026-09-28. The owner authorised I3 on 2026-09-27, once the corrections of I2 were published and their CI verified, and while I2 awaits acceptance. I3 is implemented and its development runs are done. It awaits review and is not accepted.
 
 * The framework: JAX, from a short comparison with PyTorch on development data (D-035; `28e0936`, experiment log).
@@ -537,7 +539,7 @@ A5 is not tried here: it waits for the verification of P3 at A5 (I4).
 
 ## 14. The next iteration, recommended
 
-I2 is implemented, run and corrected, and awaits the owner's acceptance. I3 was implemented on the owner's authorisation while I2 awaits it, and awaits review (section 13). Once both are accepted, the next iteration is I4: the lead and the amplitude A5 in the grammar of identities and the data contract, and the verification of P3 at A5, M1-E02, registered before it is run. The recommendation below, I2, is kept as it was written.
+I2 is implemented, run and corrected, and awaits the owner's acceptance. I3 is closed (D-037). The next iteration is I4: the lead and the amplitude A5 in the grammar of identities and the data contract, and the verification of P3 at A5, M1-E02, registered before it is run. The recommendation below, I2, is kept as it was written.
 
 I2, the identifiability diagnostic M1-E01 of section 7.4. I1 is closed (D-033), and I2 needs nothing that I1 did not build: the fit of MR with E/R estimated or held fixed, its covariance with and without the error of the initial state, rollouts with sensitivities, and the windows of the exports of M0. It needs no new dependency and no new data. Concretely:
 
@@ -610,3 +612,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 8, 2026-09-27.** Status only. Section 13 records the correction of I2 after Codex's review of `129063c`. No part of the design changed.
 
 **Revision 9, 2026-09-28.** Status only. The header, section 13 and section 14 record that I3 is implemented, with the framework chosen (D-035) and its choices recorded (D-036), and awaits review. Section 8.6's open question of the framework is answered by D-035; its text is kept. No part of the design changed.
+
+**Revision 10, 2026-10-01.** Status only. The header, section 13 and section 14 record the correction of I3 after Codex's audit of `1a9fad4` and its closure (D-037). No part of the design changed.

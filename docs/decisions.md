@@ -498,3 +498,52 @@ Clarification of 2026-10-01, after Codex's audit of `1a9fad4` (`docs/numerical_r
 
   Four steps remain the proposal for the registration; the default of `TrainingSettings` stays at two, as the pilot ran.
 * A training that fails at a step still discards its earlier checkpoints. Any other policy is for the registration, before any benchmark fit.
+
+## D-037 I3 of M1 closed (2026-10-01, closure authorised by the owner on conditions, checked by the implementation agent)
+
+The owner authorised the closure of I3 of M1, the training framework and the learned models, on two conditions: its criteria of acceptance (`docs/m1_plan.md`, section 13) are satisfied, and the defects of Codex's audit of `1a9fad4` are resolved with evidence. Both were checked against the repository on 2026-10-01, below, and I3 is closed. Its code is that of `eee1c8d` and its tests are those of `3595637`; after `eee1c8d`, `a3f8707` changed a docstring and the documentation, `3595637` one test, and the commit that records this entry documentation only. Closing I3 does not close M1. I2 is implemented and corrected and still awaits the owner's acceptance; nothing here accepts it.
+
+Who did what, kept apart:
+
+* The owner authorised the closure on those conditions, asked that the policy of a training that fails at a step be kept until a decision made before the benchmark, and asked for the further checks listed below.
+* Codex, as read-only reviewer, audited `1a9fad4`.
+  * It ran the suite, 979 tests, and read the continuous integration of that SHA, run 36355580652.
+  * It reproduced one training of the pilot bit for bit.
+  * It reported five defects, F1 to F5, and further improvements before the benchmark.
+
+  Codex has not reviewed the corrections or anything after `1a9fad4`.
+* Claude Code, as implementation agent, did the following:
+  * It reproduced the five defects with Codex's script on `1a9fad4`, with Codex's numbers.
+  * It corrected them with a regression test each (`436a811`, `44f37a8`).
+  * It added the further checks, and ran the suite and the checks of the experiment log.
+  * It read the continuous integration of the published SHAs on the repository's Actions page.
+
+Where the conditions are met:
+
+* The criteria of section 13 for I3, as the status of I3 in the plan lists them, with their tests, all of which pass at `eee1c8d`.
+* F1 to F5, each corrected and covered by a test that reproduces the audit's case (`docs/numerical_robustness.md`, seventeenth review):
+  * F1: E/R is kept in its domain by projection, and a model outside the domain is refused;
+  * F2: the state of Adam is checked;
+  * F3: the criterion is J as the evaluation computes it, and only a finite criterion is selected;
+  * F4: a failed start leaves its hybrids in the count;
+  * F5: F and V must share their sampling period.
+* The further checks:
+  * a joint recovery from MR_F estimated on F alone;
+  * a stored model that reads back bit for bit;
+  * complete trainings with four steps per row, compared with the reference on F and V;
+  * the precision about the penalty (D-036, clarification of 2026-10-01).
+* The corrections leave the pilot's results as recorded. Five trainings run again kept their selections, losses on F and differences of the rollouts bit for bit; their criteria on V moved within 3e-16 (experiment log).
+* The suite: 999 tests pass on Windows, and ruff is clean. The continuous integration of `a3f8707` failed on Linux in one test, the regression of F2, which had pinned a value that depends on the platform (seventeenth review). `3595637` corrected that test, and the continuous integration of `3595637`, run 36892807944, passed on Python 3.12 and 3.13, 999 tests each, and in Docker.
+
+Carried forward, documented and not blocking:
+
+* For the registration of the benchmark (I5):
+  * the lists of configurations and rates, the number of steps, the steps of the scheme per row (four proposed), and the base of the seeds;
+  * the policy of a training that fails at a step, which now discards its earlier checkpoints;
+  * the budgets of the secondary analysis with E/R held;
+  * how a window whose implied terms cannot be computed is counted, carried from D-033 and not yet decided.
+* From the reviews:
+  * a rollout with an integrator other than LSODA can raise on a right-hand side that overflows in the integrator's arithmetic;
+  * the other open limitations of the eleventh to seventeenth reviews of `docs/numerical_robustness.md`.
+* From the pilot: its numbers are development numbers. The good criteria on V of HK and HKU are scores of one window of V each, the window that selected the checkpoint. They are not evidence of generalisation, of extrapolation or of the superiority of any model.
+* The test of the exit code of M0-E08, carried from M0.

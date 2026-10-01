@@ -688,3 +688,7 @@ Corrected: the contract that the windows of a training share their length, sampl
 
 * A training that fails at a step discards its earlier checkpoints, the policy of D-036. Keeping them would be a decision of the registration, made before any benchmark fit.
 * The fourteenth review's limitation on rollouts with integrators other than LSODA still holds.
+
+### Found by continuous integration
+
+* On `a3f8707`, the regression test of F2 compared the loss of its case with the value Codex measured on Windows, 2.74094670e302, to 1e-12. On Linux, with Python 3.12 and 3.13, it is 2.74094668e302. With noise levels of 1e-150 the loss multiplies by 1e300 the differences that the integrator leaves between platforms in the simulated data. The test now asks a finite loss above 1e302 and the failure that names the second moment and the step, which is what it is about; it still fails on the code of `1a9fad4` (`3595637`). The code was not changed.
