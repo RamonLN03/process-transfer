@@ -15,8 +15,10 @@ from the mean of its own context, plus the penalty of the configuration on the n
 
 The mechanistic parameters of a hybrid are not penalised. The penalty is zero only where
 every weight is zero, where the factors of a hybrid are one and BN does not move. For a
-hybrid it also bounds the departure from the identity everywhere, not only where the data
-are: |ln g| <= sum |W_L| + |b_L|, since tanh lies in [-1, 1].
+hybrid it bounds the departure of each factor from one everywhere, not only where the data
+are: |ln g| <= sum |W_L| + |b_L|, since tanh lies in [-1, 1]. It does not hold the hybrid
+near MR_F: the mechanistic parameters, trained with the networks and not penalised, can move
+away from MR_F's values as far as the data pull them.
 
 The rollout of the training. A fixed-step fourth-order Runge-Kutta scheme, ``substeps``
 steps per row of the inputs, each row integrated with its own inputs. No step crosses a
@@ -27,18 +29,32 @@ continuous-time equation, rolled out by the reference integration of ``models.ro
 criterion on V at every checkpoint uses it. At each checkpoint the largest difference on V
 between the two rollouts is recorded, in sigmas, as a measure of the training scheme.
 
-The optimiser is Adam, written out below, with a constant rate. Checkpoints are the step 0
-and every ``validation_every`` steps up to ``max_steps``; at each, the criterion is J on V by
-the reference rollout. Nothing stops a training early.
+The optimiser is Adam, written out below, with a constant rate. The coordinates of a hybrid
+are MR's, whose fit keeps E/R >= 0 with a bound; each step of Adam is projected onto that
+domain, so E/R reaches its valid limit of zero and stays there rather than leaving it. Where a
+step leaves E/R positive, which is every step of the pilot of I3, the projection changes
+nothing, bit for bit. The steps at which it acted are counted in the record. Checkpoints are
+the step 0 and every ``validation_every`` steps up to ``max_steps``; at each, the criterion is
+J on V by the reference rollout, computed as the metrics of the evaluation compute it.
+Nothing stops a training early.
 
 Failures (section 8.7). A loss or a gradient that is not finite at a step ends the training
 as a training failure of that configuration, with the step and the reason; its checkpoints
-are not used, since the procedure does not treat the failure. A checkpoint whose rollout
-of a window of V fails is recorded and cannot be selected. A scale of F that is zero is a
-refusal before any step. A training that ends without failure selects the checkpoint with
-the lowest criterion among those whose rollouts of V all completed, the earliest on a tie;
-if there is none, it is a training failure. The first checkpoint of a hybrid is its start,
-MR_F with the factors at one, so a hybrid whose training does not improve on V ends as MR_F.
+are not used, since the procedure does not treat the failure. So does a state of Adam that is
+not finite, its moments, their corrections, the update or the parameters it gives: a finite
+gradient can overflow when it is squared, and an infinite second moment would stop every
+update while the loss stayed finite. A checkpoint cannot be selected, and records why, when a
+rollout of a window of V fails, when its criterion is not representable, or when its
+parameters lie outside the domain of the family (``learned.domain_problem``). A scale of F
+that is zero is a refusal before any step. A training that ends without failure selects the
+checkpoint with the lowest finite criterion, the earliest on a tie; if there is none, it is a
+training failure. The first checkpoint of a hybrid is its start, MR_F with the factors at
+one, so a hybrid whose training does not improve on V ends as MR_F. At the selected
+checkpoint the difference between the training scheme and the reference is also recorded on
+F, where fast dynamics may lie that V does not show.
+
+The windows of F and V together must share their length, sampling period and noise levels;
+a training refuses them otherwise, before any step.
 
 Across a grid (``select_configuration``): the configuration whose selected checkpoint has
 the lowest criterion on V, the first in the declared order on a tie; configurations that
@@ -59,6 +75,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.flatten_util import ravel_pytree
 
+from process_transfer.evaluation.metrics import normalised_rms
 from process_transfer.evaluation.outcomes import TrainingFailure
 from process_transfer.evaluation.plant import KnownPlant
 from process_transfer.evaluation.windows import WindowData
@@ -151,6 +168,11 @@ class TrainingRecord:
     failure: TrainingFailure | None
     steps_run: int
     seconds: dict[str, float] = field(compare=False)
+    # the largest difference of the training scheme from the reference on F at the selected
+    # checkpoint, in sigmas; None when there is none, or a reference rollout of F failed
+    fitting_schemes_differ_in_sigmas: float | None = None
+    # the steps at which the projection onto E/R >= 0 moved the parameters
+    bound_steps: int = 0
 
     @property
     def criterion(self) -> float | None:
@@ -243,7 +265,13 @@ def validation_score(
     windows: Sequence[WindowData],
     settings: RolloutSettings = EVALUATION_SETTINGS,
 ) -> tuple[float | None, tuple[str, ...], np.ndarray | None]:
-    """J on ``windows`` by the reference rollout, the failures, and the predictions."""
+    """J on ``windows`` by the reference rollout, the failures, and the predictions.
+
+    J is computed as the metrics of the evaluation compute it (``metrics.normalised_rms``),
+    by a scaled root mean square that neither overflows nor underflows on the way to a value
+    that is representable. A J that is not representable, because the normalised errors are
+    not, is recorded as a failure of the checkpoint, never returned as inf; the predictions
+    are still returned."""
     predictions, failures = [], []
     for data in windows:
         found = predict_window(model, data, settings)
@@ -253,11 +281,20 @@ def validation_score(
             failures.append(f"{data.key}: {found.cause}: {found.detail}")
     if failures:
         return None, tuple(failures), None
-    sigma = windows[0].noise_std
-    residuals = np.array(
-        [(p - d.scored) / sigma for p, d in zip(predictions, windows, strict=True)]
-    )
-    return math.sqrt(float(np.mean(residuals**2))), (), np.array(predictions)
+    with np.errstate(over="ignore", invalid="ignore"):
+        errors = np.concatenate([p - d.scored for p, d in zip(predictions, windows, strict=True)])
+    try:
+        criterion = normalised_rms(errors, windows[0].noise_std)
+    except ValueError as error:
+        return None, (f"the criterion on V is not representable: {error}",), np.array(predictions)
+    return criterion, (), np.array(predictions)
+
+
+def _largest_difference(scheme: np.ndarray, reference: np.ndarray, sigma: np.ndarray) -> float:
+    """The largest difference of two rollouts in sigmas, inf when it is not representable."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        found = np.abs(np.asarray(scheme) - reference) / sigma
+    return float(np.max(found)) if np.all(np.isfinite(found)) else math.inf
 
 
 def train(
@@ -283,9 +320,10 @@ def train(
     keys = [d.key for d in fitting + validation]
     if len(set(keys)) != len(keys):
         raise ValueError(f"F and V must be disjoint sets of windows, got {keys}")
+    # the windows of F and V together share their length, sampling period and noise levels:
+    # one period serves the rollouts of training on both
+    _stack(fitting + validation)
     x0, inputs, scored, sigma = _stack(fitting)
-    if tuple(validation[0].noise_std) != tuple(sigma):
-        raise ValueError("F and V must share the noise levels of their sensors")
     period = fitting[0].sample_period
     rng = np.random.default_rng(seed)
     initial = learned.initial_parameters(family, configuration.hidden, rng, start, fixed_activation)
@@ -299,6 +337,8 @@ def train(
         steps: int,
         scales: learned.Scales | None,
         timing: dict[str, float],
+        on_fitting: float | None = None,
+        bound_steps: int = 0,
     ) -> TrainingRecord:
         timing["total"] = time.perf_counter() - began
         return TrainingRecord(
@@ -316,6 +356,8 @@ def train(
             failure=failure,
             steps_run=steps,
             seconds=timing,
+            fitting_schemes_differ_in_sigmas=on_fitting,
+            bound_steps=bound_steps,
         )
 
     timing = {"compile": 0.0, "steps": 0.0, "validation": 0.0}
@@ -338,6 +380,19 @@ def train(
             for name, value in initial.items()
         }
     )
+    # the lower bound of each coordinate: E/R >= 0 for a hybrid that estimates it, nothing
+    # elsewhere. Each step of Adam is projected onto it, the domain MR's fit keeps with its
+    # bound; where a step leaves every coordinate inside, the projection changes nothing
+    lower, _ = ravel_pytree(
+        {
+            name: (
+                np.array([-np.inf, 0.0, -np.inf])
+                if name == "theta" and fixed_activation is None
+                else jax.tree_util.tree_map(lambda a: np.full(np.shape(a), -np.inf), value)
+            )
+            for name, value in initial.items()
+        }
+    )
     vx0, vinputs, _, _ = _stack(validation)
     arguments = (period, settings.substeps, known, scales, fixed_activation)
 
@@ -355,6 +410,9 @@ def train(
     training_rollout = jax.jit(
         lambda vector: rk4_rollout(family, unravel(vector), vx0, vinputs, *arguments)
     )
+    fitting_rollout = jax.jit(
+        lambda vector: rk4_rollout(family, unravel(vector), x0, inputs, *arguments)
+    )
 
     tick = time.perf_counter()
     (total, (loss, penalty)), gradient = value_and_grad(flat)
@@ -369,16 +427,18 @@ def train(
         nonlocal best
         tick = time.perf_counter()
         parameters = learned.to_numpy(unravel(vector))
-        model = learned.LearnedModel(family, family, parameters, known, scales, fixed_activation)
-        score, failures, predicted = validation_score(model, validation, settings.reference)
         differ = None
-        if predicted is not None:
-            scheme = np.asarray(training_rollout(vector))
-            differ = (
-                float(np.max(np.abs(scheme - predicted) / sigma))
-                if np.all(np.isfinite(scheme))
-                else math.inf
+        try:
+            model = learned.LearnedModel(
+                family, family, parameters, known, scales, fixed_activation
             )
+        except ValueError as error:
+            # outside the declared domain: recorded, and not selectable
+            score, failures, predicted = None, (f"the model is not in its domain: {error}",), None
+        else:
+            score, failures, predicted = validation_score(model, validation, settings.reference)
+        if predicted is not None:
+            differ = _largest_difference(training_rollout(vector), predicted, sigma)
         checkpoints.append(
             Checkpoint(
                 step,
@@ -391,13 +451,22 @@ def train(
             )
         )
         timing["validation"] += time.perf_counter() - tick
-        if score is not None and (best is None or score < best[0]):
+        if score is not None and math.isfinite(score) and (best is None or score < best[0]):
             best = (score, len(checkpoints) - 1, parameters)
 
     m = jnp.zeros_like(flat)
     v = jnp.zeros_like(flat)
     step = 0
     failure = None
+    bound_steps = 0
+    quantities = (
+        "the first moment",
+        "the second moment",
+        "the corrected first moment",
+        "the corrected second moment",
+        "the update",
+        "the parameters",
+    )
     tick = time.perf_counter()
     while True:
         if not (np.isfinite(float(total)) and bool(jnp.all(jnp.isfinite(gradient)))):
@@ -418,17 +487,51 @@ def train(
         v = settings.beta2 * v + (1.0 - settings.beta2) * gradient**2
         m_hat = m / (1.0 - settings.beta1**step)
         v_hat = v / (1.0 - settings.beta2**step)
-        flat = flat - settings.learning_rate * m_hat / (jnp.sqrt(v_hat) + settings.epsilon)
+        update = settings.learning_rate * m_hat / (jnp.sqrt(v_hat) + settings.epsilon)
+        moved = flat - update
+        # a finite loss and gradient do not make the state of the optimiser finite: the
+        # square of a large gradient overflows the second moment, whose infinite root then
+        # stops every update while the loss stays finite
+        flags = np.asarray(
+            jnp.stack(
+                [jnp.all(jnp.isfinite(a)) for a in (m, v, m_hat, v_hat, update, moved)]
+                + [jnp.any(moved < lower)]
+            )
+        )
+        if not np.all(flags[:-1]):
+            name = quantities[int(np.argmin(flags[:-1]))]
+            failure = TrainingFailure(
+                f"{configuration.label}: {name} of Adam is not representable at step {step}"
+            )
+            break
+        if flags[-1]:
+            bound_steps += 1
+        flat = jnp.maximum(moved, lower)
         (total, (loss, penalty)), gradient = value_and_grad(flat)
     timing["steps"] += time.perf_counter() - tick
     if failure is not None:
-        return record(checkpoints, None, None, failure, step, scales, timing)
+        return record(checkpoints, None, None, failure, step, scales, timing, None, bound_steps)
     if best is None:
         failure = TrainingFailure(
-            f"{configuration.label}: every checkpoint has a rollout of V that failed"
+            f"{configuration.label}: no checkpoint has a criterion on V: every one has a "
+            "failed rollout, a criterion that is not representable or parameters outside "
+            "the domain"
         )
-        return record(checkpoints, None, None, failure, step, scales, timing)
-    return record(checkpoints, best[1], best[2], None, step, scales, timing)
+        return record(checkpoints, None, None, failure, step, scales, timing, None, bound_steps)
+    # the scheme against the reference on F, at the selected checkpoint
+    tick = time.perf_counter()
+    selected = learned.LearnedModel(family, family, best[2], known, scales, fixed_activation)
+    references = [predict_window(selected, d, settings.reference) for d in fitting]
+    on_fitting = None
+    if all(isinstance(r, np.ndarray) for r in references):
+        flat_selected, _ = ravel_pytree(jax.tree_util.tree_map(jnp.asarray, best[2]))
+        on_fitting = _largest_difference(
+            fitting_rollout(flat_selected), np.array(references), sigma
+        )
+    timing["validation"] += time.perf_counter() - tick
+    return record(
+        checkpoints, best[1], best[2], None, step, scales, timing, on_fitting, bound_steps
+    )
 
 
 def select_configuration(records: Sequence[TrainingRecord]) -> int | None:

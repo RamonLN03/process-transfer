@@ -125,6 +125,35 @@ def score(errors: FloatArray, sigma: FloatArray, role: Role) -> Score:
     )
 
 
+def normalised_rms(errors: FloatArray, sigma: FloatArray) -> float:
+    """J alone, sqrt of the mean over readings and channels of (error / sigma)^2, computed as
+    ``score`` computes it, by the scaled root mean square below. It is representable whenever
+    the normalised errors are, whatever their size: neither their squares nor their mean can
+    overflow or underflow on the way. Raises ``ValueError`` when the errors or the normalised
+    errors are not finite, or a noise level is not positive and finite. Unlike ``score`` it
+    does not need the mean squares in physical units, which can overflow while J does not."""
+    errors = np.asarray(errors, dtype=np.float64)
+    sigma = np.asarray(sigma, dtype=np.float64)
+    if errors.ndim != 2 or errors.shape[1] != len(STATE_NAMES) or errors.shape[0] == 0:
+        raise ValueError(
+            f"errors must have one row per scored reading and {len(STATE_NAMES)} columns, "
+            f"and at least one row; got shape {errors.shape}"
+        )
+    if not np.all(np.isfinite(errors)):
+        raise ValueError("errors must be finite")
+    if sigma.shape != (len(STATE_NAMES),) or not (
+        np.all(np.isfinite(sigma)) and np.all(sigma > 0.0)
+    ):
+        raise ValueError(f"the noise levels must be positive and finite, got {sigma.tolist()}")
+    with np.errstate(over="ignore", under="ignore"):
+        normalised = errors / sigma
+    if not np.all(np.isfinite(normalised)):
+        raise ValueError(
+            "the errors divided by the noise levels are not representable in double precision"
+        )
+    return _root_mean_square(normalised.ravel())
+
+
 def _mean_square(values: FloatArray) -> float:
     """mean(v^2), from the values divided by their largest magnitude m: m (m mean((v/m)^2)).
     Nothing overflows on the way, the scaled squares lose to underflow only what is below

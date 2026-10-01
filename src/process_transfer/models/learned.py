@@ -266,6 +266,14 @@ class LearnedModel:
         self.name, self.family, self.known, self.scales = name, family, known, scales
         self.fixed_activation = fixed_activation
         self.parameters = to_numpy(parameters)
+        problem = domain_problem(family, self.parameters, fixed_activation)
+        if problem is not None:
+            raise ValueError(f"{name}: {problem}")
+        self._mechanistic = (
+            None
+            if family == BN
+            else MechanisticParameters.from_coordinates(self.parameters["theta"], fixed_activation)
+        )
 
     def rhs(self, x: FloatArray, u: FloatArray) -> FloatArray:
         return rhs(
@@ -282,11 +290,37 @@ class LearnedModel:
 
     def mechanistic_parameters(self) -> MechanisticParameters | None:
         """k_350, E/R and UA of a hybrid, or None for BN."""
-        if self.family == BN:
-            return None
-        return MechanisticParameters.from_coordinates(
-            self.parameters["theta"], self.fixed_activation
+        return self._mechanistic
+
+
+def domain_problem(
+    family: str, parameters: dict[str, Any], fixed_activation: float | None = None
+) -> str | None:
+    """Why ``parameters`` lie outside the domain of the model, or None when they do not.
+
+    The domain is the one declared for every model of the family, the same in training,
+    evaluation and storage: weights and parameters that are finite doubles, and for a hybrid
+    mechanistic parameters that ``MechanisticParameters`` accepts, so an E/R that is not
+    negative, as MR's fit keeps it with its bound, and a k0 and UA that are positive
+    doubles. E/R = 0 is in the domain: a rate that does not depend on temperature."""
+    for name, value in parameters.items():
+        arrays = [value] if name == "theta" else [a for layer in value for a in layer]
+        if not all(np.all(np.isfinite(np.asarray(a, dtype=np.float64))) for a in arrays):
+            return f"the parameters {name!r} are not all finite"
+    if family == BN:
+        return None
+    theta = np.asarray(parameters["theta"], dtype=np.float64)
+    expected = 3 if fixed_activation is None else 2
+    if theta.shape != (expected,):
+        return f"theta must hold {expected} values, got shape {theta.shape}"
+    try:
+        MechanisticParameters.from_coordinates(theta, fixed_activation)
+    except (OverflowError, ValueError) as error:
+        return (
+            f"the mechanistic parameters at theta = {theta.tolist()} are outside their "
+            f"domain: {error}"
         )
+    return None
 
 
 def to_numpy(parameters: dict[str, Any]) -> dict[str, Any]:

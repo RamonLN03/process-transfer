@@ -253,3 +253,25 @@ def test_scales_come_from_the_fitting_windows_and_a_zero_scale_is_refused() -> N
         learned.fitting_scales(steady_tc)
     with pytest.raises(ValueError, match="at least one window"):
         learned.fitting_scales(())
+
+
+def test_a_hybrid_outside_its_domain_is_refused_and_the_bound_is_inside() -> None:
+    """F1 of Codex's audit: training, evaluation and storage share one domain. E/R = 0 is in
+    it; a negative E/R, a k0 that overflows and weights that are not finite are not."""
+    rng = np.random.default_rng(1)
+    parameters = learned.initial_parameters("HK", (4,), rng, TRUE)
+    at_bound = dict(parameters, theta=np.array([np.log(0.0177), 0.0, np.log(1330.0)]))
+    model = learned.LearnedModel("HK", "HK", at_bound, KNOWN, SCALES)
+    assert model.mechanistic_parameters().activation_temperature == 0.0
+    for theta, message in (
+        ([np.log(0.0177), -24.68 / 350.0, np.log(1330.0)], "must not be negative"),
+        ([np.log(0.0177), 800.0, np.log(1330.0)], "outside their domain"),
+        ([np.log(0.0177), np.nan, np.log(1330.0)], "not all finite"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            learned.LearnedModel("HK", "HK", dict(parameters, theta=np.array(theta)), KNOWN, SCALES)
+    broken = dict(
+        parameters, kinetic=[(np.full_like(w, np.inf), b) for w, b in parameters["kinetic"]]
+    )
+    with pytest.raises(ValueError, match="not all finite"):
+        learned.LearnedModel("HK", "HK", broken, KNOWN, SCALES)

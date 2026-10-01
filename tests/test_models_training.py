@@ -170,7 +170,9 @@ def test_a_checkpoint_whose_rollout_of_v_fails_cannot_be_selected() -> None:
     bad = dataclasses.replace(VALIDATION[0], context=np.tile([190.0, 0.0], (10, 1)))
     record = train(Configuration("HK", (4,), 0.0), SHORT, FITTING, (bad,), KNOWN, 1, TRUE)
     assert all(c.validation is None and c.failures for c in record.checkpoints)
-    assert record.failure is not None and "every checkpoint" in record.failure.reason
+    assert (
+        record.failure is not None and "no checkpoint has a criterion on V" in record.failure.reason
+    )
 
 
 def fake(criteria, failure=None):  # noqa: ANN001, ANN201
@@ -262,3 +264,151 @@ def test_every_checkpoint_records_how_far_the_training_scheme_is_from_the_refere
         assert 0.0 <= checkpoint.schemes_differ_in_sigmas < 1e-2
         assert math.isfinite(checkpoint.fitting_loss) and checkpoint.penalty >= 0.0
     assert set(record.seconds) == {"compile", "steps", "validation", "total"}
+
+
+# --------------------------------------------------------------------------- #
+# The findings of Codex's audit of 1a9fad4, each reproduced as it was reported
+# --------------------------------------------------------------------------- #
+
+
+def _rate_falling_with_temperature(x: np.ndarray, u: np.ndarray) -> np.ndarray:
+    """A plant whose rate falls as the temperature rises, which a first-order law can follow
+    only with E/R < 0."""
+    rate = 0.0177 * np.exp(350.0 * (1.0 / x[1] - 1.0 / 350.0)) * x[0]
+    dilution = u[0] / KNOWN.volume
+    return np.array(
+        [
+            dilution * (u[1] - x[0]) - rate,
+            dilution * (u[2] - x[1])
+            + KNOWN.heat_release_per_mole * rate
+            - 1330.0 / KNOWN.thermal_mass * (x[1] - u[3]),
+        ]
+    )
+
+
+def test_the_activation_temperature_stays_in_its_domain() -> None:
+    """F1. Started at the valid bound E/R = 0 on data that pull it below, Adam took E/R to
+    -24.68 K, the training reported success, and reading the parameters of the selected
+    model raised. Each step is now projected onto E/R >= 0: E/R stays at its bound, the
+    steps at which the projection acted are counted, and the model can be read."""
+    start = MechanisticParameters.from_k_350(0.0177, 0.0, 1330.0)
+    data = windows_of(random_corners(4, 5), rhs=_rate_falling_with_temperature)
+    record = train(
+        Configuration("HU", (4,), 0.0),
+        TrainingSettings(1e-3, 100, 10),
+        data[:3],
+        data[3:],
+        KNOWN,
+        1,
+        start,
+    )
+    assert record.failure is None and record.selected is not None
+    assert record.bound_steps > 0
+    assert record.parameters["theta"][1] == 0.0
+    parameters = record.model(KNOWN).mechanistic_parameters()
+    assert parameters.activation_temperature == 0.0 and parameters.k0 > 0.0
+
+
+def test_the_projection_does_not_act_inside_the_domain() -> None:
+    """Away from E/R = 0 the projection changes nothing: the training of a hybrid whose E/R
+    stays positive counts no step at the bound."""
+    record = train(Configuration("HK", (8,), 1e-4), SHORT, FITTING, VALIDATION, KNOWN, 3, TRUE)
+    assert record.bound_steps == 0 and record.parameters["theta"][1] > 0.0
+
+
+def test_a_moment_of_adam_that_overflows_ends_the_training() -> None:
+    """F2. With noise levels of 1e-150 the loss, 2.74e302, and its gradient, at most 2.38e302,
+    are finite, but the square of the gradient overflows the second moment. Its infinite
+    root then made every update zero, and the training reported success with the loss
+    unchanged. It now ends as a failure that names the quantity and the step."""
+    sigma = np.array([1e-150, 1e-150])
+    fitting = tuple(dataclasses.replace(w, noise_std=sigma) for w in FITTING)
+    validation = tuple(dataclasses.replace(w, noise_std=sigma) for w in VALIDATION)
+    record = train(
+        Configuration("BN", (4,), 0.0), TrainingSettings(1e-3, 2, 1), fitting, validation, KNOWN, 1
+    )
+    assert record.checkpoints[0].fitting_loss == pytest.approx(2.7409467027186302e302, rel=1e-12)
+    assert record.failure is not None and record.selected is None
+    assert "second moment of Adam is not representable at step 1" in record.failure.reason
+
+
+def _validation_with(scored: float, sigma: tuple[float, float] | None = None):  # noqa: ANN202
+    window = VALIDATION[0]
+    changes = {"scored": np.full_like(window.scored, scored)}
+    if sigma is not None:
+        changes["noise_std"] = np.array(sigma)
+    return (dataclasses.replace(window, **changes),)
+
+
+@pytest.mark.parametrize("scored", [1e153, 1e200])
+def test_a_large_criterion_that_is_representable_is_scored_and_finite(scored) -> None:  # noqa: ANN001
+    """F3. A validation window of readings of 1e153: the mean of the squares overflowed, the
+    criterion was inf and inf was selected. At 1e200 each square overflows. Both criteria
+    are representable and are now computed as the metrics compute them."""
+    record = train(
+        Configuration("BN", (4,), 0.0),
+        TrainingSettings(1e-3, 1, 1),
+        FITTING,
+        _validation_with(scored),
+        KNOWN,
+        1,
+    )
+    assert record.failure is None and math.isfinite(record.criterion)
+    # BN starts still, so its prediction is the initial state of the window: errors of
+    # about -scored, over noise levels of 5 and 0.5
+    expected = scored * math.sqrt((1 / 25 + 1 / 0.25) / 2)
+    assert record.checkpoints[0].validation == pytest.approx(expected, rel=1e-12)
+
+
+def test_a_tiny_criterion_is_not_lost_to_underflow() -> None:
+    """F3. Noise levels of 1e170 make every normalised error about 1e-169 and its square
+    underflow: the plain mean of squares gave zero. The scaled computation keeps it."""
+    sigma = np.array([1e170, 1e170])
+    fitting = tuple(dataclasses.replace(w, noise_std=sigma) for w in FITTING)
+    validation = tuple(dataclasses.replace(w, noise_std=sigma) for w in VALIDATION)
+    record = train(
+        Configuration("BN", (4,), 0.0), TrainingSettings(1e-3, 1, 1), fitting, validation, KNOWN, 1
+    )
+    window = validation[0]
+    errors = window.initial_state - window.scored  # BN at the start does not move
+    expected = math.sqrt(float(np.mean(errors**2))) / 1e170
+    assert expected > 0.0
+    assert record.checkpoints[0].validation == pytest.approx(expected, rel=1e-12)
+
+
+def test_a_criterion_that_is_not_representable_cannot_be_selected() -> None:
+    """F3. Readings of 1e308 over a noise level of 0.5 give normalised errors beyond the
+    largest double. No checkpoint has a criterion: each records why, and the training is a
+    failure, with no exception raised."""
+    record = train(
+        Configuration("BN", (4,), 0.0),
+        TrainingSettings(1e-3, 2, 1),
+        FITTING,
+        _validation_with(1e308),
+        KNOWN,
+        1,
+    )
+    assert all(c.validation is None for c in record.checkpoints)
+    assert all("criterion on V is not representable" in c.failures[0] for c in record.checkpoints)
+    assert record.failure is not None and record.selected is None
+
+
+def test_f_and_v_must_share_their_sampling_period() -> None:
+    """F5. A validation window at 3 s was rolled out by the training scheme with the period
+    of F, 6 s, and its difference from the reference compared different horizons. The
+    contract that the windows of a training share their period now covers F and V."""
+    validation = (dataclasses.replace(VALIDATION[0], sample_period=3.0),)
+    with pytest.raises(ValueError, match="sampling period"):
+        train(
+            Configuration("BN", (4,), 0.0),
+            TrainingSettings(1e-3, 2, 1),
+            FITTING,
+            validation,
+            KNOWN,
+            1,
+        )
+
+
+def test_the_scheme_is_compared_with_the_reference_on_f_at_the_selected_checkpoint() -> None:
+    record = train(Configuration("HK", (8,), 1e-4), SHORT, FITTING, VALIDATION, KNOWN, 3, TRUE)
+    assert 0.0 <= record.fitting_schemes_differ_in_sigmas < 1e-2

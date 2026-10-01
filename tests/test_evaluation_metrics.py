@@ -219,3 +219,24 @@ def test_a_score_that_is_not_representable_is_refused_not_returned() -> None:
     # an MSE of 1e320, although its root would be representable
     with pytest.raises(ValueError, match="not representable"):
         score(np.array([[1e160, 0.0]]), np.array([1.0, 1.0]), Role.FITTING)
+
+
+def test_the_normalised_rms_is_the_j_of_the_score_and_stays_representable() -> None:
+    """J alone, shared with the training's criterion on V (Codex's audit of I3, F3): the J of
+    ``score`` on ordinary errors, finite where the plain mean of squares overflows, and not
+    lost to underflow where it is tiny."""
+    from process_transfer.evaluation.metrics import normalised_rms
+
+    rng = np.random.default_rng(7)
+    errors = rng.normal(0.0, [5.0, 0.5], size=(110, 2))
+    sigma = np.array([5.0, 0.5])
+    assert normalised_rms(errors, sigma) == score(errors, sigma, Role.SELECTION).j
+    for size in (1e153, 1e200):
+        found = normalised_rms(np.full((110, 2), size), sigma)
+        assert found == pytest.approx(size * math.sqrt((1 / 25 + 1 / 0.25) / 2), rel=1e-14)
+    tiny = normalised_rms(np.full((110, 2), 1.0), np.array([1e170, 1e170]))
+    assert tiny == pytest.approx(1e-170, rel=1e-14)
+    with pytest.raises(ValueError, match="not representable"):
+        normalised_rms(np.full((3, 2), 1e308), sigma)
+    with pytest.raises(ValueError, match="must be finite"):
+        normalised_rms(np.array([[np.inf, 0.0]]), sigma)
