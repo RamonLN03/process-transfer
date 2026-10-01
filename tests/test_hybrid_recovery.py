@@ -18,6 +18,13 @@ The planted factors are smooth and of the size of the target's own mismatch: the
 factor runs over about 0.6 to 1.6 on the visited states, where the true rate against the
 first-order rate of the target runs over 0.74 to 1.39 (``docs/m1_plan.md``, section 2).
 
+Where the trainings start. Most tests below start the hybrid from the mechanistic parameters
+that simulated the data, TRUE. They are tests of the components: the training sees no truth
+beyond its starting point, but that point is the truth's own, which the procedure of M1
+never has. One test starts, as the procedure does, from MR_F estimated by ``fit_mechanistic``
+on the fitting windows alone; the truth then enters only the simulation of the data and the
+comparison afterwards (Codex's audit of 1a9fad4, first further improvement).
+
 The tolerances were set from a development run of these trainings on 2026-09-27: noise-free,
 the rate was recovered to 0.4 % in root mean square and 5.7 % at worst for HK, the heat
 flow to 0.04 % and 0.8 % for HU, and both to 0.35 % and 3 % for HKU. The tests ask 2 % and
@@ -33,7 +40,8 @@ from m1_support import NOMINAL, modeller_run, random_corners
 from process_transfer.evaluation.plant import KnownPlant
 from process_transfer.evaluation.windows import P3_LAYOUT, find_windows, window_data
 from process_transfer.models import learned
-from process_transfer.models.mechanistic import MechanisticParameters
+from process_transfer.models.fitting import fit_mechanistic
+from process_transfer.models.mechanistic import MechanisticParameters, modeller_values
 from process_transfer.models.training import Configuration, TrainingSettings, train
 
 KNOWN = KnownPlant("target", 0.1, 1000.0, 239.0, -50000.0, tuple(NOMINAL))
@@ -86,12 +94,19 @@ def model_terms(model: learned.LearnedModel, x: np.ndarray, u: np.ndarray) -> tu
     return rate, heat
 
 
-def fitted(family: str, hold: bool, noise_seed: int | None = None):  # noqa: ANN201
+def fitted(  # noqa: ANN201
+    family: str, hold: bool, noise_seed: int | None = None, from_mr_f: bool = False
+):
     kinetic, thermal = family in ("HK", "HKU"), family in ("HU", "HKU")
     f = planted(kinetic, thermal)
     run = modeller_run(f, CORNERS, noise_seed=noise_seed)
     data = window_data(run, find_windows(run, NOMINAL, P3_LAYOUT).windows)
     fitting, validation = data[:6], data[6:]
+    start = TRUE
+    if from_mr_f:
+        mr_f = fit_mechanistic("MR_F", fitting, KNOWN, modeller_values())
+        assert mr_f.parameters is not None, mr_f.training_failure
+        start = mr_f.parameters
     record = train(
         Configuration(family, (8,), 0.0),
         SETTINGS,
@@ -99,7 +114,7 @@ def fitted(family: str, hold: bool, noise_seed: int | None = None):  # noqa: ANN
         validation,
         KNOWN,
         seed=3,
-        start=TRUE,
+        start=start,
         hold_mechanistic=hold,
     )
     assert record.failure is None, record.failure
@@ -169,6 +184,20 @@ def test_hk_on_noisy_data_reaches_the_noise_and_recovers_the_total_rate() -> Non
     record, model, states, inputs, _, _ = fitted("HK", hold=False, noise_seed=17)
     assert 0.8 < record.checkpoints[record.selected].fitting_loss < 1.2
     assert record.criterion < 1.2
+    rates = np.array([model_terms(model, x, u)[0] for x, u in zip(states, inputs, strict=True)])
+    rms, largest = relative_errors(rates, np.array([true_rate(x, True) for x in states]))
+    assert rms < 0.02 and largest < 0.10
+
+
+def test_hk_started_from_mr_f_recovers_the_total_rate() -> None:
+    """The procedure of M1 end to end on planted data: MR_F estimated on F alone, then HK
+    trained jointly from it. No truth reaches the training; it enters only the simulation
+    and the comparison. MR_F's first-order law cannot hold the planted factor, so the start
+    is away from the truth, and the training must move the parameters and the factor."""
+    record, model, states, inputs, _, _ = fitted("HK", hold=False, from_mr_f=True)
+    assert record.checkpoints[0].validation > 1.0  # MR_F alone misses the planted factor
+    assert record.checkpoints[record.selected].fitting_loss < 0.2**2
+    assert record.criterion < 0.2
     rates = np.array([model_terms(model, x, u)[0] for x, u in zip(states, inputs, strict=True)])
     rms, largest = relative_errors(rates, np.array([true_rate(x, True) for x in states]))
     assert rms < 0.02 and largest < 0.10
