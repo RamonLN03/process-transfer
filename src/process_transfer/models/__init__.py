@@ -8,7 +8,8 @@ record of every start and the covariance of the estimate (``fitting``).
 
 In I3: BL, the linear black box, fitted like MR (``linear``); the equations of the neural
 black box BN and of the hybrids HK, HU and HKU, written once for numpy and JAX
-(``learned``); and their training with JAX and selection on V (``training``).
+(``learned``); their training with JAX and selection on V (``training``); and the selected
+model of a training written to a file and read back (``persistence``).
 
 This package is on the available side, like ``evaluation``. A model is built from the known
 parameters of an export and the modeller's values of ``configs/modeller_cstr.yaml``, and

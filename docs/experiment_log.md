@@ -1212,3 +1212,45 @@ Its assumptions:
 * it leaves out the generation of the data sets, the evaluation on the test sets, the oracle diagnostics, OF and the analysis. The evaluation is one reference rollout per test window and model, a few hundredths of a second each.
 
 Reading of the estimate: the benchmark fits within the owner's orientation of 48 to 72 hours of local computing, however that is counted, with room to spare. Nothing measured here argues for reducing the ten replicates or the four configurations, and nothing in the pilot argues for changing the owner's proposal of sizes and penalties.
+
+#### After Codex's audit of `1a9fad4`: corrections, reproduction and four steps per row (2026-10-01)
+
+Codex's audit of `1a9fad4` reported five defects (`docs/numerical_robustness.md`, seventeenth review). They were reproduced with Codex's script and corrected in `436a811` and `44f37a8`. The checks below were run by `experiments/m1_i3_audit_checks.py` from `eee1c8d`, a clean commit that holds the corrections. The run is `20261001T162149Z_eee1c8d` under `C:/Users/rlnsk/pt-data-m1-i3`. It ran 8 trainings in 8 processes: 99 s of wall time, and 298 s of trainings summed, besides their fits of MR_F. Exploratory: development data of M0 and the synthetic runs of the pilot.
+
+**Reproduction.** Five trainings of the pilot were run again with the corrected code and the pilot's rates, seeds and settings. They were compared checkpoint by checkpoint with the summaries of the pilot's runs `20260927T221514Z_fc563c8` (grid) and `20260927T222728Z_fc563c8` (cost):
+
+| training | run, budget | selected step | losses on F | criterion on V | difference of the rollouts on V |
+|---|---|---|---|---|---|
+| HK 8, lambda 1e-4 | e0, 5 | the same, 700 | bit for bit | within 2.2e-16 | bit for bit |
+| BN 16 x 16, lambda 1e-4 | e0, 9 | the same | bit for bit | within 2.2e-16 | bit for bit |
+| HKU 16, lambda 1e-2 | e1, 2 | the same | bit for bit | within 2.1e-16 | bit for bit |
+| HU 8, lambda 1e-4 | e2, 9 | the same | bit for bit | within 3.0e-16 | bit for bit |
+| HK 8, lambda 1e-4 | synthetic e9001, 20 | the same, 1500 | bit for bit | within 2.3e-16 | bit for bit |
+
+* The losses, the selections and the differences of the rollouts are those the pilot recorded. The training path is unchanged: the projection onto E/R >= 0 did not act, no state of Adam failed, and the checks change no value.
+* The criteria on V differ in their last bit, because J is now computed as the metrics compute it, by a scaled root mean square. No selection changed.
+* The other 239 trainings of the pilot were not run again. Its stored numbers stand as recorded, with this precision about the last bit of their criteria.
+
+**Four steps per row.** Complete trainings, the selection on V included, with two and with four steps of the scheme per row:
+
+* HK 8 with lambda 1e-4 on e0 at nine windows, a case of the pilot on the data of M0;
+* the same configuration on the synthetic run e9001 at 20 windows, where two steps had departed from the equation.
+
+The differences are against the reference rollout at the selected checkpoint, on F and on V, in sigmas:
+
+| case | steps per row | selected step | criterion on V | difference on F | difference on V | time |
+|---|---|---|---|---|---|---|
+| e0, 9 | 2 | 200 | 0.947760 | 3.6e-4 | 2.1e-5 | 31 s |
+| e0, 9 | 4 | 200 | 0.947759 | 2.9e-5 | 2.5e-5 | 54 s |
+| e9001, 20 | 2 | 1500 | 0.975962 | 0.059 | 0.055 | 31 s |
+| e9001, 20 | 4 | 2400 | 0.977152 | 0.0028 | 0.0026 | 52 s |
+
+* On the data of M0, four steps change nothing that matters: the same checkpoint, and a criterion that differs in its sixth digit.
+* On the fast synthetic case:
+  * the difference on F, where the hot windows of training are, was as large as on V with two steps;
+  * four steps bring both below 3e-3 sigma;
+  * the trained model differs, selected at another step, with a criterion 0.1 % higher on one window of V, which this check cannot tell from chance.
+* Four steps cost about 1.7 times the time of a training. The estimate of the benchmark with four steps, which doubled the time of the steps alone, stands as an upper value.
+* What this does not show. Two cases at one seed each do not show how four steps change the selection or the criteria across the grid. It supports the proposal of four steps for the registration on the ground of the scheme's accuracy, not of any score.
+
+The joint recovery of a planted kinetic factor by HK started from MR_F estimated on F alone, a new test, passes the same tolerances as the tests that start from the parameters that simulated the data (`tests/test_hybrid_recovery.py`).

@@ -621,3 +621,70 @@ Scope. The modules of I3: `models/learned.py`, `models/training.py` and `models/
 * An Adam step can take a network where its exponential overflows. That ends the training as a failure; nothing restarts it or lowers the rate. A development run with a rate of 1e-2 on a strongly planted correction ended so at step 939.
 * The training scheme has a fixed step, so a learned model whose dynamics become much faster than a few seconds is integrated inaccurately in training. That is seen, not prevented: the difference of the two rollouts is recorded at every checkpoint, and selection and evaluation use the reference. Measured in the pilot (experiment log, "Development runs of I3"): on the data of M0, at most 7e-4 sigma at the selected checkpoints. On a synthetic run hotter than the target, 0.046 to 0.055 sigma for HK and HKU at 20 windows, all of it at the corner where every input is high. There the largest eigenvalue of the model's Jacobian is 0.16 per second, 0.48 times a step of 3 s. Four steps per row bring those windows to 2.7e-3 sigma or less and eight to 1.3e-4; the pilot proposes four for the registration.
 * The fourteenth review's limitation on rollouts with methods other than LSODA still holds. The reference rollout of the learned models is LSODA.
+
+## Review of 2026-10-01, seventeenth: Codex's audit of `1a9fad4`
+
+Scope. Codex audited I3 at `1a9fad4` and reported five defects, each with a reproduction, none shown to act in the pilot's results. All five were reproduced on `1a9fad4` with Codex's script before anything was changed, with Codex's numbers. They are corrected in `436a811` (F1, F2, F3, F5) and `44f37a8` (F4), each with a regression test that reproduces the audit's case. Codex has not reviewed the corrections.
+
+### F1. The domain of the mechanistic parameters of a hybrid
+
+Adam moved the coordinate (E/R) / T_ref without the bound that MR's fit keeps at zero. Started at E/R = 0, on synthetic data whose rate falls as the temperature rises, a training of HU took E/R to -24.68 K, reported success and selected it. Reading the selected model's parameters then raised, since `MechanisticParameters` refuses a negative E/R.
+
+Corrected:
+
+* Each step of Adam is projected onto the domain E/R >= 0. E/R reaches its valid limit of zero and stays there, and the steps at which the projection acted are counted in the record.
+* `learned.LearnedModel` refuses parameters outside the family's domain (`learned.domain_problem`): weights and coordinates that are not finite, a negative E/R, a k0 or UA that is not a positive double. Training, evaluation and storage therefore share one domain. A checkpoint outside it records why and cannot be selected.
+* Where a step leaves E/R positive the projection, a maximum with zero, returns the coordinate unchanged bit for bit. Every selected E/R of the pilot was between 8894 and 11052 K, and five trainings of the pilot run again gave the same losses bit for bit (experiment log).
+* The reasons for projection rather than a change of coordinates are in D-036, clarification of 2026-10-01.
+
+### F2. The state of Adam
+
+The loop checked the loss and the gradient, not the moments. With noise levels of 1e-150 the loss, 2.74e302, and the gradient, at most 2.38e302, were finite. The square of the gradient overflowed the second moment, whose infinite root made every update zero; the training went on with an unchanged loss and reported success.
+
+Corrected: the two moments, their corrections, the update and the new parameters are checked at every step. If one is not finite the training ends as a failure that names it and the step: "the second moment of Adam is not representable at step 1". The checks change no value.
+
+### F3. The criterion on V
+
+`validation_score` computed sqrt(mean(residuals^2)). The mean of squares of readings of 1e153 overflows, the criterion was inf, and inf was selected because only None was excluded. Under the suite's warnings as errors the same case raised.
+
+Corrected:
+
+* The criterion is J as the metrics of the evaluation compute it, by the scaled root mean square, shared as `metrics.normalised_rms`.
+* A criterion that is not representable, because the normalised errors are not, is recorded in the checkpoint's failures and not selected. Only a finite criterion is selected.
+* The difference of the two rollouts is computed under the same guard, inf when it is not representable, and no warning escapes.
+
+Regression tests:
+
+* 1e153, where the mean overflowed, now gives 1.4212670403551894e153, the value of `metrics.score`;
+* 1e200, where each square overflows;
+* noise levels of 1e170, where every square underflowed and the plain formula gave zero;
+* 1e308 over a noise level of 0.5, which is not representable: every checkpoint records why, and the training is a failure.
+
+The change of formula moves ordinary criteria by at most 3e-16 relative, the rounding of a different order of operations. No selection of the five trainings run again changed.
+
+### F4. The accounting of the pilot
+
+`trainings()` of `experiments/m1_i3_pilot.py` skipped the hybrids of a run and budget whose MR_F had failed. With no start, the declared grid of sixteen configurations gave four trainings of BN, and the twelve hybrids left the count.
+
+Corrected:
+
+* They are now outcomes: training failures whose reason names the failed start, with run, budget, family, configuration and rate.
+* The pilot compares the outcomes it recorded with those expected, and its exit code is 1 if they differ.
+
+Every MR_F of the pilot converged, so no recorded outcome was missing.
+
+### F5. The sampling period of F and V
+
+The training rolled out V by its scheme with F's period. A validation window at 3 s against F at 6 s was accepted, and the recorded difference of the two rollouts, up to 0.0996 sigma, compared different horizons.
+
+Corrected: the contract that the windows of a training share their length, sampling period and noise levels now covers F and V together, and such a training is refused before any step. All windows of the pilot are at 6 s.
+
+### Also done after the audit
+
+* The difference of the training scheme from the reference is recorded on F at the selected checkpoint, as well as on V at every checkpoint.
+* The selected model can be written and read back with its configuration, scales, settings and a SHA-256 of its content (`models/persistence.py`). It reads back bit for bit.
+
+### Open
+
+* A training that fails at a step discards its earlier checkpoints, the policy of D-036. Keeping them would be a decision of the registration, made before any benchmark fit.
+* The fourteenth review's limitation on rollouts with integrators other than LSODA still holds.

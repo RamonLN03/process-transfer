@@ -482,3 +482,19 @@ BL (`models.linear`):
 * `fitting.WindowLoss`, the loss of MR, takes the model at theta from a builder, so that BL uses the same loss; MR's fits are unchanged bit for bit.
 
 Clarification of 2026-09-28, after the pilot of I3 (experiment log, "Development runs of I3"). The pilot ran with two steps of the training scheme per row. On a synthetic run hotter than the target, the selected checkpoints of HK and HKU differed from the reference on V by about 0.05 sigma, at windows where the model's fastest eigenvalue is 0.48 times a step. Four steps per row keep those windows within 3e-3 sigma. The default of `TrainingSettings` stays at two, as the pilot ran; four is proposed for the registration of the benchmark, which fixes it. Four steps double the time of the steps, and the estimate of the benchmark includes them.
+
+Clarification of 2026-10-01, after Codex's audit of `1a9fad4` (`docs/numerical_robustness.md`, seventeenth review). The choices above stand, with these corrections and precisions:
+
+* The domain of E/R. Adam could take E/R below zero, a model MR's fit never reaches, since its bound keeps E/R >= 0. Each step is now projected onto E/R >= 0, and `learned.LearnedModel` refuses parameters outside the family's domain, so training, evaluation and storage share it. The projection is the constrained method of the declared domain, not a remedy: it reaches the valid limit E/R = 0 exactly, where a rate does not depend on temperature, and inside the domain it changes nothing. Set aside:
+  * a change of coordinates, E/R as exp or softplus of a free coordinate, which cannot reach the limit, or as a square, whose gradient vanishes there. Either would also change the path of every training of a hybrid, the pilot's included, far from the bound;
+  * a negative E/R admitted for the hybrids, a change of the scientific domain from MR's that nothing in the plan asks for.
+* The state of Adam and the criterion on V. Failures of the optimiser's state end a training like a loss that is not finite. The criterion is J as the evaluation computes it, and only a finite criterion is selected.
+* The penalty, stated more precisely. Penalising the networks pulls each factor toward one, and bounds its distance from one everywhere through the last layer. It does not anchor the hybrid to MR_F: the mechanistic parameters are trained with the networks and are not penalised, and they can move away from MR_F's values as far as the data pull them. In the development runs that set the tolerances of `tests/test_hybrid_recovery.py`, a joint fit of HK on planted data moved k_350 by 7 % from the value that simulated them while it recovered the total rate.
+* Selected models are stored by `models/persistence.py`: one JSON file with everything needed to rebuild the model and say how it was obtained, and a SHA-256 of its content checked on reading. This is the record of one model, for the freeze of I6, not a registry.
+* Four steps per row, checked by complete trainings (experiment log, after the audit).
+  * On the case of M0, the selected checkpoint was the same. The difference from the reference fell from 3.6e-4 to 2.9e-5 sigma on F and stayed near 2e-5 on V.
+  * On the fast synthetic case it fell from 0.059 to 0.0028 sigma on F, and from 0.055 to 0.0026 on V.
+  * A training took about 1.7 times as long.
+
+  Four steps remain the proposal for the registration; the default of `TrainingSettings` stays at two, as the pilot ran.
+* A training that fails at a step still discards its earlier checkpoints. Any other policy is for the registration, before any benchmark fit.
