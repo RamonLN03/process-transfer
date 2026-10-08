@@ -692,3 +692,23 @@ Corrected: the contract that the windows of a training share their length, sampl
 ### Found by continuous integration
 
 * On `a3f8707`, the regression test of F2 compared the loss of its case with the value Codex measured on Windows, 2.74094670e302, to 1e-12. On Linux, with Python 3.12 and 3.13, it is 2.74094668e302. With noise levels of 1e-150 the loss multiplies by 1e300 the differences that the integrator leaves between platforms in the simulated data. The test now asks a finite loss above 1e302 and the failure that names the second moment and the step, which is what it is about; it still fails on the code of `1a9fad4` (`3595637`). The code was not changed.
+
+## Review of 2026-10-08, eighteenth: Codex's review of `a9134bc`
+
+Codex, as read-only reviewer, reviewed `a9134bc`: the proposal of I4 and the registration of M1-E02, before any code of I4 existed. The owner relayed its points on 2026-10-08. The amendment of the registration resolves them (`e1af873`, experiment log), and the implementation of I4 carries the amendment out (D-040). Codex has not reviewed the amendment, the implementation or the runs.
+
+* A. The proposal put the generation of data at A5 in I5. Corrected: I4 verifies, I5 registers, I6 and I7 generate.
+* B. The registration did not ask every trajectory to pass the acceptance checks. The structural check of `Trajectory` could have been read as standing in for them. Corrected:
+  * the script judges `check_trajectory(...).accepted` on all 320 trajectories, beside the other rows;
+  * it exits with 0 only when every row passes;
+  * tests on deliberate failures show that a physical failure cannot be hidden by rows that pass.
+
+  The script of M0-E03b, kept as it ran, records the acceptance of its recoveries without including it in its verdict. Its four published summaries show every trajectory accepted on both plants.
+* C. Compatibility with the contract was not to be deduced from the absence of new columns, nor historical hashes imposed on every platform. Corrected: three levels are kept apart. What is conserved is pinned by tests; exact reproduction was checked in the reference environment; possible differences between platforms are stated and not tested against (experiment log, I4).
+* D. The provenance of M1-E02 was not specified. Corrected: configuration and fingerprint, commit and tree, environment, command, integrator, tolerances, sampling, amplitudes and criteria.
+* E. The runs that train recorded no version of JAX or jaxlib. Corrected: `learning_environment()` records them, with the backend, the devices and the precision. The summaries of I3 already written are unchanged.
+
+### Open
+
+* The summaries of the pilot and the checks of I3 do not record their versions of JAX and jaxlib. They are not reconstructed.
+* The limitations still open from the eleventh to seventeenth reviews, among them LSODA's `UserWarning`, which the continuous integration of `376b8d7` printed once on Python 3.12, in a test of fitting.

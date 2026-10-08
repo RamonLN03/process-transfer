@@ -1362,3 +1362,68 @@ Precisions of the method, fixed here:
 * `continuity`: the state starts at the steady state and is carried exactly from each segment into the next, in every one of the 320 trajectories, not only in those with the lead.
 
 The other rows are those of the registration as amended: `stability`, `physical_acceptance`, `recovery`, `carried_state`, `envelope` and `lead`. Reproducibility is judged by `--compare` on two runs. A run passes when every row passes, and M1-E02 passes when both runs pass and agree.
+
+#### M1-E02: result (2026-10-08)
+
+Runs:
+
+* `20261008T161734Z_376b8d7` and `20261008T161752Z_376b8d7`, both from `376b8d7` with a clean working tree, under `PT_DATA_DIR/experiments/m1_e02/`;
+* their comparison, `20261008T161809Z_376b8d7`, under `PT_DATA_DIR/experiments/m1_e02_comparisons/`.
+
+PT_DATA_DIR was a new directory outside the repository and outside OneDrive. Command: `python experiments/m1_e02_p3_a5.py`, 7.6 s a run. Configuration: `configs/target_cstr.yaml`, SHA-256 `7e236cec2178a82c420f38889bedc553b18e408e8e5923aef95afb79c84f2f70`. Environment: Python 3.13.7, numpy 2.5.3 and scipy 1.18.1 on Windows 11, the reference environment.
+
+Before the first run:
+
+* the amendment was published (`e1af873`), and the code and its tests were committed (`9294f50` to `376b8d7`);
+* the suite passed at `376b8d7` on Windows, 1094 tests;
+* the continuous integration of `376b8d7` passed. That is run 37806758377: 1094 tests on Python 3.12 and 1094 on 3.13, and the Docker job.
+
+Both runs exited with 0.
+
+**Result.**
+
+| Row | Criterion | Found | Verdict |
+|---|---|---|---|
+| complete | 16 recoveries, 256 pairs, 32 cases with the lead, 16 references at A10 | 320 trajectories, all simulated | pass |
+| stability | one steady state, balances closed, largest real part below -0.5 1/min | one; closed; -0.964 1/min | pass |
+| physical acceptance | every trajectory accepted by `check_trajectory` | 320 of 320 | pass |
+| recovery | at most 0.005 K and 0.038 mol/m^3 after each rest | largest 5.74e-4 K and 3.17e-3 mol/m^3, both after `++--` | pass |
+| carried state | 256 pairs accepted, and every change of a peak at most 0.05 K | 256 of 256; largest change 2.72e-4 K, `++--` then `++++` | pass |
+| envelope | every temperature inside 335 K to 380 K | at A5, from 347.84 K to 365.211 K; with the cases at A10, from 342.37 K to 376.189 K | pass |
+| lead | state at the end of the lead within the recovery tolerances; continuous; accepted; peak within 0.05 K of the same excursion without the lead | end of the lead 0 K and 8.5e-14 mol/m^3 from the steady state; largest change of a peak 3.2e-7 K at A5 and 4.4e-8 K at A10 | pass |
+| continuity | the state carried exactly through every switch of every trajectory | 320 of 320 | pass |
+| reproducibility | the two summaries equal outside the run identifier, the start and the timings | 0 differences | pass |
+
+Other figures:
+
+* The largest relative residuals of the balances were 9.2e-10 for mass and 9.5e-10 for energy, against a tolerance of 1e-6.
+* The lowest C_A was 66.96 mol/m^3.
+* The largest peak at A5 from the exact steady state is that of `++++`, 365.2109 K. In a pair, after `++--`, it is 365.2112 K.
+* The references at A10 give 376.1886 K for `++++` from the steady state, the worst step of M0-E03b, whose largest peak over pairs was 376.1895 K.
+
+**Interpretation.** The hypothesis holds for the target at A5, with a hold of 120 s and a rest of 600 s:
+
+* Every excursion starts, for all practical purposes, at the nominal steady state, though the state is never reset.
+* The residual after a rest is about half of that at A10: 5.7e-4 K against 1.33e-3 K, and 3.2e-3 mol/m^3 against 6.5e-3 mol/m^3 in M0-E03b. That is what the linear decay of the slowest mode gives from a deviation of half the size. It meets the tolerances by a factor of 8.7 in T and 12 in C_A.
+* The largest temperature at A5 is 14.8 K below the limit and 11 K below that at A10, as expected.
+* The lead leaves the verified steady state where it is, and the excursion after it peaks within 3.2e-7 K of the same excursion without it.
+
+M1-E02 passes. P3 at A5 may now be used for data, in the order of section 13 of the plan: I5 registers the benchmark and the definitions of its data sets and is reviewed; I6 generates the development sets; I7 generates the test sets after the freeze. This result brings none of that forward.
+
+What it is evidence about: the present target, A5, these hold and rest durations, and pairs of excursions. Longer histories rest on the decay over each rest, as in M0-E03b. It says nothing about any model.
+
+#### I4: compatibility with M0, checked (2026-10-08)
+
+The three levels of the amendment of M1-E02, point C:
+
+* Conserved by construction, and pinned by tests that run on every platform:
+  * the identities of M0 and their noise streams, with the values recorded in the private provenance of `m0-e05` (`tests/test_identifiers_lead_and_amplitude.py`);
+  * the runs, settings, input segments and descriptions that the definitions of M0 give (`tests/test_pipeline_lead_and_amplitude.py`);
+  * P3 without a lead or an amplitude, identical to that of M0 (`tests/test_p3_lead_and_a5.py`).
+* Exact reproduction in the reference environment. The definitions `m0_e05`, `m0_e06` and `m0_e07` were run through the generator into new directories outside the repository: once from `a9134bc`, before I4, and once from `65ab7ca`, the generator of I4. The environment was Python 3.13.7, numpy 2.5.3 and scipy 1.18.1, the one recorded in the published provenance. Both times:
+  * every mandatory check of the generator passed;
+  * every run entry of the six published manifests matched, for 24 runs: identity, content hash, file, rows, and for the exports the description, operating mode, extent and sampling period;
+  * the private provenance of each data set had the same keys as the published one, and the same definition, runs, integration, sensors, amplitudes, plants, noise generator and master seed.
+* Not imposed: no test pins the content hashes of simulated data. On another platform or with other library versions, a difference in the last bits would not by itself be a defect of I4.
+
+The published data of M0 were not touched. A fingerprint of the 149 files under `data/available` and `data/private` was the same before the reproductions and after M1-E02.
