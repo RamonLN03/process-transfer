@@ -1306,3 +1306,50 @@ This entry records both run identifiers, the result and its reading. Nothing is 
 **Result.** Pending: M1-E02 has not been run.
 
 **Interpretation.** Pending, to be read by the criteria above once the result exists.
+
+#### Amendment of 2026-10-08 to the registration of M1-E02, before any of its code existed
+
+Made after the owner's decisions on the proposal (D-039) and after Codex's review of `a9134bc`, whose points the owner relayed on 2026-10-08. The registration above is kept as it was written. Where this amendment differs from it, this amendment holds. It was committed and pushed before the script of M1-E02 existed, and nothing in it was chosen after a result was seen, since none existed.
+
+A. The order of generation. The proposal said that A5 data could be generated in I5 once M1-E02 passed. That was wrong, and the proposal is corrected. The order is that of section 13 of the plan:
+
+* I4 verifies the protocol.
+* I5 registers the benchmark, M1-E03, with the definitions of its data sets, and is offered for review before I6.
+* I6 generates the development sets, those at A5 included, and trains.
+* I7 generates the test sets, after the technical freeze.
+
+Passing M1-E02 does not bring any of this forward. It is a condition for data at A5 to exist, not a permission to make them.
+
+B. Complete physical acceptance. Every trajectory that M1-E02 simulates must satisfy `check_trajectory(...).accepted` of `simulation/checks.py`: finite values, physical states, the temperature envelope and the closure of the integrated balances. That holds for the 16 recoveries, the 256 ordered pairs and every case with the lead. The structural check of `Trajectory`, which asks the state to be continuous where the inputs change, does not stand in for any of these. The criteria of recovery, of the effect of the carried state, of stability and of reproducibility are kept beside it. A trajectory that cannot be simulated is a failed case with its cause recorded, not a missing one. The aggregate verdict and the exit code reflect every failure: a physical failure cannot be hidden by other criteria that hold. Tests show this on deliberate failures.
+
+C. Compatibility with M0, and its hashes. Three things are kept apart.
+
+* What I4 conserves by construction, on every platform: the identities of M0 and their meaning, no lead and A10; the noise stream of each identity, which is a SHA-256 of it; the input segments of the definitions of M0; the canonical encoding `observations/v1`; and the rules for identifiers. Tests that run everywhere pin these.
+* Exact reproduction in an equivalent environment: the definitions of `m0-e05`, `m0-e06` and `m0-e07` are run through the generator, into a new directory outside the repository, and every run entry of the manifests is compared, read only, with the published ones. This is a recorded check on the machine and environment of the reference, not a test of continuous integration.
+* Differences that are possible between platforms or library versions: the last bits of a simulated state can differ there, and with them a content hash (`docs/data_contract.md`). No test imposes the historical hashes of simulated data as a condition on every platform, and no historical reference is updated to make a test pass.
+
+The published data sets of M0 are never overwritten or regenerated in place.
+
+D. Provenance of M1-E02. The summary of each run records:
+
+* the configuration of the target, copied with its SHA-256;
+* the commit and the state of the working tree (`data.provenance.git_state`), the environment, and the command;
+* the integrator: method, tolerances, the sampling of 0.1 s, and its restart at each input segment;
+* the amplitudes of A5 and of A10, relative and in SI, the lead, hold and rest, and the order of the corners;
+* the tolerances, and the criteria as they were applied: the envelope, the tolerance of the balances, and the definition of acceptance.
+
+This follows the practice of M0-E03b. Like M1-E01, the script refuses a PT_DATA_DIR inside the repository, since its outputs hold the hidden parameters of the target.
+
+E. Provenance of training. The runs of learning in I3 recorded the versions of numpy and scipy but not those of JAX and jaxlib. Future runs that train record them, with the backend, the devices and the floating-point precision. The paths that do not train keep JAX optional and do not import it. The summaries of I3 already written are not changed, and no version is reconstructed for them after the fact.
+
+Precisions of the method, fixed here:
+
+* Stability is checked as the generator checks the starting point of every data set (`generation/plants.py`): exactly one steady state at the nominal inputs, its balances closed to 1e-9 of the feed terms, and stable with the margin of D-017, a largest real part below -0.5 1/min. This is stricter than the row of the registration, which asked for negative real parts only.
+* The cases with the lead: 60 s at the nominal inputs from the steady state, then one excursion and its rest, for each of the 16 corners, at A5 and at A10. They are 32 trajectories, and 16 more at A10 without the lead give the peaks against which the lead is compared. For each case with the lead:
+  * the state at the end of the lead is within the recovery tolerances of the steady state;
+  * the state is continuous at every switching instant, checked explicitly in the summary;
+  * the trajectory is accepted;
+  * its peak is within 0.05 K of the peak of the same excursion without the lead.
+* Each run has 320 trajectories: 16 recoveries, 256 pairs, 32 with the lead and 16 references at A10. A run passes only if every one was simulated and the count is complete.
+* Exit codes: 0 when every row passes, 1 when a row fails, 2 when the run cannot complete. In every case a summary that says so is written.
+* Reproducibility. Two runs from the same clean commit are compared by the script itself. The only fields left out of the comparison are those that differ by construction: the identifier of the run, its starting time and the timings. Everything else must be equal, the provenance included.

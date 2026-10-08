@@ -9,7 +9,7 @@ I4 adds the two extensions of P3 that the benchmark needs, and verifies them bef
 * the lead: 60 s at the nominal inputs at the start of every P3 run of M1, ticks 0 to 10, so that the first excursion has a context of ten readings (sections 4.2 and 4.3);
 * the amplitude A5, the training region of the test of extrapolation (section 6.1; D-030, answer to Q2).
 
-Out of scope: the physics, the plants, the operating point, the hold of 120 s, the rest of 600 s, any amplitude above A10, the definitions of the data sets of the benchmark (I5), and any data at A5 before M1-E02 passes.
+Out of scope: the physics, the plants, the operating point, the hold of 120 s, the rest of 600 s, any amplitude above A10, the definitions of the data sets of the benchmark (I5), and any data at A5, which only I6 and I7 generate (section 13; corrected on 2026-10-08, see item 4 of the next action).
 
 ## A5, exactly
 
@@ -38,6 +38,8 @@ Registered in `docs/experiment_log.md`, entry M1-E02, with its hypothesis, metho
 
 ## What the owner decides before M1-E02 runs
 
+Decided by the owner on 2026-10-08 (D-039): the four points below as proposed, with the contract kept at version 1 only where its compatibility is shown by checks.
+
 1. The grammar of the two tokens, and that identities without them keep the meaning they have in M0, as proposed.
 2. The contract: no column and no new version, as proposed, or a column and a new version.
 3. M1-E02 on the target alone, as registered, since M1 generates new data on the target only (plan, section 5.2), or on both plants, as M0-E03b did.
@@ -52,4 +54,6 @@ Once the owner has decided the points above:
 1. Implement the lead and A5 in `simulation.protocols`, and the two tokens in `data.identifiers` and the contract, with tests, including those of compatibility with M0.
 2. Write `experiments/m1_e02_p3_a5.py` as the registration describes, with tests, and commit it from a clean tree.
 3. Run M1-E02 twice from that commit and record the result and its reading in the experiment log.
-4. Only if it passes, A5 data may be generated, in I5.
+4. Passing M1-E02 does not authorise any data. I5 registers the benchmark and the definitions of its data sets and is reviewed before I6; I6 generates the development sets, those at A5 included, and trains; I7 generates the test sets after the technical freeze (plan, section 13).
+
+Corrected on 2026-10-08, after Codex's review of `a9134bc`. Item 4 first read "Only if it passes, A5 data may be generated, in I5", which put the generation of data in the wrong iteration (experiment log, amendment of the registration of M1-E02, point A).

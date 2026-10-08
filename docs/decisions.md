@@ -565,3 +565,16 @@ What the acceptance takes as it stands, from the experiment log and the plan (se
 * Q1 is not reopened (D-030), and no proposal about the treatment of E/R arises from M1-E01.
 
 Carried forward, documented and not blocking: the brackets of B2 are conditional on convexity between the sampled points, which the points cannot show; the Monte Carlo of part 1 has the uncertainty stated in the fifteenth review; and the other open limitations of the fourteenth and fifteenth reviews of `docs/numerical_robustness.md`.
+
+## D-039 I4 of M1: the owner's decisions on the proposal (2026-10-08, decided by the owner)
+
+The owner decided the points that `docs/m1_i4_proposal.md` left open, on 2026-10-08, before any code of I4 existed. They are recorded here with the reasons, and they are not reopened unless a concrete incompatibility is found.
+
+1. The lead and the amplitude are written out as tokens in the identity of a P3 run of M1: `target.p3.e7.x40.l60.a5.n0`, with `l<lead in s>` and `a<amplitude>`. Why: an identity says what the run is, and a reader should not need to know a default to read it.
+2. An identity without the two tokens keeps exactly the meaning it has in M0: no lead, A10. Why: the data sets of M0, their noise streams, which follow from the identity (D-021), and every result registered on them stay valid as they are.
+3. The tables and version 1 of the data contract are kept, provided the extension is compatible with the rules, the canonical encoding and the readers concerned. That compatibility is shown by checks, not deduced from the absence of new columns (experiment log, amendment of the registration of M1-E02, point C).
+4. M1-E02 verifies the target only. Why: M1 fits models on the target only and generates its new data on the target only (`docs/m1_plan.md`, section 5.2); the source has no run at A5.
+5. M1-E02 generates no data set of observations, draws no noise and publishes nothing for models. It keeps its summaries and diagnostics under `PT_DATA_DIR/experiments`. Why: section 6.2 of the plan asks for the verification before any data at A5 exist.
+6. The lead of 60 s, A5 as half of the amplitudes of A10, the hold of 120 s and the rest of 600 s are kept as the plan has them.
+
+Who did what, kept apart: the owner decided the points above. Codex, as read-only reviewer, reviewed `a9134bc`, the proposal and the registration, and raised the points that the amendment of the registration of M1-E02 resolves; the owner relayed them on 2026-10-08. Claude Code, as implementation agent, records them here and implements I4.
