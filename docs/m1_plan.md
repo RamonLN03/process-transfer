@@ -1,6 +1,6 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27, corrected after Codex's review, and accepted by the owner on 2026-10-08 (section 13, D-034, D-038). I3, the training framework and the learned models, was implemented on 2026-09-27 and 2026-09-28, corrected after Codex's audit, and closed on 2026-10-01 (section 13, D-035 to D-037). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27, corrected after Codex's review, and accepted by the owner on 2026-10-08 (section 13, D-034, D-038). I3, the training framework and the learned models, was implemented on 2026-09-27 and 2026-09-28, corrected after Codex's audit, and closed on 2026-10-01 (section 13, D-035 to D-037). I4, the lead and the amplitude A5 with their verification M1-E02, was decided, implemented, verified and closed on 2026-10-08 (section 13, D-039 to D-041). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
 
 ## 1. The question
 
@@ -539,7 +539,11 @@ What I3 leaves open, for the registration of the benchmark (I5):
 
 A5 is not tried here: it waits for the verification of P3 at A5 (I4).
 
+Status of I4 on 2026-10-08: closed (D-041). The owner decided the points of the proposal (D-039). Codex reviewed `a9134bc` before any code existed; its points were resolved by an amendment of the registration of M1-E02, published before the code, and by the implementation (D-040). The lead and A5 are in the protocol, the identities, the definitions and the generator, with tests, and version 1 of the contract stands. M1-E02 passed twice from `376b8d7`, with the same numbers. The data sets of M0 reproduce exactly in the reference environment. Codex has not reviewed the implementation or the runs.
+
 ## 14. The next iteration, recommended
+
+Status on 2026-10-08, after I4: I4 is closed (D-041). The next iteration is I5, the registration of the benchmark, M1-E03, with the definitions of its data sets. `docs/m1_i5_proposal.md` proposes the decisions it has to make; they are pending review. The paragraphs below were written earlier and are kept.
 
 Status of I4 on 2026-10-08: proposed in `docs/m1_i4_proposal.md`, with M1-E02 registered in the experiment log before any of its code exists. Nothing of I4 is implemented, and M1-E02 has not been run.
 
@@ -622,3 +626,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 11, 2026-10-08.** Status only. The header, section 13 and section 14 record the owner's acceptance of I2 (D-038). No part of the design changed.
 
 **Revision 12, 2026-10-08.** Status only. Section 14 records that I4 is proposed (`docs/m1_i4_proposal.md`) and M1-E02 registered. No part of the design changed.
+
+**Revision 13, 2026-10-08.** Status only. The header, section 13 and section 14 record the closure of I4 (D-039 to D-041) and name I5 as the next iteration. No part of the design changed.

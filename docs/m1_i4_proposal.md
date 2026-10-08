@@ -1,5 +1,7 @@
 # I4 of M1: proposal
 
+Status on 2026-10-08: decided by the owner (D-039), implemented (D-040), verified by M1-E02 and closed (D-041). The text below is the proposal as it was written, with the correction of item 4 of the next action.
+
 Written on 2026-10-08, after the acceptance of I2 (D-038) and the closure of I3 (D-037), for the owner and for review. Nothing of I4 is implemented and no data have been generated. M1-E02, the verification that I4 needs, is registered in the experiment log on the same day and has not been run. This document says what I4 changes and what it leaves alone, and lists what the owner decides before M1-E02 runs. It does not repeat the plan: sections 4.2, 4.3, 6.1, 6.2 and 13 of `docs/m1_plan.md` and D-030 stay the reference.
 
 ## Objective and scope

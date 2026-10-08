@@ -590,3 +590,40 @@ The owner's decisions are those of D-039; this entry records how the implementat
 * What stays as it is: the operating mode `p3`, the tables, the canonical encoding and version 1 of the contract. The descriptions of the runs of M0 are unchanged; a run of M1 says that it has the lead and which amplitude it uses.
 * Tests. They build the inputs of P3 at A5 and never simulate them before M1-E02 has passed. The continuity of the state through the lead, and the whole path from definition to export, are tested at A10. An earlier test used `amplitude` as its example of an unknown field of a definition. It now uses an unknown name, and `amplitude` is tested against its own domain.
 * The provenance of training (amendment, point E): `models.training.learning_environment()` records the versions of jax and jaxlib, the backend, the devices and the precision. The scripts that train record it. Only the paths that train import JAX.
+
+## D-041 I4 of M1 closed (2026-10-08, closure authorised by the owner on conditions, checked by the implementation agent)
+
+The owner authorised the closure of I4 of M1, the lead and the amplitude A5 with their verification, if four conditions held. They were checked against the repository on 2026-10-08, below, and I4 is closed. Its code is that of `376b8d7`; the commits after it change documentation only. Closing I4 does not close M1.
+
+Where the conditions are met:
+
+* The criteria of section 13 of the plan for I4.
+  * The identities and the contract changed, with tests. The protocol is in `9294f50`, with `tests/test_p3_lead_and_a5.py`. The identities are in `dbb8fe6`, with `tests/test_identifiers_lead_and_amplitude.py`. The definitions, the generator and the contract are in `65ab7ca`, with `tests/test_pipeline_lead_and_amplitude.py`.
+  * M1-E02 passes (experiment log).
+* The points of Codex's review of `a9134bc`, A to E, are resolved:
+  * by the amendment of the registration, published in `e1af873` before any code of M1-E02;
+  * by the implementation, D-040, including the provenance of training in `01887af`;
+  * as recorded in `docs/numerical_robustness.md`, eighteenth review.
+* M1-E02 meets its registration as amended. It was run twice, from `376b8d7` with a clean tree, after the amendment, the code and the tests were committed. Every row passed in both runs, and the two runs agree outside the fields that differ by construction.
+* The tests:
+  * 1094 pass on Windows at `376b8d7`;
+  * the continuous integration of `376b8d7`, run 37806758377, passed on Python 3.12 and 3.13, 1094 tests each, and in Docker.
+
+  The continuous integration of the commit that records this entry, and of any later commit of documentation, is checked after it is pushed. If it fails, the closure does not stand until the failure is corrected.
+
+Who did what, kept apart:
+
+* The owner decided the points of the proposal (D-039) and authorised the closure on the conditions above.
+* Codex, as read-only reviewer, reviewed `a9134bc` and raised points A to E. It has not reviewed the amendment, the implementation, the runs of M1-E02 or this closure. An independent review by Codex remains to be done and is a different thing from this closure.
+* Claude Code, as implementation agent, did the following:
+  * it wrote the amendment and implemented I4;
+  * it ran M1-E02, the suite and the reproduction of the data sets of M0;
+  * it read the continuous integration on the repository's Actions page;
+  * it checked the conditions.
+
+Carried forward, documented and not blocking:
+
+* Data at A5, as all data of the benchmark, exist only through I5, I6 and I7, in that order. M1-E02 authorises none of it.
+* M1-E02 is evidence about the present target, A5, a hold of 120 s, a rest of 600 s and pairs of excursions. It says nothing about any model.
+* The summaries of I3 already written do not record their versions of JAX and jaxlib.
+* The decisions that the registration of the benchmark has to make are proposed, pending review, in `docs/m1_i5_proposal.md`.
