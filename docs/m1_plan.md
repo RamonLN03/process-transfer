@@ -541,6 +541,8 @@ A5 is not tried here: it waits for the verification of P3 at A5 (I4).
 
 ## 14. The next iteration, recommended
 
+Status of I4 on 2026-10-08: proposed in `docs/m1_i4_proposal.md`, with M1-E02 registered in the experiment log before any of its code exists. Nothing of I4 is implemented, and M1-E02 has not been run.
+
 I2 is accepted (D-038) and I3 is closed (D-037). The next iteration is I4: the lead and the amplitude A5 in the grammar of identities and the data contract, and the verification of P3 at A5, M1-E02, registered before it is run. The recommendation below, I2, is kept as it was written.
 
 I2, the identifiability diagnostic M1-E01 of section 7.4. I1 is closed (D-033), and I2 needs nothing that I1 did not build: the fit of MR with E/R estimated or held fixed, its covariance with and without the error of the initial state, rollouts with sensitivities, and the windows of the exports of M0. It needs no new dependency and no new data. Concretely:
@@ -618,3 +620,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 10, 2026-10-01.** Status only. The header, section 13 and section 14 record the correction of I3 after Codex's audit of `1a9fad4` and its closure (D-037). No part of the design changed.
 
 **Revision 11, 2026-10-08.** Status only. The header, section 13 and section 14 record the owner's acceptance of I2 (D-038). No part of the design changed.
+
+**Revision 12, 2026-10-08.** Status only. Section 14 records that I4 is proposed (`docs/m1_i4_proposal.md`) and M1-E02 registered. No part of the design changed.

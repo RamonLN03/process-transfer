@@ -1254,3 +1254,55 @@ The differences are against the reference rollout at the selected checkpoint, on
 * What this does not show. Two cases at one seed each do not show how four steps change the selection or the criteria across the grid. It supports the proposal of four steps for the registration on the ground of the scheme's accuracy, not of any score.
 
 The joint recovery of a planted kinetic factor by HK started from MR_F estimated on F alone, a new test, passes the same tolerances as the tests that start from the parameters that simulated the data (`tests/test_hybrid_recovery.py`).
+
+### M1-E02 Verification of P3 at A5 and of the lead (registered 2026-10-08, not run)
+
+The verification of section 6.2 of the plan, iteration I4. It is registered before its code exists and before it is run. The choices of I4 that it depends on are proposed in `docs/m1_i4_proposal.md`, and the owner confirms them before the run. A change made before the run is recorded here as a dated amendment. Nothing here changes after a result is seen.
+
+Code, to be written: `experiments/m1_e02_p3_a5.py`. It uses `simulation.protocols`, `simulation.checks` and `simulation.integration` as `experiments/03_p3_recovery_and_pairs.py` (M0-E03b) does, with the amplitudes of A5 from `simulation.protocols`. It is committed with its tests passing and run from that clean commit, which its provenance names.
+
+Plant and data. The target alone, `configs/target_cstr.yaml`. M1 fits models on the target only, and all of its new data are on the target (plan, section 5.2); the source has no run at A5. This is a verification of the simulator. It reads the truth of the target, as M0-E03b did, and nothing it computes enters a model, a partition or a choice of the benchmark. No data are generated, stored or exported, and no noise is drawn. Deterministic; no seed. Outputs go to `PT_DATA_DIR/experiments/m1_e02/<run id>`, outside git.
+
+**Hypothesis.** Under P3 at A5 (q and C_Af +-5 % of their nominal values, T_f and T_c +-2.5 K, 120 s at a corner, 600 s at the nominal inputs), as at A10, every excursion starts for all practical purposes at the nominal steady state although the state is never reset, and every trajectory stays inside the envelope. A lead of 60 s at the nominal inputs leaves the verified steady state where it is. Expected, and not a criterion: smaller excursions recover sooner and stay further from the limit than at A10, so the largest peak at A5 lies below 376.19 K, the largest at A10 on the target (M0-E03b).
+
+**Method.** Integration, sampling and the absence of resets as in M0-E03b: each segment starts from the final state of the one before.
+
+1. Stability: the nominal steady state of the target, computed as in M0-E01, and the eigenvalues of its Jacobian.
+2. Recovery: for each of the 16 corners at A5, an excursion of 120 s from the nominal steady state and the rest of 600 s after it; the distance to the steady state at the end of the rest, in T and in C_A.
+3. Carried state: all 256 ordered pairs of corners at A5, repeats included: excursion a, rest, excursion b, rest. For each pair, the acceptance checks of `simulation/checks.py` on the whole trajectory, its peak temperature, and the difference between the peak of b inside the pair and the peak of b started from the exact steady state.
+4. Envelope: the largest and smallest temperatures over the 16 recoveries and the 256 pairs.
+5. The lead: 60 s at the nominal inputs from the verified steady state, then an excursion to each of the 16 corners and its rest. The distance to the steady state at the end of the lead, and the continuity of the state at every switching instant, which the structural check of every `Trajectory` asks exactly (since `875e83a`). The lead is the same at A10, so this check also covers the lead of the A10 runs of M1. Their excursions after it are those M0-E03b verified (plan, section 4.2).
+6. Reproducibility: the script run twice from the same clean commit.
+
+**Criteria, fixed before any number at A5 is computed.** M1-E02 passes when every row passes.
+
+| Check | Passes when | Source of the tolerance |
+|---|---|---|
+| Stability | every eigenvalue of the Jacobian at the nominal steady state has a negative real part | M0-E01 |
+| Recovery | after each of the 16 rests, the residual is at most 0.005 K in T and 0.038 mol/m^3 in C_A | `P3_RECOVERY_TOLERANCE_T` and `P3_RECOVERY_TOLERANCE_CA`, derived in M0-E03b from the sensor noise: a hundredth of sigma_T, and for C_A the value verified then, now 1/132 of sigma_CA (note of 2026-09-21) |
+| Carried state | 256 of 256 pairs accepted, and every change of a peak caused by the carried state at most 0.05 K | `P3_PEAK_AGREEMENT`, from M0-E03b: a tenth of sigma_T and about 1 % of the 3.8 K between the worst step at A10 and the limit |
+| Envelope | every temperature of every trajectory inside 335 K to 380 K | `TEMPERATURE_ENVELOPE` of `simulation/checks.py`, from `docs/assumptions.md` |
+| Lead | at the end of the lead, the state within the recovery tolerances of the steady state, and every trajectory accepted by its structural check | the recovery tolerances above |
+| Reproducibility | the two summaries identical in every number outside provenance and timing | as M0-E03b, whose runs gave identical numbers |
+
+The tolerances are those of P3 at A10. They are not chosen again for A5. At A5 the margin to the limit of 380 K is expected to be larger, so the agreement of 0.05 K is not looser relative to it.
+
+**What the run keeps.** A `summary.json` for each of the two runs, with:
+
+* a provenance block: commit, whether the tree was clean, the versions of Python, numpy and scipy, the command, and the time of the run;
+* the steady state and the eigenvalues;
+* for each corner, its residuals and its peak;
+* for each pair, the verdict of `simulation/checks.py`, its peak and the change of its peak;
+* the distances at the end of the lead;
+* the verdict of each row;
+* the timing.
+
+This entry records both run identifiers, the result and its reading. Nothing is written into the data directory of the repository.
+
+**Treatment of failures.** If any row fails, M1-E02 fails and is reported as it is, with the corners or pairs that failed. The tolerances, the amplitudes, the hold and the rest are not changed after a result is seen. No data at A5 are generated, and Q2 is reopened with the owner (plan, section 13, row I4; D-030). A trajectory that the integration or the checks refuse counts as a failure of its row. If a failure turns out to come from a defect of the script, the correction and a complete run from a new clean commit are recorded beside the first result, which is kept.
+
+**What it cannot conclude.** It is evidence about the present target, A5, a hold of 120 s, a rest of 600 s and pairs of excursions. Longer histories rest on the decay over each rest, as in M0-E03b. It says nothing about any model.
+
+**Result.** Pending: M1-E02 has not been run.
+
+**Interpretation.** Pending, to be read by the criteria above once the result exists.
