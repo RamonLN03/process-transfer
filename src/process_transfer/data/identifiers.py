@@ -13,8 +13,14 @@ The logical identity of a run says what the run is (``docs/data_contract.md``):
 where the definition depends on the protocol and never on the clock or the content:
 
     p3       e<excitation seed>.x<number of excursions>       target.p3.e0.x10.n0
+             ... .l<lead in seconds>.a<amplitude>              target.p3.e7.x40.l60.a5.n0
     steady   d<duration in seconds>                            target.steady.d7200.n0
     step     <input>-<direction>.l<lead>.h<hold>.r<recovery>   target.step.tc-up.l600.h600.r600.n0
+
+A P3 run of M1 writes out its lead and its amplitude, ``a10`` or ``a5`` (D-039). A P3
+identity without the two tokens, as every run of M0 has, means what it meant in M0: no
+lead, A10. The two forms never name the same run: the tokens go together, and the lead
+they name is at least one second, so the run of M0 cannot be written in the new form.
 
 The noise stream is derived from the identity, so that the same identity always means
 the same noise and a new realisation always means a new one. The definition part is the
@@ -83,18 +89,43 @@ def _identity(plant_id: str, protocol: str, definition: str, noise_realisation: 
     return path_identifier("run_id", f"{plant_id}.{protocol}.{definition}.n{realisation}")
 
 
+# The amplitudes a P3 identity may name; ``simulation.protocols.P3_AMPLITUDES`` defines
+# them, and a test keeps the two lists equal (the data layer does not import simulation).
+P3_AMPLITUDES = ("a10", "a5")
+
+
 def run_identifier(
-    plant_id: str, protocol: str, excitation_seed: int, n_excursions: int, noise_realisation: int
+    plant_id: str,
+    protocol: str,
+    excitation_seed: int,
+    n_excursions: int,
+    noise_realisation: int,
+    lead_s: int | None = None,
+    amplitude: str | None = None,
 ) -> str:
     """The logical identity of a seeded excursion run such as P3, built from its
     definition and from nothing else.
 
     The noise realisation is part of it, so two realisations of the noise on the same
-    excitation are two runs. The seed of the noise is not part of it.
+    excitation are two runs. The seed of the noise is not part of it. ``lead_s`` and
+    ``amplitude`` are given together or not at all: without them the identity is that of
+    M0, which means no lead and A10.
     """
     seed = _count("excitation_seed", excitation_seed, 0)
     excursions = _count("n_excursions", n_excursions, 1)
-    return _identity(plant_id, protocol, f"e{seed}.x{excursions}", noise_realisation)
+    definition = f"e{seed}.x{excursions}"
+    if (lead_s is None) != (amplitude is None):
+        raise ValueError(
+            "lead_s and amplitude are given together or not at all, got "
+            f"lead_s={lead_s!r} and amplitude={amplitude!r}; without both, the identity is "
+            "that of M0: no lead, A10"
+        )
+    if lead_s is not None:
+        lead = _count("lead_s", lead_s, 1)
+        if amplitude not in P3_AMPLITUDES:
+            raise ValueError(f"amplitude must be one of {P3_AMPLITUDES}, got {amplitude!r}")
+        definition += f".l{lead}.{amplitude}"
+    return _identity(plant_id, protocol, definition, noise_realisation)
 
 
 def steady_run_identifier(plant_id: str, duration_s: int, noise_realisation: int) -> str:
