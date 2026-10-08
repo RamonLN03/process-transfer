@@ -4,6 +4,11 @@ P3, the excitation protocol accepted in D-019: excursions of 120 s to the corner
 input box at the A10 amplitudes, each followed by 600 s at the nominal inputs. The state
 of the plant is never reset: what an excursion leaves behind is carried into the next one.
 
+M1 adds two things to P3 (``docs/m1_plan.md``, sections 4.2 and 6.1; D-039): a lead of
+60 s at the nominal inputs before the first excursion, so that it has a context of ten
+readings, and the amplitude A5, half of A10 on every input. Without them P3 is exactly
+the protocol of M0. P3 at A5 may be used for data only once M1-E02 has verified it.
+
 Scope. P3 was verified on the present source and target, with these amplitudes,
 this hold and this rest (M0-E03 and M0-E03b). That is evidence about those plants and
 conditions. A different plant, amplitude, hold or rest needs the same verification,
@@ -29,6 +34,7 @@ This module describes experiments on the plant. It contains no hidden physics.
 from __future__ import annotations
 
 import itertools
+import math
 
 import numpy as np
 
@@ -49,6 +55,11 @@ A10_COOLANT_TEMPERATURE = 5.0  # K
 
 P3_HOLD = 120.0  # s spent at a corner
 P3_REST = 600.0  # s spent at the nominal inputs afterwards
+# The lead of a P3 run of M1: the nominal inputs held from the verified steady state before
+# the first excursion (plan of M1, section 4.2). A run of M0 has none.
+P3_LEAD = 60.0  # s
+# The amplitudes of P3, by the token that names them in the identity of a run (D-039).
+P3_AMPLITUDES = ("a10", "a5")
 
 STEADY_DURATION = 7200.0  # s of steady operation, the length of a P3 run
 
@@ -94,6 +105,22 @@ def a10_amplitudes(nominal_inputs: FloatArray) -> FloatArray:
     )
 
 
+def a5_amplitudes(nominal_inputs: FloatArray) -> FloatArray:
+    """Absolute A5 amplitudes, in SI: half of A10 on every input, so q and C_Af +-5 % of
+    their nominal values and T_f and T_c +-2.5 K (plan of M1, section 6.1). Halving is
+    exact in binary arithmetic, so A5 is A10 / 2 to the last bit."""
+    return 0.5 * a10_amplitudes(nominal_inputs)
+
+
+def p3_amplitudes(nominal_inputs: FloatArray, amplitude: str) -> FloatArray:
+    """The absolute amplitudes that ``amplitude``, ``a10`` or ``a5``, names."""
+    if amplitude == "a10":
+        return a10_amplitudes(nominal_inputs)
+    if amplitude == "a5":
+        return a5_amplitudes(nominal_inputs)
+    raise ValueError(f"amplitude must be one of {P3_AMPLITUDES}, got {amplitude!r}")
+
+
 def corner_levels() -> LevelArray:
     """The 16 corners of the input box as rows of -1 and +1, in a fixed order."""
     return np.array(list(itertools.product((1, -1), repeat=4)), dtype=np.int64)
@@ -119,11 +146,30 @@ def p3_corners(n_excursions: int, seed: int) -> LevelArray:
     return binary_levels(n_excursions, 4, np.random.default_rng(int(seed)))
 
 
-def p3_segments(nominal_inputs: FloatArray, corners: LevelArray) -> list[InputSegment]:
-    """P3 for a given list of corners: each held ``P3_HOLD``, then nominal for ``P3_REST``."""
-    return excursions_with_rest(
-        nominal_inputs, a10_amplitudes(nominal_inputs), corners, P3_HOLD, P3_REST
+def p3_segments(
+    nominal_inputs: FloatArray,
+    corners: LevelArray,
+    amplitude: str = "a10",
+    lead: float = 0.0,
+) -> list[InputSegment]:
+    """P3 for a given list of corners: each held ``P3_HOLD`` at ``amplitude``, then nominal
+    for ``P3_REST``. A positive ``lead`` puts that many seconds at the nominal inputs before
+    the first excursion; the state is carried through it as through a rest, never reset,
+    and the corners are those given, whatever the lead. With the defaults this is P3 as
+    in M0: A10 and no lead."""
+    if (
+        isinstance(lead, (bool, np.bool_))
+        or not isinstance(lead, (int, float, np.integer, np.floating))
+        or not math.isfinite(lead)
+        or lead < 0.0
+    ):
+        raise ValueError(f"lead must be a finite number of seconds, zero or more, got {lead!r}")
+    segments = excursions_with_rest(
+        nominal_inputs, p3_amplitudes(nominal_inputs, amplitude), corners, P3_HOLD, P3_REST
     )
+    if lead > 0.0:
+        segments = steady_segments(nominal_inputs, float(lead)) + segments
+    return segments
 
 
 def steady_segments(
