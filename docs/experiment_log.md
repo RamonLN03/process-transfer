@@ -1353,3 +1353,12 @@ Precisions of the method, fixed here:
 * Each run has 320 trajectories: 16 recoveries, 256 pairs, 32 with the lead and 16 references at A10. A run passes only if every one was simulated and the count is complete.
 * Exit codes: 0 when every row passes, 1 when a row fails, 2 when the run cannot complete. In every case a summary that says so is written.
 * Reproducibility. Two runs from the same clean commit are compared by the script itself. The only fields left out of the comparison are those that differ by construction: the identifier of the run, its starting time and the timings. Everything else must be equal, the provenance included.
+
+#### The script of M1-E02, committed before its first run (2026-10-08)
+
+`experiments/m1_e02_p3_a5.py` follows the registration and its amendment. Its tests are in `tests/test_m1_e02_script.py`. They judge synthetic records with deliberate failures and simulate one case at A10 only; nothing in them simulates P3 at A5. Two rows are made explicit in the script, before any run and stricter than the amendment requires:
+
+* `complete`: the counts 16, 256, 32 and 16. The amendment already asks that a run with a missing case not pass; this is that condition as a row of its own.
+* `continuity`: the state starts at the steady state and is carried exactly from each segment into the next, in every one of the 320 trajectories, not only in those with the lead.
+
+The other rows are those of the registration as amended: `stability`, `physical_acceptance`, `recovery`, `carried_state`, `envelope` and `lead`. Reproducibility is judged by `--compare` on two runs. A run passes when every row passes, and M1-E02 passes when both runs pass and agree.

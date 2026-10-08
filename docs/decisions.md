@@ -578,3 +578,15 @@ The owner decided the points that `docs/m1_i4_proposal.md` left open, on 2026-10
 6. The lead of 60 s, A5 as half of the amplitudes of A10, the hold of 120 s and the rest of 600 s are kept as the plan has them.
 
 Who did what, kept apart: the owner decided the points above. Codex, as read-only reviewer, reviewed `a9134bc`, the proposal and the registration, and raised the points that the amendment of the registration of M1-E02 resolves; the owner relayed them on 2026-10-08. Claude Code, as implementation agent, records them here and implements I4.
+
+## D-040 I4 of M1: how the lead and A5 are implemented (2026-10-08, decided by the implementation agent, technical and reversible)
+
+The owner's decisions are those of D-039; this entry records how the implementation carries them out, where they left the how open.
+
+* The protocol. `simulation.protocols.p3_segments` takes an amplitude, `a10` or `a5`, and a lead in seconds, finite and zero or more. A5 is `0.5 * a10_amplitudes`, which is exact in binary arithmetic, so A5 is half of A10 to the last bit. The lead is one segment at the nominal inputs before the corners. The corners and every segment after the lead are those of the same sequence without it. With the defaults, P3 is that of M0.
+* The identities. `data.identifiers.run_identifier` takes `lead_s` and `amplitude` together or not at all. The lead they name is a whole number of seconds, at least one, so the identity of a run of M0 cannot be written in the new form. The data layer does not import the simulation, so it keeps its own list of amplitudes, and a test keeps that list equal to the protocol's.
+* The definitions. A P3 definition may give `lead`, a duration of whole seconds, and `amplitude`, together. Without them it is a definition of M0. The private record of a data set holds the fields its definition sets, so a definition of M0 is recorded exactly as before. A P3 data set of M1 adds its lead and amplitudes under `p3_extensions_of_m1`.
+* The clock. The generator now refuses, before simulating, any run whose inputs change off the clock of its sensors. This holds for every protocol: a lead of 61 s with readings every 6 s is refused rather than read with wrong windows. Every definition of M0 satisfies it.
+* What stays as it is: the operating mode `p3`, the tables, the canonical encoding and version 1 of the contract. The descriptions of the runs of M0 are unchanged; a run of M1 says that it has the lead and which amplitude it uses.
+* Tests. They build the inputs of P3 at A5 and never simulate them before M1-E02 has passed. The continuity of the state through the lead, and the whole path from definition to export, are tested at A10. An earlier test used `amplitude` as its example of an unknown field of a definition. It now uses an unknown name, and `amplitude` is tested against its own domain.
+* The provenance of training (amendment, point E): `models.training.learning_environment()` records the versions of jax and jaxlib, the backend, the devices and the precision. The scripts that train record it. Only the paths that train import JAX.
