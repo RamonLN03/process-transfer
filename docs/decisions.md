@@ -547,3 +547,21 @@ Carried forward, documented and not blocking:
   * the other open limitations of the eleventh to seventeenth reviews of `docs/numerical_robustness.md`.
 * From the pilot: its numbers are development numbers. The good criteria on V of HK and HKU are scores of one window of V each, the window that selected the checkpoint. They are not evidence of generalisation, of extrapolation or of the superiority of any model.
 * The test of the exit code of M0-E08, carried from M0.
+
+## D-038 I2 of M1 accepted (2026-10-08, accepted by the owner)
+
+The owner accepted I2 of M1, the identifiability diagnostic M1-E01, on 2026-10-08, with the corrections already documented. Acceptance was the one thing I2 still waited for, so I2 is closed. Its code is that of `ddd884c`, the last commit that changed `src/process_transfer/models/identifiability.py` and the two scripts of M1-E01. Its registered runs are `20260927T182913Z_e166bb5`, parts 1 and 2, and `20260927T183702Z_e166bb5`, the oracle. The run of parts 1 and 2 after the corrections is recorded in the experiment log, after the entry of M1-E01. Accepting I2 does not close M1.
+
+Who did what, kept apart:
+
+* The owner accepted I2 as it stands after the corrections of `ddd884c`. The acceptance is the owner's decision. It is not a technical review.
+* Before the registration, two read-only reviews by agents found defects, which were corrected before anything was run (`docs/numerical_robustness.md`, fourteenth review).
+* Codex, as read-only reviewer, reviewed I2 at `129063c` and reported two defects, neither of which acted in the registered run. They were corrected in `ddd884c` (fifteenth review; D-034, clarification of 2026-09-27). The repository records no review by Codex of `ddd884c` or of the run that followed it.
+* Claude Code, as implementation agent, implemented, registered, ran and corrected I2. On 2026-10-08 it recorded this acceptance. Nothing was run again for it: M1-E01 was not repeated, and no code changed.
+
+What the acceptance takes as it stands, from the experiment log and the plan (section 13):
+
+* Parts 1 and 2 are exploratory. The comparison of the runs' estimates of E/R with their standard errors is not read, because three of the four profiles are more curved than the linearised model on which the sandwich rests. The oracle is reported apart.
+* Q1 is not reopened (D-030), and no proposal about the treatment of E/R arises from M1-E01.
+
+Carried forward, documented and not blocking: the brackets of B2 are conditional on convexity between the sampled points, which the points cannot show; the Monte Carlo of part 1 has the uncertainty stated in the fifteenth review; and the other open limitations of the fourteenth and fifteenth reviews of `docs/numerical_robustness.md`.
