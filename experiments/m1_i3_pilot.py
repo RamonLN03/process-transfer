@@ -63,7 +63,7 @@ from process_transfer.cstr_variables import (  # noqa: E402
 )
 from process_transfer.data.export import open_export_directory  # noqa: E402
 from process_transfer.data.paths import data_dir, repository_root  # noqa: E402
-from process_transfer.data.provenance import environment, git_state, new_run_directory  # noqa: E402
+from process_transfer.data.provenance import git_state, new_run_directory  # noqa: E402
 from process_transfer.evaluation.budgets import excitation, split_budget  # noqa: E402
 from process_transfer.evaluation.outcomes import TrainingFailure  # noqa: E402
 from process_transfer.evaluation.plant import KnownPlant, read_known_plant  # noqa: E402
@@ -86,6 +86,7 @@ from process_transfer.models.rollout import rollout  # noqa: E402
 from process_transfer.models.training import (  # noqa: E402
     Configuration,
     TrainingSettings,
+    learning_environment,
     train,
     training_seed,
     validation_score,
@@ -489,7 +490,11 @@ def main() -> int:
     modeller = modeller_values()
     summary: dict[str, object] = {
         "phase": arguments.phase,
-        "provenance": {"git": state, "environment": environment(), "data_dir": str(target)},
+        "provenance": {
+            "git": state,
+            "environment": learning_environment(),
+            "data_dir": str(target),
+        },
     }
     rates = {}
     for item in arguments.rates:

@@ -42,12 +42,13 @@ from concurrent.futures import ProcessPoolExecutor  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from process_transfer.data.paths import data_dir, repository_root  # noqa: E402
-from process_transfer.data.provenance import environment, git_state, new_run_directory  # noqa: E402
+from process_transfer.data.provenance import git_state, new_run_directory  # noqa: E402
 from process_transfer.models.fitting import fit_mechanistic  # noqa: E402
 from process_transfer.models.mechanistic import modeller_values  # noqa: E402
 from process_transfer.models.training import (  # noqa: E402
     Configuration,
     TrainingSettings,
+    learning_environment,
     train,
     training_seed,
 )
@@ -218,7 +219,11 @@ def main() -> int:
                 }
             )
     summary = {
-        "provenance": {"git": state, "environment": environment(), "data_dir": str(target)},
+        "provenance": {
+            "git": state,
+            "environment": learning_environment(),
+            "data_dir": str(target),
+        },
         "pilot_runs": {"grid": GRID_RUN, "cost": COST_RUN},
         "reproduced": reproduced,
         "substeps": substeps,

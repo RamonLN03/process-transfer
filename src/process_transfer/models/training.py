@@ -56,6 +56,11 @@ F, where fast dynamics may lie that V does not show.
 The windows of F and V together must share their length, sampling period and noise levels;
 a training refuses them otherwise, before any step.
 
+Provenance. A run that trains records ``learning_environment()``: the environment of every
+run, and the versions of jax and jaxlib, the backend, the devices and the precision that
+decide its numbers. Only the paths that train import this module, so JAX stays optional for
+the others.
+
 Across a grid (``select_configuration``): the configuration whose selected checkpoint has
 the lowest criterion on V, the first in the declared order on a tie; configurations that
 failed are recorded and not selectable; if all failed, the model has a training failure at
@@ -68,6 +73,7 @@ import math
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
 import jax
@@ -75,6 +81,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.flatten_util import ravel_pytree
 
+from process_transfer.data.provenance import environment
 from process_transfer.evaluation.metrics import normalised_rms
 from process_transfer.evaluation.outcomes import TrainingFailure
 from process_transfer.evaluation.plant import KnownPlant
@@ -85,6 +92,28 @@ from process_transfer.models.rollout import EVALUATION_SETTINGS, RolloutSettings
 from process_transfer.validation import require_positive
 
 jax.config.update("jax_enable_x64", True)
+
+
+def learning_environment() -> dict[str, object]:
+    """The environment of a run that trains: ``data.provenance.environment()`` and, under
+    ``learning``, what decides the numbers of JAX. A version that cannot be read is recorded
+    as unknown, not guessed."""
+    versions: dict[str, str | None] = {}
+    for name in ("jax", "jaxlib"):
+        try:
+            versions[name] = version(name)
+        except PackageNotFoundError:
+            versions[name] = None
+    return {
+        **environment(),
+        "learning": {
+            **versions,
+            "backend": jax.default_backend(),
+            "devices": [str(device) for device in jax.devices()],
+            "x64": bool(jax.config.jax_enable_x64),
+            "float_dtype": str(jnp.asarray(0.0).dtype),
+        },
+    }
 
 
 @dataclass(frozen=True)

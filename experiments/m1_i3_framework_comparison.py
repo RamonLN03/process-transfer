@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import math
 import os
@@ -250,7 +251,13 @@ def run_jax(p: dict[str, object]) -> dict[str, object]:
     bn_params = {n: jnp.asarray(v) for n, v in p["bn"].items()}
     found: dict[str, object] = {
         "framework": "jax",
-        "versions": {"jax": jax.__version__, "diffrax": diffrax.__version__},
+        "versions": {
+            "jax": jax.__version__,
+            "jaxlib": importlib.metadata.version("jaxlib"),
+            "diffrax": diffrax.__version__,
+            "backend": jax.default_backend(),
+            "x64": bool(jax.config.jax_enable_x64),
+        },
     }
 
     reference = reference_states(p)
