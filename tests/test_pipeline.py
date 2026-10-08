@@ -475,7 +475,9 @@ def test_an_export_with_other_content_under_the_same_name_is_a_conflict(
         ({"sensor_master_seed": -5}, "greater than or equal to 0"),
         ({"protocol": "p0"}, "does not match any of the expected tags: 'p3', 'steady', 'step'"),
         ({"simulation_period": {"value": 0.1, "unit": "K"}}, "requires time"),
-        ({"amplitude": 0.2}, "Extra inputs are not permitted"),
+        ({"amplitudes": 0.2}, "Extra inputs are not permitted"),
+        # a field since D-039, and then only a10 or a5 with a lead
+        ({"amplitude": 0.2}, "Input should be 'a10' or 'a5'"),
     ],
 )
 def test_an_invalid_definition_is_refused(

@@ -347,11 +347,24 @@ def _whole_seconds(name: str, duration: Duration) -> int:
 
 
 class P3DatasetDefinition(DatasetDefinitionBase):
-    """Protocol P3 (D-019): every plant under every excitation seed."""
+    """Protocol P3 (D-019): every plant under every excitation seed.
+
+    A data set of M1 gives ``lead`` and ``amplitude`` together (D-039): a lead of whole
+    seconds at the nominal inputs before the first excursion, and ``a10`` or ``a5``. A
+    definition without them, as those of M0 are, means what it meant in M0: no lead, A10.
+    That the lead falls on the clock of the sensors is checked where the sensors are known,
+    when the data set is generated.
+    """
 
     protocol: Literal["p3"]
     n_excursions: int = Field(ge=1, le=1000)
     excitation_seeds: tuple[int, ...]
+    lead: Duration | None = None
+    amplitude: Literal["a10", "a5"] | None = None
+
+    @property
+    def lead_s(self) -> int | None:
+        return None if self.lead is None else _whole_seconds("lead", self.lead)
 
     @model_validator(mode="after")
     def _seeds_must_be_distinct(self) -> P3DatasetDefinition:
@@ -360,6 +373,17 @@ class P3DatasetDefinition(DatasetDefinitionBase):
             raise ValueError(
                 f"excitation_seeds must be one or more distinct non-negative integers, got {seeds}"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _lead_and_amplitude_go_together(self) -> P3DatasetDefinition:
+        if (self.lead is None) != (self.amplitude is None):
+            raise ValueError(
+                "lead and amplitude are given together or not at all, got "
+                f"lead={self.lead!r} and amplitude={self.amplitude!r}; without both, P3 is "
+                "that of M0: no lead, A10"
+            )
+        _ = self.lead_s  # refuses a fraction of a second at the boundary
         return self
 
 

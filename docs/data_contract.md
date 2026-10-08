@@ -40,10 +40,13 @@ The logical identity of a run, `run_id`, says what the run is: the plant, the pr
     <plant_id>.<protocol>.<definition>.n<noise realisation>
 
     p3       e<excitation seed>.x<number of excursions>        target.p3.e0.x10.n0
+             ... .l<lead in seconds>.a<amplitude>               target.p3.e7.x40.l60.a5.n0
     steady   d<duration in seconds>                             target.steady.d7200.n0
     step     <input>-<direction>.l<lead>.h<hold>.r<recovery>    target.step.tc-up.l600.h600.r600.n0
 
 The steady and step protocols draw nothing at random, so their identities name no seed; the input is one of q, caf, tf and tc, the direction up or down, and the durations are whole seconds (D-026, added on 2026-09-22; contract version 1 is unchanged, since no table, column or encoding changed). The definition part is the same on every plant that runs the same experiment, which is how the runs of two plants are paired.
+
+A P3 run of M1 writes out its lead, whole seconds at the nominal inputs before the first excursion, and its amplitude, `a10` or `a5` (D-039, added on 2026-10-08). A P3 identity without the two tokens, as every run of M0 has, keeps its meaning: no lead, A10. The tokens go together and the lead they name is at least one second, so the two forms never name the same run. Contract version 1 is unchanged. This was checked, not assumed from the absence of new columns: the identities stay within the rules for identifiers below, the canonical encoding holds a run's identity as a string of explicit length whatever its tokens, no reader or SQL check parses the definition part, the pairing of plants by definition carries the tokens on both sides, and the operating mode stays `p3`, so the windows are found as before (experiment log, I4). The identities of M0, their noise streams and the input segments of their definitions are pinned by tests.
 
 The noise realisation is part of the identity. Two different realisations of the noise on the same excitation are two runs, `n0` and `n1`, and cannot share an identity by accident. The seed of the noise is not part of it and appears nowhere under `available/`.
 

@@ -2,8 +2,9 @@
 
     1  load the definition of the data set, the plants and the instruments
     2  build the plants and verify their starting points
-    3  generate the runs of the protocol: P3 under every excitation seed, steady
-       operation, or the single-input step tests
+    3  generate the runs of the protocol: P3 under every excitation seed, with the lead and
+       the amplitude of M1 when the definition names them (D-039), steady operation, or
+       the single-input step tests
     4  simulate and validate the true trajectories
     5  observe them with the sensors
     6  write the Parquet data set, and the private record of the attempt
@@ -54,6 +55,7 @@ from process_transfer.generation.leak_scan import HiddenValues, scan_available
 from process_transfer.generation.plants import VirtualPlant, load_virtual_plant
 from process_transfer.measurement.observations import Observations
 from process_transfer.measurement.sensors import MeasurementSpec
+from process_transfer.sampling_clock import nearest_ticks
 from process_transfer.simulation.integration import InputSegment, simulate_piecewise
 from process_transfer.simulation.operating_run import observe_trajectory
 from process_transfer.simulation.protocols import (
@@ -61,6 +63,7 @@ from process_transfer.simulation.protocols import (
     P3_REST,
     a10_amplitudes,
     corner_label,
+    p3_amplitudes,
     p3_corners,
     p3_segments,
     single_step_segments,
@@ -98,16 +101,19 @@ def define_runs(definition: DatasetDefinitionConfig, plant_ids: list[str]) -> li
     k = definition.noise_realisation
     planned: list[tuple[str, str, dict[str, int | str]]] = []  # run_id, plant, settings
     if definition.protocol == "p3":
+        lead, amplitude = definition.lead_s, definition.amplitude
         for seed in definition.excitation_seeds:
             for plant_id in plant_ids:
-                run_id = run_identifier(plant_id, "p3", seed, definition.n_excursions, k)
-                planned.append(
-                    (
-                        run_id,
-                        plant_id,
-                        {"excitation_seed": seed, "n_excursions": definition.n_excursions},
-                    )
+                run_id = run_identifier(
+                    plant_id, "p3", seed, definition.n_excursions, k, lead, amplitude
                 )
+                p3: dict[str, int | str] = {
+                    "excitation_seed": seed,
+                    "n_excursions": definition.n_excursions,
+                }
+                if lead is not None and amplitude is not None:  # a run of M1 (D-039)
+                    p3 |= {"lead_s": lead, "amplitude": amplitude}
+                planned.append((run_id, plant_id, p3))
     elif definition.protocol == "steady":
         for plant_id in plant_ids:
             run_id = steady_run_identifier(plant_id, definition.duration_s, k)
@@ -144,9 +150,11 @@ def run_segments(
     s = run.settings
     if run.protocol == "p3":
         corners = p3_corners(int(s["n_excursions"]), int(s["excitation_seed"]))
-        return p3_segments(nominal_inputs, corners), {
-            "corners": [corner_label(corner) for corner in corners]
-        }
+        # a run of M0 names neither: no lead, A10
+        segments = p3_segments(
+            nominal_inputs, corners, str(s.get("amplitude", "a10")), float(s.get("lead_s", 0))
+        )
+        return segments, {"corners": [corner_label(corner) for corner in corners]}
     if run.protocol == "steady":
         return steady_segments(nominal_inputs, float(s["duration_s"])), {}
     if run.protocol == "step":
@@ -166,6 +174,14 @@ def describe_run(description: str, run: RunDefinition) -> str:
     """The words about a run that go into ``operating_runs``: what whoever ran the test
     on the plant would know, and nothing of the truth."""
     s, k = run.settings, run.noise_realisation
+    if run.protocol == "p3" and "lead_s" in s:
+        return (
+            f"{description} Protocol P3 (D-019) with the lead and amplitude of M1 (D-039): "
+            f"{s['lead_s']} s at the nominal inputs from the nominal steady state, then "
+            f"{str(s['amplitude']).upper()} amplitudes, {P3_HOLD:g} s at a corner of the input "
+            f"box, {P3_REST:g} s at the nominal inputs, {s['n_excursions']} excursions, "
+            f"excitation seed {s['excitation_seed']}, noise realisation {k}."
+        )
     if run.protocol == "p3":
         return (
             f"{description} Protocol P3 (D-019): A10 amplitudes, {P3_HOLD:g} s at a corner of "
@@ -197,6 +213,7 @@ def generate_run(
     The state is carried from segment to segment and never reset. A truth that is not
     accepted raises."""
     segments, about_segments = run_segments(run, plant.nominal_inputs)
+    require_switches_on_the_sensor_clock(run.run_id, segments, measurement.sample_period)
     trajectory = simulate_piecewise(plant.f, plant.nominal_state, segments, simulation_period)
     observed = observe_trajectory(
         trajectory,
@@ -229,6 +246,22 @@ def generate_run(
         "content_sha256": observed.observations.content_digest(),
     }
     return GeneratedRun(run, observed.observations, observed.truth.exact, switches, private)
+
+
+def require_switches_on_the_sensor_clock(
+    run_id: str, segments: list[InputSegment], sample_period: float
+) -> None:
+    """Every instant at which the inputs change, and the end of the run, must be a tick of
+    the sensors. Otherwise a reading would fall inside a segment it does not belong to, and
+    the windows of the run could not be read from its inputs. Refused before simulating."""
+    instants = np.cumsum([0.0] + [float(segment.duration) for segment in segments])
+    _, on_clock = nearest_ticks(instants, 0.0, sample_period)
+    if not np.all(on_clock):
+        off = [float(t) for t in instants[~on_clock]]
+        raise ValueError(
+            f"run {run_id}: the inputs change at {off[:5]} s, which are not ticks of the "
+            f"sensors, every {sample_period!r} s"
+        )
 
 
 def _same(a: Observations, b: Observations) -> bool:
@@ -341,7 +374,8 @@ def run_pipeline(definition_path: Path, figures: bool = True) -> dict[str, objec
         private_record.update(
             {
                 "dataset_id": definition.dataset_id,
-                "definition": definition.model_dump(mode="json"),
+                # the fields a definition sets: one of M0 is recorded as before
+                "definition": definition.model_dump(mode="json", exclude_unset=True),
                 "sensor_master_seed": definition.sensor_master_seed,
                 "noise_generator": "numpy SeedSequence(entropy=master seed, spawn_key=(four words "
                 "of the SHA-256 of run_id, index of the state)); no global generator",
@@ -358,6 +392,7 @@ def run_pipeline(definition_path: Path, figures: bool = True) -> dict[str, objec
                 "amplitudes_A10_SI": {
                     p.plant_id: a10_amplitudes(p.nominal_inputs).tolist() for p in plants.values()
                 },
+                **_p3_extensions(definition, plants),
                 "plants": {
                     p.plant_id: {
                         "nominal_state_SI": p.nominal_state.tolist(),
@@ -484,6 +519,25 @@ def run_pipeline(definition_path: Path, figures: bool = True) -> dict[str, objec
 
 
 EXPECTED_CHECKS = 10
+
+
+def _p3_extensions(
+    definition: DatasetDefinitionConfig, plants: Mapping[str, VirtualPlant]
+) -> dict[str, object]:
+    """For the private record of a P3 data set of M1, its lead and the amplitudes it
+    applied; nothing for any other data set, whose record stays as it was."""
+    if definition.protocol != "p3" or definition.amplitude is None:
+        return {}
+    return {
+        "p3_extensions_of_m1": {
+            "lead_s": definition.lead_s,
+            "amplitude": definition.amplitude,
+            "amplitudes_SI": {
+                p.plant_id: p3_amplitudes(p.nominal_inputs, definition.amplitude).tolist()
+                for p in plants.values()
+            },
+        }
+    }
 
 
 def _hidden_parameters(plants: Mapping[str, VirtualPlant]) -> dict[str, float]:
