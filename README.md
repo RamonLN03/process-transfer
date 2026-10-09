@@ -16,6 +16,10 @@ Physics-aware transfer of hybrid process models from a data-rich source plant to
 
 Related plants share physics: conservation laws, stoichiometry, the form of the kinetics. They differ in geometry, heat transfer, catalyst state and instrumentation. ProcessTransfer investigates whether that shared structure can be used to decide what a model carries over from one plant to the next, what has to be recalibrated, and what has to be relearned from a small amount of target data. The scope, research questions, architecture and roadmap live under `docs/`.
 
+## How the work is done
+
+Research decisions are recorded in `docs/decisions.md`, each with its date, its reasons and who made it. Experiments are registered in `docs/experiment_log.md` before they are run, and the log says where that was not the case. The code and documentation are written with Claude Code as the implementation agent. Codex reviews commits read-only and reports findings, which are reproduced, corrected, with a regression test where the defect is in code, and recorded with the review that found them (mostly in `docs/numerical_robustness.md`). A check made by the implementation agent is not presented as an independent review. `AGENTS.md` is the contract both agents work under.
+
 ## Working on the repository
 
 Read `AGENTS.md` first. It is the operating contract for every agent and person committing here. `CLAUDE.md` adds the Claude Code specifics. All repository content is written in English.

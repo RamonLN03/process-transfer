@@ -1,8 +1,8 @@
 # I4 of M1: proposal
 
-Status on 2026-10-08: decided by the owner (D-039), implemented (D-040), verified by M1-E02 and closed (D-041). The text below is the proposal as it was written, with the correction of item 4 of the next action.
+Status on 2026-10-08: decided (D-039), implemented (D-040), verified by M1-E02 and closed (D-041). The text below is the proposal as it was written, with the correction of item 4 of the next action. Its wording was revised on 2026-10-09 for readability; its content and the decisions it records are unchanged.
 
-Written on 2026-10-08, after the acceptance of I2 (D-038) and the closure of I3 (D-037), for the owner and for review. Nothing of I4 is implemented and no data have been generated. M1-E02, the verification that I4 needs, is registered in the experiment log on the same day and has not been run. This document says what I4 changes and what it leaves alone, and lists what the owner decides before M1-E02 runs. It does not repeat the plan: sections 4.2, 4.3, 6.1, 6.2 and 13 of `docs/m1_plan.md` and D-030 stay the reference.
+Written on 2026-10-08, after the acceptance of I2 (D-038) and the closure of I3 (D-037), for review. Nothing of I4 is implemented and no data have been generated. M1-E02, the verification that I4 needs, is registered in the experiment log on the same day and has not been run. This document says what I4 changes and what it leaves alone, and lists the points to decide before M1-E02 runs. It does not repeat the plan: sections 4.2, 4.3, 6.1, 6.2 and 13 of `docs/m1_plan.md` and D-030 stay the reference.
 
 ## Objective and scope
 
@@ -38,9 +38,9 @@ The data sets, databases and exports of M0 (`m0-e05`, `m0-e06`, `m0-e07`), their
 
 Registered in `docs/experiment_log.md`, entry M1-E02, with its hypothesis, method, criteria, the provenance of each tolerance, the evidence the run keeps and what follows a failure. It is not repeated here. The windows of a run with a lead are found from the inputs alone by `evaluation.windows`, already tested on synthetic runs with a lead (`tests/m1_support.py`); the tests of I4 add a run built by the new protocol.
 
-## What the owner decides before M1-E02 runs
+## Points to decide before M1-E02 runs
 
-Decided by the owner on 2026-10-08 (D-039): the four points below as proposed, with the contract kept at version 1 only where its compatibility is shown by checks.
+Decided on 2026-10-08 (D-039): the four points below as proposed, with the contract kept at version 1 only where its compatibility is shown by checks.
 
 1. The grammar of the two tokens, and that identities without them keep the meaning they have in M0, as proposed.
 2. The contract: no column and no new version, as proposed, or a column and a new version.
@@ -51,7 +51,7 @@ Until the run each of these can change. A change is a dated amendment of the reg
 
 ## Next action
 
-Once the owner has decided the points above:
+Once the points above are decided:
 
 1. Implement the lead and A5 in `simulation.protocols`, and the two tokens in `data.identifiers` and the contract, with tests, including those of compatibility with M0.
 2. Write `experiments/m1_e02_p3_a5.py` as the registration describes, with tests, and commit it from a clean tree.
