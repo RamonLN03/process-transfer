@@ -6,9 +6,11 @@
 # See docs/reference_environment.md for what this does and does not promise,
 # how to rebuild it, and how to validate it.
 #
-# Captured with `pip freeze` from C:/Users/rlnsk/.venvs/plant-transfer on
-# 2026-09-22, with the editable install of this package itself removed (that
-# line names a local path, not a reproducible version).
+# Captured with `pip freeze` from the virtual environment of the reference,
+# <venv>, on 2026-09-22, with the editable install of this package itself
+# removed (that line names a local path, not a reproducible version). The
+# local path of <venv> was generalised on 2026-10-09 for public documentation;
+# no version below changed.
 #
 # Direct dependencies (pyproject.toml) and their transitive requirements are
 # both pinned here, deliberately: this file is a reference snapshot to

@@ -2,6 +2,8 @@
 
 One entry per experiment or data-generation run, in order. Each entry separates hypothesis, method, result and interpretation, and records the code version, configuration and seeds. Results are not written before they exist.
 
+Paths of the machine the runs were made on were generalised on 2026-10-09 for public documentation: `<PT_DATA_DIR>` is the data directory a run used, `<venv>` the virtual environment of the reference and `<repository>` the checkout. A placeholder in angle brackets is replaced before a command is run. Run identifiers, commits, hashes, dates, versions and results are as they were recorded, and the runs themselves are unchanged.
+
 ## M0
 
 M0-E01 to M0-E03b are deterministic verifications of the virtual plants. M0-E04 generates observations in memory, seeded, and checks them. M0-E05 is the first entry to store a data set, `m0-e05`, and it does so to test the data path, not to provide training data.
@@ -761,20 +763,20 @@ What it cannot conclude:
 * `PT_DATA_DIR/experiments/m1_e01/<run id>/`: `summary.json` and four figures, which show the standard errors against the number of windows, one window per corner, the profiles, and k_350 and UA along the profiles.
 * `PT_DATA_DIR/experiments/m1_e01_oracle/<run id>/`: `summary.json` and two figures, which show the two mismatches alone and the residuals of the pseudo-true fit.
 
-PT_DATA_DIR is a new directory, `C:/Users/rlnsk/pt-data-m1-e01`, outside the repository and outside OneDrive. Both scripts refuse to run when it resolves inside the repository, and both record it in their provenance.
+PT_DATA_DIR is a new directory, `<PT_DATA_DIR>`, outside the repository and outside OneDrive. Both scripts refuse to run when it resolves inside the repository, and both record it in their provenance.
 
 Commands, from the commit that registers this entry, with a clean working tree and the interpreter of the reference environment, first the available parts and then the oracle. In Git Bash:
 
-    PT_DATA_DIR=C:/Users/rlnsk/pt-data-m1-e01 <venv>/Scripts/python.exe experiments/m1_e01_identifiability.py --exports <repository>/data/available/exports
-    PT_DATA_DIR=C:/Users/rlnsk/pt-data-m1-e01 <venv>/Scripts/python.exe experiments/m1_e01_oracle.py
+    PT_DATA_DIR=<PT_DATA_DIR> <venv>/Scripts/python.exe experiments/m1_e01_identifiability.py --exports <repository>/data/available/exports
+    PT_DATA_DIR=<PT_DATA_DIR> <venv>/Scripts/python.exe experiments/m1_e01_oracle.py
 
-In PowerShell, `$env:PT_DATA_DIR = 'C:/Users/rlnsk/pt-data-m1-e01'` first, and the same two commands without the prefix.
+In PowerShell, `$env:PT_DATA_DIR = '<PT_DATA_DIR>'` first, and the same two commands without the prefix.
 
 Expected cost, from the synthetic run: under a minute for part 1. Part 2 is 220 fits, of two parameters and of three, and takes some minutes on 14 processes; it takes more than on the synthetic data if fits far from the minimum need more evaluations. The oracle takes under two minutes.
 
 #### Result
 
-Both scripts were run on 2026-09-27 from `e166bb5`, the commit that registers this entry, with a clean working tree identified in their provenance. The environment was the reference one, and PT_DATA_DIR was the new directory `C:/Users/rlnsk/pt-data-m1-e01`.
+Both scripts were run on 2026-09-27 from `e166bb5`, the commit that registers this entry, with a clean working tree identified in their provenance. The environment was the reference one, and PT_DATA_DIR was the new directory `<PT_DATA_DIR>`.
 
 * Parts 1 and 2: run `20260927T182913Z_e166bb5`, 454 s. Part 1 took 44 s, part 2 408 s on 14 processes, and the second point 0.9 s.
 * The oracle: run `20260927T183702Z_e166bb5`, 22.5 s.
@@ -1017,7 +1019,7 @@ Method, `experiments/m1_i3_framework_comparison.py` at `28e0936`, one script wit
 
 Installation, measured apart, each in a fresh environment outside the repository on top of `pip install -e ".[dev]"`: JAX 0.11.2 with diffrax 0.7.2 took 27 s and 292 MB, pulling in jaxlib, ml_dtypes, opt_einsum, equinox, lineax, optimistix, jaxtyping and wadler_lindig. PyTorch 2.14.0 from its CPU index, with torchdiffeq 0.2.5, took 62 s and 652 MB, pulling in sympy, networkx, jinja2, filelock and fsspec. On Linux, PyTorch from PyPI's default index also brings the CUDA libraries, several gigabytes, unless the CPU index is named.
 
-Result, run `20260927T212215Z_28e0936` under `C:/Users/rlnsk/pt-data-m1-i3`, both frameworks from the same clean commit:
+Result, run `20260927T212215Z_28e0936` under `<PT_DATA_DIR>`, a new directory outside the repository, both frameworks from the same clean commit:
 
 | | JAX | PyTorch |
 |---|---|---|
@@ -1083,7 +1085,7 @@ Computation: each training is one process with one thread, in a pool of 14 proce
 
 #### The pilot: result of the phase `rates`
 
-Run `20260927T220405Z_fc563c8` under `C:/Users/rlnsk/pt-data-m1-i3`, from `fc563c8` with a clean working tree. 36 trainings in 14 processes: 214 s of wall time, 2198 s of fits summed, 61 s on average per training. MR_F on the eight fitting windows of each run took 24 s summed. The export was not written to.
+Run `20260927T220405Z_fc563c8` under the same `<PT_DATA_DIR>`, from `fc563c8` with a clean working tree. 36 trainings in 14 processes: 214 s of wall time, 2198 s of fits summed, 61 s on average per training. MR_F on the eight fitting windows of each run took 24 s summed. The export was not written to.
 
 Criterion on V, the single ninth window of each run, of the selected checkpoint, runs e0, e1 and e2, and the step selected; no training failed:
 
@@ -1215,7 +1217,7 @@ Reading of the estimate: the benchmark fits within the owner's orientation of 48
 
 #### After Codex's audit of `1a9fad4`: corrections, reproduction and four steps per row (2026-10-01)
 
-Codex's audit of `1a9fad4` reported five defects (`docs/numerical_robustness.md`, seventeenth review). They were reproduced with Codex's script and corrected in `436a811` and `44f37a8`. The checks below were run by `experiments/m1_i3_audit_checks.py` from `eee1c8d`, a clean commit that holds the corrections. The run is `20261001T162149Z_eee1c8d` under `C:/Users/rlnsk/pt-data-m1-i3`. It ran 8 trainings in 8 processes: 99 s of wall time, and 298 s of trainings summed, besides their fits of MR_F. Exploratory: development data of M0 and the synthetic runs of the pilot.
+Codex's audit of `1a9fad4` reported five defects (`docs/numerical_robustness.md`, seventeenth review). They were reproduced with Codex's script and corrected in `436a811` and `44f37a8`. The checks below were run by `experiments/m1_i3_audit_checks.py` from `eee1c8d`, a clean commit that holds the corrections. The run is `20261001T162149Z_eee1c8d` under the `<PT_DATA_DIR>` of the runs of I3. It ran 8 trainings in 8 processes: 99 s of wall time, and 298 s of trainings summed, besides their fits of MR_F. Exploratory: development data of M0 and the synthetic runs of the pilot.
 
 **Reproduction.** Five trainings of the pilot were run again with the corrected code and the pilot's rates, seeds and settings. They were compared checkpoint by checkpoint with the summaries of the pilot's runs `20260927T221514Z_fc563c8` (grid) and `20260927T222728Z_fc563c8` (cost):
 
