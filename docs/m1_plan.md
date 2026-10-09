@@ -51,7 +51,7 @@ Two consequences. The textbook values were chosen to reproduce the source's nomi
 
 What M0 does not hand over, and M1 has to build: a division of data into fitting, validation and test; budgets; windows and initial states; metrics; any model code. The data sets `m0-e05`, `m0-e06` and `m0-e07` were built to verify the data path and the protocols, and none of them is the benchmark of M1 (section 5.1).
 
-Carried over from M0 and not blocking: the test of the exit code of M0-E08 checks the same aggregation that `main()` uses instead of calling `main()` (`docs/roadmap.md`). Nothing in M1 depends on it. It is left for whoever next touches that test, and no iteration below is planned around it. No other defect of M0 was found while preparing this plan or its revision.
+Carried over from M0 and not blocking: the test of the exit code of M0-E08 checks the same aggregation that `main()` uses instead of calling `main()` (`docs/roadmap.md`). Nothing in M1 depends on it. It is left for whoever next touches that test, and no iteration below is planned around it. No other defect of M0 was found while preparing this plan or its revision. Resolved on 2026-10-09: `tests/test_m0_e08_exit_code.py` runs `main()` itself with controlled faults (`6f23e37`).
 
 ## 3. What is accepted and what is still open
 
@@ -653,3 +653,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 13, 2026-10-08.** Status only. The header, section 13 and section 14 record the closure of I4 (D-039 to D-041) and name I5 as the next iteration. No part of the design changed.
 
 **Revision 14, 2026-10-09.** Status only. The header lists the closed iterations, and section 3 separates what is resolved from what is open: the training framework (D-035) and P3 at A5 (D-039 to D-041) move from open to resolved, and the points left to the registration of the benchmark are listed with their entries. No part of the design changed.
+
+**Revision 15, 2026-10-09.** Status only. Section 3 notes that the limitation of the test of the exit code of M0-E08, carried from M0, is resolved. No part of the design changed.
