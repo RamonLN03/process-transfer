@@ -12,7 +12,7 @@ The package is organised so that these remain logically distinct (AGENTS.md):
 | Generation: from configuration files to a verified data set; the truth side of the data path | `process_transfer.generation` | M0 |
 | Data infrastructure: Parquet, DuckDB, SQL, paths | `process_transfer.data` | M0 |
 | Configuration and units | `process_transfer.config`, `process_transfer.units` | M0 |
-| Models: the mechanistic MN, MR and MR_F since I1; black box and hybrid later | `process_transfer.models` | M1 |
+| Models: the mechanistic MN, MR and MR_F since I1; the black boxes BL and BN and the hybrids HK, HU and HKU since I3 (D-036) | `process_transfer.models` | M1 |
 | Transfer logic (baselines, heuristic, policies) | `process_transfer.transfer` | M2 onwards |
 | Evaluation: windows, budgets, metrics, failures and physical checks since I1 | `process_transfer.evaluation` | M1 onwards |
 
