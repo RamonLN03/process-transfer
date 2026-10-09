@@ -1,6 +1,15 @@
 # Plan of M1: black-box and hybrid models fitted on the target plant
 
-Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the owner answered the questions of section 15 and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. Of what is described here, I1 is implemented, accepted and closed: the evaluation contract and the mechanistic models MN, MR and MR_F, implemented on 2026-09-25 and closed on 2026-09-27 (section 13, D-033); D-032 records the choices made in implementing it. I2, the identifiability diagnostic M1-E01, was registered, run and documented on 2026-09-27, corrected after Codex's review, and accepted by the owner on 2026-10-08 (section 13, D-034, D-038). I3, the training framework and the learned models, was implemented on 2026-09-27 and 2026-09-28, corrected after Codex's audit, and closed on 2026-10-01 (section 13, D-035 to D-037). I4, the lead and the amplitude A5 with their verification M1-E02, was decided, implemented, verified and closed on 2026-10-08 (section 13, D-039 to D-041). The owner's instruction that started M1 fixes the question, the comparators and what is out of scope (D-029); the owner's answers to Q1 to Q5 fix the choices those questions put (D-030). Section 3 says what is accepted and what is still open.
+Proposed on 2026-09-22, the day M0 was closed; revised on 2026-09-23 after Codex's audit of `c2309cc` and `1dd6830`, and on 2026-09-24 when the questions of section 15 were answered and two precisions left by Codex's review of revision 1 were taken in. Section 16 lists what each revision changed and why. D-029 fixes the question, the comparators and what is out of scope; D-030 fixes the choices that Q1 to Q5 put.
+
+Status on 2026-10-09. M1 is in progress. Four of its iterations are closed (section 13):
+
+* I1, the evaluation contract and the mechanistic models MN, MR and MR_F: implemented on 2026-09-25 and closed on 2026-09-27 (D-032, D-033).
+* I2, the identifiability diagnostic M1-E01: registered, run and documented on 2026-09-27, corrected after Codex's review, and accepted on 2026-10-08 (D-034, D-038).
+* I3, the training framework and the learned models: implemented on 2026-09-27 and 2026-09-28, corrected after Codex's audit, and closed on 2026-10-01 (D-035 to D-037).
+* I4, the lead and the amplitude A5 with their verification M1-E02: decided, implemented, verified and closed on 2026-10-08 (D-039 to D-041).
+
+The next iteration is I5, the registration of the benchmark. No benchmark data exist and no benchmark has been run. Section 3 says what is settled and what is still open.
 
 ## 1. The question
 
@@ -46,9 +55,23 @@ Carried over from M0 and not blocking: the test of the exit code of M0-E08 check
 
 ## 3. What is accepted and what is still open
 
-* Accepted: the list of section 1 (D-029), and the owner's answers to Q1 to Q5 (D-030, section 15). They settle the treatment of E/R, the extrapolation test, the budgets and how fitting and validation share one, the main hybrid, and the primary evaluation with its scoring.
+Status on 2026-10-09.
+
+* Accepted: the list of section 1 (D-029) and the answers to Q1 to Q5 (D-030, section 15). They settle the treatment of E/R, the extrapolation test, the budgets and how fitting and validation share one, the main hybrid, and the primary evaluation with its scoring.
 * The working design of M1: sections 4 to 14, which carry those answers out. A part that the answers do not cover can still change, through a recorded revision (section 16) reviewed like the others.
-* Open, and not closed by the answers: the two budgets of the secondary analysis with E/R held fixed, and the number of replicates, both fixed in the registration of the benchmark (section 13, I5), the second from the cost of a fit measured in I3; the training framework (section 8.6, I3); the grids of the learned models; the thresholds of the hypotheses and the rules for interpreting them (I5); P3 at A5, which is used only once its verification has passed (I4); whether M1 is repeated on the source plant as a second case, after the target.
+* Resolved since the answers:
+  * the training framework: JAX (section 8.6, D-035), with I3 closed (D-037);
+  * P3 at A5 and the lead of 60 s: decided (D-039), implemented (D-040), verified by M1-E02 and closed with I4 (D-041). Data at A5 are generated only through I5, I6 and I7, in that order.
+* Open, for the registration of the benchmark (I5). Recommendations for each are in `docs/m1_i5_proposal.md`, pending review:
+  * the two budgets of the secondary analysis with E/R held fixed;
+  * the number of replicates;
+  * the grids of the learned models, their rates and the number of steps, which the pilot of I3 informs and does not fix;
+  * whether a training that fails at a step keeps its earlier checkpoints (D-036, D-037);
+  * how a window whose implied terms cannot be computed is counted (D-033);
+  * the thresholds of the hypotheses and the rules for interpreting them.
+* Open beyond I5: whether M1 is repeated on the source plant as a second case, after the target.
+
+Until 2026-10-09 this section also listed the training framework and P3 at A5 as open. They are now under "resolved", with the entries that settled them.
 
 ## 4. The predictive task
 
@@ -539,7 +562,7 @@ What I3 leaves open, for the registration of the benchmark (I5):
 
 A5 is not tried here: it waits for the verification of P3 at A5 (I4).
 
-Status of I4 on 2026-10-08: closed (D-041). The owner decided the points of the proposal (D-039). Codex reviewed `a9134bc` before any code existed; its points were resolved by an amendment of the registration of M1-E02, published before the code, and by the implementation (D-040). The lead and A5 are in the protocol, the identities, the definitions and the generator, with tests, and version 1 of the contract stands. M1-E02 passed twice from `376b8d7`, with the same numbers. The data sets of M0 reproduce exactly in the reference environment. Codex has not reviewed the implementation or the runs.
+Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were decided on 2026-10-08 (D-039). Codex reviewed `a9134bc` before any code existed; its points were resolved by an amendment of the registration of M1-E02, published before the code, and by the implementation (D-040). The lead and A5 are in the protocol, the identities, the definitions and the generator, with tests, and version 1 of the contract stands. M1-E02 passed twice from `376b8d7`, with the same numbers. The data sets of M0 reproduce exactly in the reference environment. Codex has not reviewed the implementation or the runs.
 
 ## 14. The next iteration, recommended
 
@@ -628,3 +651,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 12, 2026-10-08.** Status only. Section 14 records that I4 is proposed (`docs/m1_i4_proposal.md`) and M1-E02 registered. No part of the design changed.
 
 **Revision 13, 2026-10-08.** Status only. The header, section 13 and section 14 record the closure of I4 (D-039 to D-041) and name I5 as the next iteration. No part of the design changed.
+
+**Revision 14, 2026-10-09.** Status only. The header lists the closed iterations, and section 3 separates what is resolved from what is open: the training framework (D-035) and P3 at A5 (D-039 to D-041) move from open to resolved, and the points left to the registration of the benchmark are listed with their entries. No part of the design changed.
