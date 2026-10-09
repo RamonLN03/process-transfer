@@ -232,7 +232,8 @@ def test_comparison_accepts_a_secondary_that_only_leaves_the_envelope() -> None:
 def test_an_invalid_case_fails_the_aggregate_verdict_and_the_exit_code() -> None:
     """Mirrors the aggregation in experiments/08_oracle_conductance.py: every case's
     ``comparison_is_valid`` feeds one ``all(...)`` that the exit code is drawn from
-    (``0 if all(verdicts.values()) else 1``). One invalid case must flip both."""
+    (``0 if all(verdicts.values()) else 1``). One invalid case must flip both. This test
+    rebuilds the aggregation; tests/test_m0_e08_exit_code.py runs the script's own main()."""
     per_case_valid = [
         comparison_is_valid(_check(), _check()),
         comparison_is_valid(_check(), _check()),
