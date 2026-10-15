@@ -776,3 +776,51 @@ The two summaries of 2026-10-08 were read again by the corrected criteria, witho
 * The limitations still open from the eleventh to eighteenth reviews.
 
 *Update of 2026-10-15.* Codex reviewed `35a7cf5` and confirmed these corrections, the verdicts and hashes of the two summaries, 120 focused tests, ruff and `git diff --check`, and the continuous integration of that commit, as the owner relayed. Its findings on the draft registration of M1-E03 are resolved in that draft (`docs/m1_e03_registration_draft.md`, revision of 2026-10-15).
+
+## Review of 2026-10-15, twentieth: Codex's audit of `46489c8`
+
+Codex, as read-only reviewer, audited `46489c8`, as the owner relayed it. It reproduced behaviours of `src/process_transfer/evaluation/comparisons.py`, which holds the verdicts proposed in the draft registration of M1-E03, where a wrong argument could read as a scientific result. It also reproduced an overflow in the median of the differences. Each was reproduced again on `46489c8` by the implementation agent before anything was changed.
+
+### Found by Codex
+
+* `alpha_family` of not a number gave "no confirmatory decision", and a negative one an apparent decision.
+* `delta` of not a number gave "difference below the relevance margin".
+* `rank_agreement()` with a rank of not a number returned not a number, as "computed".
+* `mean_ranks()` with models without replicates divided by zero.
+* `ordered_family()` with an empty order raised an `IndexError`.
+* A misspelt direction was read silently as the comparator's.
+* `statistics.median()` adds the two central values before halving them. With every difference 1e308, the median overflowed to infinity, and a margin of 1.1e308 read as reached.
+
+### Found while correcting them, by the implementation agent
+
+* A family level of 2 raised an internal `AssertionError`.
+* A negative margin, or a minimum count given as a boolean, gave "supported".
+* An order with duplicates, or with results other than its budgets, was accepted.
+* `one_sided_p()` accepted booleans and raised a `TypeError` on a float.
+* An integer score too large for a float raised an `OverflowError` rather than an error that names it.
+
+### Corrected
+
+* Every public argument is checked where it enters. A value outside its domain raises `ValueError`, naming the argument and its value:
+  * a level is a finite number strictly between 0 and 1;
+  * a margin is a finite number, zero or more;
+  * a count is an integer, never a boolean, at or above its minimum;
+  * a direction is one of the two;
+  * an order of budgets is non-empty, without duplicates, and exactly the budgets of its results, each over the same replicates;
+  * a series of replicates is non-empty, and paired series have the same length;
+  * a score or a rank is a finite number, and a number too large for a float is refused, not rounded.
+* Valid inputs without evidence stay valid: no pair that is not a tie gives a p-value of 1, and orders in which every model ties give an agreement that is not computable.
+* `median()` takes the midpoint of the two central values from their sum when their signs differ, and as the smaller plus half their difference when they agree. Neither form can overflow, and both are the same mathematical midpoint. The criterion of relevance and its inequalities are unchanged.
+
+### Regression tests
+
+They are in `tests/test_evaluation_comparisons.py`, 65 of them, and 52 fail with the module of `46489c8`. They cover:
+
+* every case above;
+* the median of large values of one sign and of opposite signs, of small magnitudes, of an odd number of values, and exactly at the margin.
+
+The 33 earlier tests keep their verdicts. One passes a family exactly its own budgets, since results beyond them are now refused.
+
+### Open
+
+* Codex has not reviewed these corrections.

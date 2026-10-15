@@ -34,6 +34,37 @@ It builds on `docs/m1_i5_proposal.md`, whose points it carries forward, and on t
   The rules of sections 7.1 to 7.6 and the ranks of H3 are written as small functions in `process_transfer/evaluation/comparisons.py`. They are checked on synthetic scores in `tests/test_evaluation_comparisons.py`: wins at one budget and losses at another, losses at small budgets and wins at large ones, inconclusive results, ties, failures of one or both models, no pair with scores, a difference below the margin, and the exact limits of the level and of the margin. Nothing in these checks comes from benchmark data.
 * **What stays pending.** Every recommendation of section 12. The draft is still a draft, its definitions stay in `configs/datasets/m1_e03_draft/`, and I5 is not closed.
 
+**Second revision of 2026-10-15, after Codex's audit of `46489c8`.** Kept apart:
+
+* **What Codex found, as the owner relayed it.**
+  * In `evaluation/comparisons.py`, invalid arguments that could read as results:
+    * a family level that is not a number, or is negative;
+    * a margin that is not a number;
+    * a tau-b of not a number reported as computed;
+    * models without replicates, which divided by zero;
+    * an empty order of budgets, which raised an `IndexError`;
+    * a misspelt direction read as the comparator.
+  * The median of the differences overflowed when the two central values were large: with every difference 1e308, a margin of 1.1e308 read as reached.
+  * In this draft, H5 counted partial coverage as a complete result, and section 7.3 said uncertainties not yet measured "are larger".
+* **What Claude Code changed.**
+  * Every public argument of `evaluation/comparisons.py` is now checked where it enters, and a value outside its domain raises an error that names the argument.
+  * The median takes its midpoint without overflow.
+  * The rule of complete coverage for H5 (section 7.8).
+  * The wording of section 7.3.
+  * Found while doing this, by Claude Code and not by Codex, and refused as well:
+    * a level of 2 raised an internal `AssertionError`;
+    * a negative margin, or a minimum count given as a boolean, gave "supported";
+    * an order with duplicates, or with results other than its budgets, was accepted;
+    * the sign test accepted booleans and raised a `TypeError` on a float;
+    * an integer score too large for a float raised an `OverflowError`.
+* **Regressions and checks run.**
+  * Each of these behaviours was reproduced on `46489c8` before the change.
+  * 65 tests were added to `tests/test_evaluation_comparisons.py`, and 52 of them fail with the module of `46489c8`.
+  * The 33 earlier tests keep their verdicts. One of them now passes a family exactly its own budgets, since extra results are refused.
+  * The full suite and the checks of the boundaries between packages pass (`docs/numerical_robustness.md`, twentieth review).
+  * Codex has not reviewed these corrections.
+* **What stays pending.** As above: every decision of section 12. The comparison procedure is unchanged. With ten pairs and no ties, nine wins do not reach a confirmatory conclusion at the proposed levels (section 7.6).
+
 ## 1. What the benchmark asks
 
 The question of M1 (D-029; plan, section 1): does a continuous-time hybrid model improve data efficiency or extrapolation over simple alternatives, when every model is fitted on data of the target plant only? The hypotheses are H1 to H5 of section 10 of the plan, written on 2026-09-22 after the exploratory check of section 7.5. The primary comparisons are those of section 9.7: HK against MR and HK against BN, on test-A10 at every budget and on the extrapolation test.
@@ -191,7 +222,7 @@ delta = 0.05 on E, proposed as a choice of scale. It is not a value validated by
   * the finiteness of the set of test runs;
   * the correlation of a model's errors within a window.
 
-  Section 7.7 reports these, and they are larger.
+  They have not been measured on the benchmark. They must be quantified, by the intervals of section 7.7, and they may be larger.
 * **Its meaning.** It is a difference of mean squared error averaged over the two channels (section 6), not a fixed change of RMS and not a change in either channel separately.
 
 ### 7.4 H1, confirmatory: an ordered claim
@@ -289,12 +320,19 @@ Secondary analyses are named here and reported with every result. They carry no 
 
   "More often at small budgets" is read by the sign test of the paired shares between b = 2 and b = 40. "More often outside the training region" is read between test-A10 and test-A5 for the models trained at A5. A window whose implied terms cannot be computed counts as "not computable", in the denominator, and is reported beside the violations; it is never dropped.
 * **H5, mechanism (oracle, secondary).**
-  * **The common set of states.** The true states of the target along the runs of test-A10, at the instants of the scored readings of their 80 windows: 8800 states, taken from the noise-free truth on the truth side. Every model, replicate and budget is judged on this same set, each state with the same weight.
+  * **The declared domain.** The true states of the target along the runs of test-A10, at the instants of the scored readings of their 80 windows: 8800 states, taken from the noise-free truth on the truth side. Every model, replicate and budget is judged on this same set, each state with the same weight.
   * **The rates.** At each state, the true rate, MR's fitted first-order law, and HK's law: its own fitted mechanistic parameters times its learned factor. Each is evaluated at the true C_A and T of the state.
-  * **The metric.** The RMS over the states of ln(r_model / r_true).
-  * **Where the logarithm does not exist.** A state where the true rate, MR's or HK's is zero, negative or not finite is not computable for that comparison. The comparison of HK with MR at a replicate uses the states computable for all three. It reports how many were left out, and is flagged if any were. No epsilon makes a logarithm computable. The laws of MR and HK are positive by construction where C_A > 0, and the true states of P3 keep C_A well above zero (M1-E02 found at least 66.96 mol/m^3 at A10), so a left-out state would point to an overflow, which is reported as such.
-  * **Failures.** A model with a training failure has no law, and the pair is a failure for it by the rules of section 7.1.
-  * **Reported.** The paired difference RMS_MR - RMS_HK by replicate, with sign counts, unadjusted.
+  * **The primary metric of a model** is the RMS over all 8800 states of ln(r_model / r_true). It exists only if every state is evaluated validly: the model's law and the true law both give a finite, positive rate. If any state fails, the primary metric of that model, replicate and budget is not computable. The number of failed states is recorded, with the cause found at each.
+  * **The causes are kept apart:**
+    * a training failure: the model has no law at all;
+    * a failure to evaluate the law: the evaluation raised, or gave a rate that is not finite. The cause found is recorded, such as an overflow or not a number; no cause is assumed.
+    * a rate outside the domain of the logarithm: a finite rate that is zero or negative.
+
+    No epsilon makes a logarithm computable. The laws of MR and HK are positive by construction where C_A > 0, and the true states of P3 keep C_A well above zero (M1-E02 found at least 66.96 mol/m^3 at A10). So a failed state is a finding to investigate, recorded with its actual cause. A failure of the true rate itself is a defect of the oracle's script, not of a model: it is investigated, and no comparison is reported until it is resolved.
+  * **The primary comparison** of HK with MR at a replicate is RMS_MR - RMS_HK, and requires both primary metrics.
+    * The pairs enter the counts of H5 by the rules of section 7.1: a model whose primary metric is not computable loses to one whose metric is, by failure of evaluation, and two such models tie.
+    * The counts are reported with their causes, unadjusted, as a secondary result.
+  * **A conditional diagnostic.** Where some states failed, the RMS over the states valid for HK, MR and the truth may be shown, with its coverage, k of 8800. It is labelled as conditional. It never enters the counts of H5 as if it were the complete result. If no state is valid, it is not computable.
   * **Separation from the models.** H5 is computed by a separate script on the truth side, its outputs go under `experiments/`, and nothing from it reaches a selection or a training.
 * **Ablations.** HU and HKU against HK, by the rules of sections 7.1 and 7.2, without a confirmatory claim.
 * **E/R held.** MR and HK with E/R held against the same models with E/R estimated, at b = 5 and 40 on test-A10, paired by replicate. Why b = 5 and 40:
@@ -389,7 +427,7 @@ Each row is a recommendation, pending until approved.
 | 12 | Global verdicts | gates for H1; "budget-dependent" for H2 (sections 7.4 and 7.5) | a hypothesis can never be supported and contradicted at once | mixed results are shown budget by budget, under one verdict | testing every budget alike, which would let a small budget refute "from some budget on" |
 | 13 | Extrapolation | L = E(test-A10) - E(test-A5) | additive, and stable near the floor of the noise | an L that also contains the difference between two test sets | the ratio of J |
 | 14 | Intervals | the four of section 7.7 | each states its estimand, unit and what is held fixed | coarse intervals for test-A5 | a single bootstrap over windows, which would treat dependent readings as independent |
-| 15 | H3 and H5 | ranks with failures last and tau-b; one common set of true states with no epsilon (section 7.8) | no model is rewarded for failing, and every law is judged on the same states | some comparisons may be reported as not computable | ranking successes only, or each law on its own states |
+| 15 | H3 and H5 | ranks with failures last and tau-b; for H5 one common set of 8800 true states, a primary metric only with every state valid, causes of failure kept apart, no epsilon (section 7.8) | no model is rewarded for failing, and every law is judged on the same states | some comparisons may be reported as not computable | ranking successes only, or each law on its own states |
 | 16 | Classification | H3, H4, H5, the ablations and E/R held secondary; the rest exploratory | the plan, section 10 | no confirmatory claim outside P1 to P4 | |
 | 17 | Checks before the full run | section 10: one hour of ingestion per set, twice the estimated cost | a schedule decided before data, never a change of science | a stop and a recorded decision if exceeded | other thresholds |
 | 18 | Data set definitions | section 2, with their seeds | new seeds and streams, checked | | |
