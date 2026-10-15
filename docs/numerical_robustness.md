@@ -774,3 +774,5 @@ The two summaries of 2026-10-08 were read again by the corrected criteria, witho
 * The largest values reported beside the rows are shown as recorded, whatever their domain. They are reports, not criteria.
 * A recheck reads what a summary says. It cannot show that the summary is the one its run wrote; the SHA-256 of each summary read is therefore recorded in the experiment log.
 * The limitations still open from the eleventh to eighteenth reviews.
+
+*Update of 2026-10-15.* Codex reviewed `35a7cf5` and confirmed these corrections, the verdicts and hashes of the two summaries, 120 focused tests, ruff and `git diff --check`, and the continuous integration of that commit, as the owner relayed. Its findings on the draft registration of M1-E03 are resolved in that draft (`docs/m1_e03_registration_draft.md`, revision of 2026-10-15).

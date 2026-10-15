@@ -568,7 +568,7 @@ Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were deci
 
 ## 14. The next iteration, recommended
 
-Status on 2026-10-15: I5 is in preparation. `docs/m1_e03_registration_draft.md` is a draft of the registration of M1-E03, with the definitions of its data sets under `configs/datasets/m1_e03_draft/`. It is pending approval and is not registered. No benchmark data exist.
+Status on 2026-10-15: I5 is in preparation. `docs/m1_e03_registration_draft.md` is a draft of the registration of M1-E03, with the definitions of its data sets under `configs/datasets/m1_e03_draft/`. It is pending approval and is not registered. No benchmark data exist. It was revised on 2026-10-15 after Codex's review of `35a7cf5`, which found rules that could support and contradict a hypothesis at once; the rules for reading the hypotheses are now checked on synthetic scores.
 
 Status on 2026-10-08, after I4: I4 is closed (D-041). The next iteration is I5, the registration of the benchmark, M1-E03, with the definitions of its data sets. `docs/m1_i5_proposal.md` proposes the decisions it has to make; they are pending review. The paragraphs below were written earlier and are kept.
 
@@ -663,3 +663,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 16, 2026-10-15.** Status only. Section 13 records Codex's review of `fb15745` and the correction of the verdict of M1-E02, whose result stands. No part of the design changed.
 
 **Revision 17, 2026-10-15.** Status only. Sections 3 and 14 point to the draft of the registration of M1-E03, which is pending approval. No part of the design changed.
+
+**Revision 18, 2026-10-15.** Status only. Section 14 records the revision of the draft registration of M1-E03 after Codex's review of `35a7cf5`. No part of the design changed.

@@ -9,6 +9,31 @@ Nothing proposed here is approved by being written down. When the decisions of s
 
 It builds on `docs/m1_i5_proposal.md`, whose points it carries forward, and on the plan, which it does not repeat.
 
+**Revision of 2026-10-15, after Codex's review of `35a7cf5`.** Kept apart:
+
+* **What Codex found, as the owner relayed it.** Codex confirmed:
+  * the corrections of M1-E02 and the verdicts and hashes of its two summaries;
+  * 120 focused tests, ruff and `git diff --check`;
+  * the continuous integration of `35a7cf5` on Python 3.12, 3.13 and Docker.
+
+  It found in this draft:
+  * verdicts that could support and contradict a hypothesis at once;
+  * a reverse test that spent the same level as the forward one;
+  * infinite differences given to failures inside a median of errors;
+  * a wrong reading of the margin as a change of RMS;
+  * bootstrap intervals described differently in two places;
+  * no rule for ranking with failures and ties (H3), and no common domain or rule for undefined logarithms (H5).
+* **What Claude Code changed.**
+  * One verdict for each budget and one for each claim (sections 7.2, 7.4 and 7.5).
+  * The level of each family divided between the two directions (section 7.6).
+  * Order and magnitude separated, with a rule for relevance when some pairs have no scores (sections 7.1 and 7.2).
+  * The margin restated as a difference of mean squared error (sections 6 and 7.3).
+  * One table of intervals (section 7.7).
+  * Rules for H3 and H5 (section 7.8).
+
+  The rules of sections 7.1 to 7.6 and the ranks of H3 are written as small functions in `process_transfer/evaluation/comparisons.py`. They are checked on synthetic scores in `tests/test_evaluation_comparisons.py`: wins at one budget and losses at another, losses at small budgets and wins at large ones, inconclusive results, ties, failures of one or both models, no pair with scores, a difference below the margin, and the exact limits of the level and of the margin. Nothing in these checks comes from benchmark data.
+* **What stays pending.** Every recommendation of section 12. The draft is still a draft, its definitions stay in `configs/datasets/m1_e03_draft/`, and I5 is not closed.
+
 ## 1. What the benchmark asks
 
 The question of M1 (D-029; plan, section 1): does a continuous-time hybrid model improve data efficiency or extrapolation over simple alternatives, when every model is fitted on data of the target plant only? The hypotheses are H1 to H5 of section 10 of the plan, written on 2026-09-22 after the exploratory check of section 7.5. The primary comparisons are those of section 9.7: HK against MR and HK against BN, on test-A10 at every budget and on the extrapolation test.
@@ -87,12 +112,12 @@ The pilot is the source of the proposed grid, rates and steps (experiment log, d
 | Excitation | proposed | one block per set, section 2; the corners of a run follow from its seed alone (`p3_corners`) |
 | Noise | proposed | one master seed per set, section 2; the stream of a run follows from its identity (D-021) |
 | Initial weights | proposed | `training_seed(base, replicate, configuration)` with base 20261111 for the trainings on train-A10, the analysis with E/R held included, and 20261112 for those on train-A5. The replicate is its position in the set, from 0. The configuration is its position in the declared grid of its family, from 0 |
-| Bootstrap | proposed | 20261121, for every resampling of section 7.6 |
+| Bootstrap | proposed | 20261121, the base of every resampling of section 7.7, by the rule given there |
 | MR, MR_F, BL | fixed | none: deterministic from their declared starts |
 
 What these rules imply, stated so that they are chosen knowingly:
 
-* **The same initial weights at every budget of a replicate.** `training_seed` does not depend on the budget (D-036), and this is kept. The budgets of a replicate are prefixes of one run, so their data are nested and their results were never independent. With the same initial weights, the curve of a replicate over the budgets changes with the data alone. No test treats the budgets of a replicate as independent (section 7.4).
+* **The same initial weights at every budget of a replicate.** `training_seed` does not depend on the budget (D-036), and this is kept. The budgets of a replicate are prefixes of one run, so their data are nested and their results were never independent. With the same initial weights, the curve of a replicate over the budgets changes with the data alone. No test treats the budgets of a replicate as independent (section 7.6).
 * **The same initial weights for the analysis with E/R held.** It shares the base of train-A10, so HK with E/R held starts from the same networks as HK with E/R estimated, and the paired difference isolates the treatment of E/R.
 * **The same network weights across hybrid families.** HK's kinetic network, HU's thermal network and the first network of HKU have the same shape. With the same configuration index they start from the same weights; their last layer is zero, so each factor starts at one. This is kept: it pairs the ablations. A seed per family would remove the pairing, and the choice is listed in section 12.
 * **No reuse of the pilot.** The bases differ from the pilot's, 20260929, so no benchmark training reuses a pilot initialisation.
@@ -105,81 +130,173 @@ What these rules imply, stated so that they are chosen knowingly:
 * the phases;
 * failures and physical violations: a training failure, or a test window whose rollout fails, leaves that model without a score on that test set for that replicate and budget. The replicate is not dropped.
 
-**Proposed** primary quantity: E = J^2 - 1, the estimate of the excess mean squared error against the true states, in units of sigma^2 averaged over the two channels (section 9.1). It is preferred to J for comparisons because it is additive over readings and, on test runs, an unbiased estimate of that excess. It is reported as it comes, negative values included.
+**Proposed** primary quantity: E = J^2 - 1, the estimate of the excess mean squared error against the true states (section 9.1).
+
+* It is preferred to J for comparisons because it is additive over readings and, on test runs, an unbiased estimate of that excess.
+* It is reported as it comes, negative values included, and never clipped.
+
+What a difference of E is, and what it is not:
+
+* **A difference of mean squared error, not of RMS.** Between E = 0.05 and E = 0, J goes from sqrt(1.05) to 1, a change of about 0.0247. Between E = 1.00 and E = 0.95, J changes by about 0.0178. A difference of E has no fixed equivalent in RMS: the change of J depends on the level.
+* **An average over the two channels.** E = (excess_CA / sigma_CA^2 + excess_T / sigma_T^2) / 2. A difference of E cannot be attributed to a channel. A difference of 0.05 could be an excess of 0.1 sigma_T^2 (0.025 K^2) in T and none in C_A, the converse, or any split.
 
 ## 7. Hypotheses and the rules for reading them
 
-Everything in this section is **proposed**, before any benchmark data exist.
+Everything in this section is **proposed**, before any benchmark data exist. The rules are those of `process_transfer/evaluation/comparisons.py`, which takes the levels, the margin and the minimum count as arguments, since they are not approved.
 
-### 7.1 Common rules
+### 7.1 One replicate: order and magnitude kept apart
 
-* **Unit.** The development replicate. For each primary comparison, each condition and each budget, there are ten paired outcomes, one a replicate.
-* **Paired difference.** For HK against a comparator C on replicate r, d_r = E_C - E_HK, so a positive d_r favours HK.
-* **Outcome of a pair.**
-  * HK is better if it has a score and C has none, or if both have scores and d_r > 0.
-  * C is better in the converse cases.
-  * A tie is two failures, or exactly equal scores. Ties are reported and left out of the sign test.
-  * A failure is never given an invented score (plan, section 9.3).
-* **Test.** The exact one-sided sign test of the pairs that are not ties, in the direction the hypothesis states.
-* **Relevance.** A difference counts only if the median of d_r over the replicates is at least delta = 0.05. A failure of C counts as +infinity and a failure of HK as -infinity; ties are left out.
-  * Why 0.05: from the noise alone, E on test-A10 has a standard error of about sqrt(2 / 17 600) = 0.011, over 80 windows, 110 readings and two channels; on test-A5 it is about 0.015. A margin of 0.05 is three to five of those.
-  * In physical terms, an excess of 0.05 sigma^2 is an RMS error against the truth of about 0.22 sigma per channel, 0.11 K and 1.1 mol/m^3.
-  * The margin is an argument of scale, not a value fitted to anything. Its choice is listed in section 12.
-* **Verdict at one budget.**
-  * Supported: the test rejects at its level, and the median of d_r is at least delta.
-  * Contradicted: the reverse one-sided sign test rejects at the same level, and the median of d_r is at most -delta.
-  * Inconclusive: anything else. That includes a difference that the test detects but that stays below delta; it is reported as "detected, below the relevance margin".
+For HK against a comparator C on one replicate, at one budget and on one test set:
 
-### 7.2 H1: interpolation and data efficiency (confirmatory)
+| Case | Ordinal outcome | Numeric difference d = E_C - E_HK |
+|---|---|---|
+| both completed, E_HK < E_C | HK better | d > 0 |
+| both completed, E_HK > E_C | C better | d < 0 |
+| both completed, equal scores | tie | d = 0 |
+| only HK completed | HK better, by reliability | none |
+| only C completed | C better, by reliability | none |
+| both failed | tie | none |
+
+The ordinal outcome is that of `evaluation.outcomes.paired_outcome`: a failure loses to a score and ties with a failure (plan, section 9.3). A failure is never given a score, and never an infinite difference. Every replicate appears in every table, under one of these six cases.
+
+### 7.2 One budget: the test, the magnitude and its single verdict
+
+* **Test.** The exact one-sided sign test of the pairs that are not ties, in the direction being tested.
+* **Magnitude.** The median of d over the replicates where both models completed, with their number, n_both. It is conditional on both completing and is labelled so.
+* **Relevance when some pairs have no score.**
+  * n_both = 0: the magnitude is not computable.
+  * 0 < n_both < 5: the magnitude is not established. Most replicates then have no numeric difference, and a median over the few that do would describe only the trainings where both models happened to complete.
+  * n_both >= 5: the confirmed direction is relevant if its median, oriented that way, is at least delta, and below the relevance margin otherwise.
+* **The verdict at a budget** is exactly one of:
+  * not tested: the procedure did not reach this budget;
+  * no decision;
+  * HK better or C better, with a magnitude that is relevant, below the relevance margin, not established, or not computable.
+
+  A sign test cannot confirm both directions at one budget; the code checks it.
+* **What counts for a claim.** A confirmed direction counts for its claim when its magnitude is relevant, not established or not computable. An advantage that rests on failures of the other model is practical: that model has no prediction there. A direction confirmed but below the margin counts for neither, and is reported as a difference detected but too small to matter.
+* **Always reported, whatever the verdict:**
+  * the counts of the six cases;
+  * n_both;
+  * the median of d with its interval (section 7.7).
+
+  A median over the replicates where both completed is never presented without the failures beside it.
+
+### 7.3 The relevance margin
+
+delta = 0.05 on E, proposed as a choice of scale. It is not a value validated by the pilot or derived from the benchmark. What supports it, and its limits:
+
+* **Scale.** From the noise of the readings alone, E on test-A10 has a standard error of about sqrt(2 / 17 600) = 0.011, over 80 windows, 110 scored readings and two channels; on test-A5 it is about 0.015. delta is three to five of those.
+* **What that standard error leaves out.** It is only the part of the uncertainty due to the noise of the test readings. It leaves out:
+  * the variation between training replicates;
+  * the finiteness of the set of test runs;
+  * the correlation of a model's errors within a window.
+
+  Section 7.7 reports these, and they are larger.
+* **Its meaning.** It is a difference of mean squared error averaged over the two channels (section 6), not a fixed change of RMS and not a change in either channel separately.
+
+### 7.4 H1, confirmatory: an ordered claim
 
 Trained on train-A10, scored on test-A10.
 
-* **P1, HK against MR.** H1 says "from some budget on". Fixed sequence over b = 40, 20, 10, 5, 2: each budget is tested only if every larger one was supported.
-  * The result is the smallest budget from which HK is supported, b*.
-  * H1 is supported against MR if b = 40 is supported.
-  * It is contradicted if any budget is contradicted, with Holm's procedure over the five budgets at the level of P1.
-* **P2, HK against BN.** H1 says "at small budgets". Fixed sequence over b = 2, 5, 10, 20, 40.
-  * The result is the largest budget up to which HK is supported.
-  * H1 is supported against BN if b = 2 is supported, and contradicted as for P1.
-* **"The gap to BN narrows."** Descriptive. It is the median of d_r against b, with its bootstrap intervals, and it is not tested.
+* **P1, HK against MR.** H1 says "HK scores lower than MR from some budget on".
+* **P2, HK against BN.** H1 says "HK scores lower than BN at small budgets".
+* **Procedure.** In each family there are two fixed sequences, one for each direction, each at alpha_f / 2, one-sided.
+  * For P1, both run over b = 40, 20, 10, 5, 2.
+  * For P2, both run over b = 2, 5, 10, 20, 40.
+  * A sequence stops at the first budget it does not confirm, and the budgets after it are not tested by that sequence.
+* **The gate** is the first budget of the order: 40 for P1, 2 for P2.
+* **Global verdict.**
+  * Supported: the gate counts for HK. The claim is the contiguous run of budgets from the gate that count for HK: "HK better than MR from b* on", or "HK better than BN up to b_max".
+  * Contradicted: the gate counts for the comparator. MR better at b = 40 is evidence against "HK better from some budget on", within the budgets tried. BN better at b = 2 is evidence against "HK better at small budgets".
+  * Difference below the relevance margin: the gate is confirmed in one direction, below the margin.
+  * No confirmatory decision: the gate is confirmed in neither direction. That is an absence of evidence, not evidence against.
+* **A loss at a small budget does not refute P1.** The hypothesis allows HK to be worse below b*, and the sequence in MR's direction starts at b = 40. So MR better at b = 2 alone is never a confirmatory claim. It is reported in the table of outcomes, with its counts.
+* **Mixed results** are shown as one row per budget with its verdict, under the global verdict.
+* "The gap to BN narrows" is descriptive: the median of d against b, with its intervals, not tested.
 
-### 7.3 H2: extrapolation (confirmatory)
+### 7.5 H2, confirmatory: an unordered claim
 
 Trained on train-A5 at b = 10 and 40.
 
 * **The loss from A5 to A10.** For each model m, replicate r and budget b: L = E(test-A10) - E(test-A5).
-  * L is in the units of E. A model loses less when its L is smaller.
-  * A model without a score on either test set has no L, and is a failure in the pair.
+  * L is in the units of E; a model loses less when its L is smaller.
+  * A model without a score on either test set has no L. In the pair it is a failure, by the rules of section 7.1.
   * The difference is preferred to the ratio J(test-A10) / J(test-A5): near the floor of the noise, a ratio amplifies differences that do not matter.
-  * test-A10 and test-A5 are different draws of P3, so L contains the difference between two finite test sets as well as the change of region. Its cluster bootstrap resamples the runs of each test set independently.
-* **P3, HK against BN on L,** with d_r = L_BN - L_HK. Holm's procedure over b = 40 and 10. H2 is supported if at least one budget is supported, and contradicted if one is contradicted.
-* **P4, HK against MR on L,** the same way. This makes "HK against MR on the extrapolation test" of section 9.7 of the plan concrete. H2 itself only expects MR to lose accuracy.
+  * test-A10 and test-A5 are different draws of P3, so L also contains the difference between two finite test sets.
+* **P3, HK against BN on L,** with d = L_BN - L_HK. This is H2: HK loses less than BN.
+* **P4, HK against MR on L.** This makes "HK against MR on the extrapolation test" of section 9.7 of the plan concrete. H2 itself only expects MR to lose accuracy.
+* **Procedure.** Each budget is tested in both directions, by Bonferroni at alpha_f / 4 for each budget and direction.
+* **Global verdict.**
+  * Supported: some budget counts for HK and none for the comparator.
+  * Contradicted: the converse.
+  * Budget-dependent: budgets count both ways. In Codex's example, HK better in all ten replicates at b = 10 and worse in all ten at b = 40, H2 is budget-dependent, neither supported nor contradicted. Before this revision the draft could call it both.
+  * Difference below the relevance margin: directions are confirmed only below the margin.
+  * No confirmatory decision: otherwise.
 * **Reported beside them:**
   * E on test-A10 of the models trained at A5;
   * the same E of the models trained at A10 at the same budget.
 
   A model can lose little because it was poor already on test-A5, and these figures show it.
 
-### 7.4 Multiple comparisons and the dependence between budgets
+### 7.6 Multiple comparisons: families, directions and the guarantee
 
-* The confirmatory claims are the four families P1 to P4. The overall one-sided level of 0.05 is divided equally among them, by Bonferroni, so each family runs at 0.0125.
-* Within P1 and P2, the fixed sequence keeps the level of the family. Within P3 and P4, Holm's procedure does.
-* All three procedures hold under any dependence between the tests. The tests at different budgets of a replicate are dependent: the data are nested and the initial weights shared (section 5).
-* With ten pairs and no ties, a one-sided level of 0.0125 is reached with nine wins or ten. Nine wins give p = 0.0107 and eight give p = 0.055. With ties the number of pairs falls, and the required count follows from the binomial distribution, recorded with each result.
-* That count is a consequence of the level, the number of pairs and the procedure. It is not a rule of its own: another division of the level would change it.
+* **Families.** P1 to P4. Each family's claims are directional claims at its budgets: "HK better at b" or "C better at b".
+* **Error budget.**
+  * The overall one-sided level is 0.05, divided equally among the four families by Bonferroni: alpha_f = 0.0125.
+  * Within a family, alpha_f is divided equally between the two directions, so no level is spent twice. Testing the reverse direction at the same level as the forward one, as the earlier draft did, would have doubled the family's level without saying so.
+  * Within a direction, the fixed sequence (P1, P2) or Bonferroni over the two budgets (P3, P4) keeps the level.
+* **Guarantee.** The probability of at least one false confirmatory claim, in either direction and in any of the four families, is at most 0.05. A false claim is a direction claimed at a budget where, by the null of the sign test, there is none. This holds under any dependence between budgets and between families. The fixed sequence and Bonferroni need no independence, and the directions and families are joined by the union bound. The tests at the budgets of a replicate are dependent: the data are nested and the initial weights shared (section 5).
+* **What this means with ten replicates:**
 
-### 7.5 Secondary and exploratory analyses
+| Family | Level of each test, one-sided | Ten pairs, no ties | With ties |
+|---|---|---|---|
+| P1, P2 | 0.00625 | 10 of 10 decides (p = 0.00098); 9 of 10 does not (p = 0.0107) | 9 of 9 and 8 of 8 decide; 7 of 7 (p = 0.0078) does not |
+| P3, P4 | 0.003125 | 10 of 10 decides | 9 of 9 decides (p = 0.00195); 8 of 8 (p = 0.0039) does not |
 
-Secondary analyses are named here and reported with every result, but carry no confirmatory claim and no adjustment for multiplicity. Their p-values, where computed, are labelled unadjusted.
+  A confirmatory claim therefore needs every replicate that is not a tie to go the same way, and one replicate the other way leaves no decision. If the true chance that HK wins a replicate were 0.90, ten of ten would happen with probability 0.35; at 0.95, with 0.60; at 0.99, with 0.90. These follow from the level, the ten replicates and the procedure. They are not rules of their own.
+* **Alternative.** A level of 0.05 for each family:
+  * nine of ten would decide in every family;
+  * the guarantee would hold for each family, not for the four together, which could then hold a false claim with probability up to 0.2.
+* **Symmetry.** The rules do not favour HK: what HK needs to be supported, the comparator needs to contradict.
 
-* **H3, protocol shift.** Do the candidates rank on the fixed aggregate of test-steps as they rank on test-A10? Measured by Kendall's tau between the two orders of median E, for MN, MR, BL, BN, HK, HU and HKU, at each budget. The ranking in each of the eight conditions is reported beside it. test-steps is not a sample, so no test is made (plan, section 9.7).
+### 7.7 Uncertainty: what each interval estimates
+
+| Interval | Estimand | Resampled | Held fixed | When not computable | Resamples |
+|---|---|---|---|---|---|
+| bootstrap over replicates, median | the median of d over the replicates where both completed | those replicates, with replacement | the test set and each replicate's models | n_both < 5: no interval | 10 000, percentile 95 % |
+| bootstrap over replicates, mean (plan, 9.7) | the mean of d | all ten replicates | the same | computed only when both completed in every replicate | 10 000, percentile 95 % |
+| cluster bootstrap of a test set | E of a fixed model, and d of a fixed pair | whole runs of test-A10 (8) or test-A5 (4), the same runs for both models of a pair | the trained models of one replicate and budget | a model without a score on that test set | 10 000; with four runs there are only 35 distinct resamples, and the interval is presented as coarse |
+| cluster bootstrap of L | L of a fixed model | the runs of test-A10 and of test-A5, independently | the same | a model without a score on either test set | 10 000 |
+
+* The seed of each interval is `numpy.random.SeedSequence([20261121, family, condition, budget, kind])`, with the kind numbered in the order of the table.
+* Training replicates and test runs are the only units resampled, and each answers a different question: how much the result depends on the training realisation, and how much on the finite test set.
+* Windows and readings are never resampled alone. Budgets are never pooled or treated as independent: each interval is for one budget.
+* The intervals describe; the verdicts come from the tests of sections 7.4 to 7.6.
+* test-steps has no bootstrap, since its conditions are fixed and not sampled; it is reported with its spread over replicates (plan, section 9.7).
+* This table replaces the two earlier descriptions, one of an interval for the median and one for the mean.
+
+### 7.8 Secondary and exploratory analyses
+
+Secondary analyses are named here and reported with every result. They carry no confirmatory claim and no adjustment for multiplicity, and their p-values, where computed, are labelled unadjusted.
+
+* **H3, protocol shift.**
+  * **Ranks.** In each replicate, the seven candidates (MN, MR, BL, BN, HK, HU and HKU) are ranked by E on test-A10, and by E on the fixed aggregate of test-steps. A model without a score on a test set ranks below every model with one, failures tie among themselves, and ties take the mean of the ranks they span. A model is ranked over every replicate, failures included, never over its successes alone, so failing on hard cases is not rewarded. Each candidate's rank is its mean over the ten replicates (`comparisons.mean_ranks`).
+  * **Agreement.** Kendall's tau-b between the two orders, at each budget (`comparisons.rank_agreement`). Tau-b allows ties. If either order has every candidate tied, tau-b is recorded as not computable, with that reason.
+  * The orders in each of the eight conditions are reported beside it. test-steps is not a sample, so no test is made (plan, section 9.7).
 * **H4, physical validity.** For BL and BN:
   * the share of windows with a physically invalid prediction, a negative implied rate, or an implied heat flow incompatible with any non-negative conductance (plan, sections 9.3 and 9.4);
   * per budget and test set, with the spread over replicates.
 
   "More often at small budgets" is read by the sign test of the paired shares between b = 2 and b = 40. "More often outside the training region" is read between test-A10 and test-A5 for the models trained at A5. A window whose implied terms cannot be computed counts as "not computable", in the denominator, and is reported beside the violations; it is never dropped.
-* **H5, mechanism (oracle).** The RMS of ln(r_model / r_true) over the states visited by test-A10, for HK and for MR, paired by replicate. It is computed by the oracle script on the truth side, and its outputs go under `experiments/`.
-* **Ablations.** HU and HKU against HK, by the rules of section 7.1, without a confirmatory claim.
+* **H5, mechanism (oracle, secondary).**
+  * **The common set of states.** The true states of the target along the runs of test-A10, at the instants of the scored readings of their 80 windows: 8800 states, taken from the noise-free truth on the truth side. Every model, replicate and budget is judged on this same set, each state with the same weight.
+  * **The rates.** At each state, the true rate, MR's fitted first-order law, and HK's law: its own fitted mechanistic parameters times its learned factor. Each is evaluated at the true C_A and T of the state.
+  * **The metric.** The RMS over the states of ln(r_model / r_true).
+  * **Where the logarithm does not exist.** A state where the true rate, MR's or HK's is zero, negative or not finite is not computable for that comparison. The comparison of HK with MR at a replicate uses the states computable for all three. It reports how many were left out, and is flagged if any were. No epsilon makes a logarithm computable. The laws of MR and HK are positive by construction where C_A > 0, and the true states of P3 keep C_A well above zero (M1-E02 found at least 66.96 mol/m^3 at A10), so a left-out state would point to an overflow, which is reported as such.
+  * **Failures.** A model with a training failure has no law, and the pair is a failure for it by the rules of section 7.1.
+  * **Reported.** The paired difference RMS_MR - RMS_HK by replicate, with sign counts, unadjusted.
+  * **Separation from the models.** H5 is computed by a separate script on the truth side, its outputs go under `experiments/`, and nothing from it reaches a selection or a training.
+* **Ablations.** HU and HKU against HK, by the rules of sections 7.1 and 7.2, without a confirmatory claim.
 * **E/R held.** MR and HK with E/R held against the same models with E/R estimated, at b = 5 and 40 on test-A10, paired by replicate. Why b = 5 and 40:
   * b = 5 is the smallest budget with more than one window to fit, and b = 40 the largest;
   * the standard error of E/R falls with the number of windows: 75 K for one excursion and 24 K for ten, in the exploratory check of section 7.5 of the plan.
@@ -190,30 +307,22 @@ Secondary analyses are named here and reported with every result, but carry no c
   * the selection effort;
   * BL against BN.
 
-### 7.6 Uncertainty reported
-
-The summaries of section 9.7 of the plan, each saying which uncertainty it estimates:
-
-* the median, quartiles and extremes of E and J for each model, budget and test set;
-* the paired outcomes, with their counts of failures and ties;
-* a percentile bootstrap over replicates of the mean paired difference, 10 000 resamples, computed only when both models have a score in every replicate;
-* a cluster bootstrap over the runs of test-A10 or test-A5 for the fixed models, coarse with eight and four runs, and presented as such;
-* for test-steps, the result for each condition and the fixed aggregate, with their spread over replicates.
-
 ## 8. Failures and values that cannot be computed
 
-**Fixed** by the plan:
+**Fixed** by the plan: training failures (section 8.7), and failed windows and physical violations (section 9.3).
 
-* training failures (section 8.7);
-* failed windows and physical violations (section 9.3);
-* how a failure enters a paired outcome (section 7.1 here).
+**Proposed.** Three summaries are kept apart and reported together:
 
-**Proposed:** a window whose implied terms cannot be computed counts as "not computable", in the denominator, and never as a pass or a violation. This was carried from D-033. Every table lists, for each model and budget:
+* **Order.** The paired outcomes over every replicate, failures included (section 7.1).
+* **Reliability.** For each model and budget:
+  * the replicates with a score;
+  * the replicates with a training failure;
+  * the replicates with integration failures;
+  * the number of failed windows;
+  * in a pair, how many replicates were won or lost by a failure.
+* **Precision.** The difference of E over the replicates where both completed, with their number, labelled as conditional on success.
 
-* the replicates with a score;
-* the replicates with a training failure;
-* the replicates with integration failures;
-* the number of failed windows.
+No conclusion rests on precision alone while failures are left out of view. A window whose implied terms cannot be computed counts as "not computable", in the denominator, never as a pass or a violation (carried from D-033).
 
 ## 9. Provenance and reproducibility
 
@@ -262,35 +371,36 @@ A result of M1-E03 is about these models, optimisers, grids, data and procedures
 
 ## 12. Decisions pending approval
 
-Each item has a recommendation. Each recommendation is pending until approved.
+Each row is a recommendation, pending until approved.
 
-1. The grid: four configurations per family, as in section 4. Recommended; the pilot gives no reason for more.
-2. The optimiser: rates BN 1e-3, HK 1e-2, HU 1e-3 and HKU 1e-2; 3000 steps; checkpoints every 100. Recommended, from the pilot's declared rule.
-3. Conditions and replicates: A10 at b = 2, 5, 10, 20 and 40; A5 at b = 10 and 40; ten replicates. Recommended; the pilot's cost leaves room.
-4. Four steps per row, passed explicitly, and double precision. Recommended (D-036, clarification of 2026-10-01).
-5. The failure policy of D-036, with no retries. Recommended. The alternative, keeping the best checkpoint before a failure, would select from a training that then diverged.
-6. E/R held at 8750 K for MR and HK at A10, b = 5 and 40. Recommended.
-7. Windows whose implied terms cannot be computed: counted as "not computable", never dropped. Recommended.
-8. Seeds:
-   * the blocks of section 2 and the bases of section 5;
-   * the same initial weights at every budget of a replicate;
-   * the configuration index within each family, which pairs the hybrid ablations.
-
-   Recommended. The alternative is a seed per family.
-9. The primary families P1 to P4, a one-sided level of 0.05 divided equally among them, exact sign tests, fixed sequences for H1 and Holm for H2. Recommended. The alternative is a level of 0.05 for each family, which would make the four claims weaker together.
-10. The relevance margin delta = 0.05 on E, and the median of d_r as the effect. Recommended. The alternatives are no margin, or a margin relative to the comparator's E.
-11. The loss of extrapolation as the difference L = E(test-A10) - E(test-A5). Recommended over the ratio.
-12. The classification of H3, H4, H5, the ablations and E/R held as secondary, and of the rest as exploratory. Recommended.
-13. The checks of section 10, with their thresholds: one hour of ingestion per set, and twice the estimated cost. Recommended.
-14. The data set definitions of section 2, with their seeds. Recommended.
+| # | Decision | Recommended | Why | Practical consequence | Alternative |
+|---|---|---|---|---|---|
+| 1 | Grid | four configurations per family (section 4) | the pilot: size and penalty barely separated configurations | 16 trainings per replicate and budget | a larger grid, with no evidence for it |
+| 2 | Optimiser | rates BN 1e-3, HK 1e-2, HU 1e-3, HKU 1e-2; 3000 steps; checkpoints every 100 | the pilot's declared rule | 31 checkpoints on V per training | rates chosen again on benchmark data, which would spend V |
+| 3 | Conditions and replicates | A10 at b = 2, 5, 10, 20, 40; A5 at b = 10, 40; ten replicates | the plan, sized by the pilot's cost | about 50 h of fits (section 10) | more replicates, which would relax section 7.6 at a cost |
+| 4 | Precision of training | four steps per row, passed explicitly; double precision | the scheme within 3e-3 sigma of its equation where two steps departed by 0.05 | the steps take twice as long | two steps, the default of the code |
+| 5 | Failures | the policy of D-036, no retries | no checkpoint selected from a training that then diverged | a failure is an outcome of its method | keeping the best checkpoint before a failure |
+| 6 | E/R held | MR and HK at A10, b = 5 and 40 | the smallest budget with more than one window to fit, and the largest | 80 more trainings, about 3 h of fits | other budgets |
+| 7 | Seeds | the blocks of section 2, the bases of section 5, the same initial weights at every budget, the index within each family | new seeds; a curve that changes with the data alone; paired ablations | HK, HU and HKU share their first network's initial weights | a seed per family, unpairing the ablations |
+| 8 | Order and magnitude | the six cases of section 7.1; no score and no infinite difference for a failure | a failure has no error to compare | every replicate in every count | treating a failure as the worst score, which invents an error |
+| 9 | Relevance with failures | the median of d over n_both >= 5; below that, not established | a median over a minority of replicates does not describe the trainings | a win by failures counts for its claim, labelled as reliability | a minimum other than five |
+| 10 | Margin | delta = 0.05 on E | three to five standard errors of the noise alone (section 7.3) | small differences are reported as detected, not as relevant | no margin, or a margin relative to the comparator's E |
+| 11 | Families and levels | P1 to P4, 0.05 overall, 0.0125 each, half to each direction; fixed sequences for H1, Bonferroni for H2 | one guarantee for every confirmatory claim, in both directions, under any dependence | with ten replicates a claim needs every replicate that is not a tie to agree | 0.05 for each family: nine of ten decides, the guarantee holds for each family only |
+| 12 | Global verdicts | gates for H1; "budget-dependent" for H2 (sections 7.4 and 7.5) | a hypothesis can never be supported and contradicted at once | mixed results are shown budget by budget, under one verdict | testing every budget alike, which would let a small budget refute "from some budget on" |
+| 13 | Extrapolation | L = E(test-A10) - E(test-A5) | additive, and stable near the floor of the noise | an L that also contains the difference between two test sets | the ratio of J |
+| 14 | Intervals | the four of section 7.7 | each states its estimand, unit and what is held fixed | coarse intervals for test-A5 | a single bootstrap over windows, which would treat dependent readings as independent |
+| 15 | H3 and H5 | ranks with failures last and tau-b; one common set of true states with no epsilon (section 7.8) | no model is rewarded for failing, and every law is judged on the same states | some comparisons may be reported as not computable | ranking successes only, or each law on its own states |
+| 16 | Classification | H3, H4, H5, the ablations and E/R held secondary; the rest exploratory | the plan, section 10 | no confirmatory claim outside P1 to P4 | |
+| 17 | Checks before the full run | section 10: one hour of ingestion per set, twice the estimated cost | a schedule decided before data, never a change of science | a stop and a recorded decision if exceeded | other thresholds |
+| 18 | Data set definitions | section 2, with their seeds | new seeds and streams, checked | | |
 
 ## 13. What closes I5 and authorises I6
 
-I5 is closed when the following hold, and not before:
+In this order, and not before:
 
-1. The decisions of section 12 are approved, or changed and recorded, before any benchmark data exist.
-2. The registration of M1-E03 is written into `docs/experiment_log.md` from a clean commit, with the final definitions in `configs/datasets/`. Their checks pass.
-3. Codex has reviewed the registration, and its findings are resolved or recorded.
-4. The continuous integration of the commit that records the closure passes.
+1. **Approval.** The decisions of section 12 are approved, or changed and recorded, before any benchmark data exist.
+2. **The definitive registration.** The registration of M1-E03 is written into `docs/experiment_log.md` from a clean commit, without the label of draft. The definitions move from `configs/datasets/m1_e03_draft/` to `configs/datasets/`. When they move, their relative paths to the plant and the sensors change from `../../` to `../`. `tests/test_m1_e03_definitions.py` then points at the new place and is run again, to show that they still load and keep their identities, seeds and streams.
+3. **Review.** Codex reviews the registration, and its findings are resolved or recorded.
+4. **Closure.** The continuous integration of the commit that records the closure of I5 passes on Python 3.12, 3.13 and Docker.
 
 I6 then begins with the checks of section 10. Its first step is the script of the benchmark, committed and tested before any data are generated. The test sets wait for the technical freeze.

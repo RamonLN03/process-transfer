@@ -11,7 +11,8 @@
 # test or smoke run (tests/test_m1_e03_definitions.py checks it). The noise stream of a
 # run follows from its identity and the master seed (D-021). Sensors of D-020.
 #
-# Paths are relative to this file.
+# Paths are relative to this file. When the definition moves to configs/datasets/
+# after approval, ../../ becomes ../, and tests/test_m1_e03_definitions.py is run again.
 dataset_id: m1-e03-test-a5
 description: M1-E03 test-A5, test runs of P3 with the lead at A5, four runs of 10 excursions.
 plants:

@@ -8,7 +8,8 @@
 # Generated only after the technical freeze, and evaluated once. Nothing is drawn at
 # random for the inputs, so the identities name no excitation seed.
 #
-# Paths are relative to this file.
+# Paths are relative to this file. When the definition moves to configs/datasets/
+# after approval, ../../ becomes ../, and tests/test_m1_e03_definitions.py is run again.
 dataset_id: m1-e03-test-steps
 description: M1-E03 test-steps, the eight single-input step tests of D-026 on the target, noise realisation 1.
 plants:
