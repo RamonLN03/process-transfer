@@ -1,0 +1,25 @@
+# DRAFT for the registration of M1-E03 (I5), pending approval. Not registered.
+# Nothing may be generated from this file before the registration is approved, committed
+# and reviewed: development sets are generated in I6, test sets in I7 after the technical
+# freeze (docs/m1_plan.md, section 13; docs/m1_e03_registration_draft.md).
+#
+# test-steps: the eight single-input step tests of D-026 on the target, a new noise
+# realisation (n1; m0-e07 used n0), one run per fixed condition (plan, 5.2 and 9.7).
+# Generated only after the technical freeze, and evaluated once. Nothing is drawn at
+# random for the inputs, so the identities name no excitation seed.
+#
+# Paths are relative to this file.
+dataset_id: m1-e03-test-steps
+description: M1-E03 test-steps, the eight single-input step tests of D-026 on the target, noise realisation 1.
+plants:
+  - ../../target_cstr.yaml
+sensors: ../../sensors_cstr.yaml
+protocol: step
+lead: {value: 10.0, unit: min}
+hold: {value: 10.0, unit: min}
+recovery: {value: 10.0, unit: min}
+inputs: [q, caf, tf, tc]
+directions: [up, down]
+noise_realisation: 1
+sensor_master_seed: 20261105
+simulation_period: {value: 0.1, unit: s}

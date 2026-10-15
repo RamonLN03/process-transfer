@@ -1,0 +1,27 @@
+# DRAFT for the registration of M1-E03 (I5), pending approval. Not registered.
+# Nothing may be generated from this file before the registration is approved, committed
+# and reviewed: development sets are generated in I6, test sets in I7 after the technical
+# freeze (docs/m1_plan.md, section 13; docs/m1_e03_registration_draft.md).
+#
+# test-A10: the fixed evaluation set at A10, eight runs of 10 excursions (plan, 5.2;
+# D-011). Generated only after the technical freeze, and evaluated once.
+#
+# Target only (plan, section 5.2). P3 with the lead of 60 s and the amplitude A10 (D-039 to D-041).
+# Excitation seeds and the master seed are new: none was used by an earlier experiment,
+# test or smoke run (tests/test_m1_e03_definitions.py checks it). The noise stream of a
+# run follows from its identity and the master seed (D-021). Sensors of D-020.
+#
+# Paths are relative to this file.
+dataset_id: m1-e03-test-a10
+description: M1-E03 test-A10, test runs of P3 with the lead at A10, eight runs of 10 excursions.
+plants:
+  - ../../target_cstr.yaml
+sensors: ../../sensors_cstr.yaml
+protocol: p3
+n_excursions: 10
+excitation_seeds: [33001, 33002, 33003, 33004, 33005, 33006, 33007, 33008]
+lead: {value: 60, unit: s}
+amplitude: a10
+noise_realisation: 0
+sensor_master_seed: 20261103
+simulation_period: {value: 0.1, unit: s}

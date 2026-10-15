@@ -1,0 +1,26 @@
+# DRAFT for the registration of M1-E03 (I5), pending approval. Not registered.
+# Nothing may be generated from this file before the registration is approved, committed
+# and reviewed: development sets are generated in I6, test sets in I7 after the technical
+# freeze (docs/m1_plan.md, section 13; docs/m1_e03_registration_draft.md).
+#
+# train-A5: the development runs at A5, ten replicates of 40 excursions (plan, 5.2).
+#
+# Target only (plan, section 5.2). P3 with the lead of 60 s and the amplitude A5 (D-039 to D-041).
+# Excitation seeds and the master seed are new: none was used by an earlier experiment,
+# test or smoke run (tests/test_m1_e03_definitions.py checks it). The noise stream of a
+# run follows from its identity and the master seed (D-021). Sensors of D-020.
+#
+# Paths are relative to this file.
+dataset_id: m1-e03-train-a5
+description: M1-E03 train-A5, development runs of P3 with the lead at A5, ten replicates of 40 excursions.
+plants:
+  - ../../target_cstr.yaml
+sensors: ../../sensors_cstr.yaml
+protocol: p3
+n_excursions: 40
+excitation_seeds: [32001, 32002, 32003, 32004, 32005, 32006, 32007, 32008, 32009, 32010]
+lead: {value: 60, unit: s}
+amplitude: a5
+noise_realisation: 0
+sensor_master_seed: 20261102
+simulation_period: {value: 0.1, unit: s}

@@ -10,7 +10,7 @@ Physics-aware transfer of hybrid process models from a data-rich source plant to
   * a diagnostic of what the data determine about the parameters of the mechanistic model;
   * the training framework and the learned models;
   * the extensions of the protocol that the benchmark needs, and their verification.
-* The next step is the registration of the benchmark. No benchmark has been registered or run, and no transfer code exists yet.
+* The next step is the registration of the benchmark, drafted in `docs/m1_e03_registration_draft.md` and awaiting approval. No benchmark has been registered or run, and no transfer code exists yet.
 
 ## What the project asks
 

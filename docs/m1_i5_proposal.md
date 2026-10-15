@@ -1,5 +1,7 @@
 # I5 of M1: proposal for the registration of the benchmark
 
+Status on 2026-10-15: carried into `docs/m1_e03_registration_draft.md`, a complete draft of the registration with its data set definitions. That draft adds the rules for reading the hypotheses, the seeds and the checks before the full run. Every point stays pending approval there. This proposal is kept as written.
+
 Written on 2026-10-08, after I4, for review; wording revised on 2026-10-09. Every point below is a proposal pending review: none of them is approved by being written here, and nothing of I5 has been registered, defined or run. I5 is the registration of the benchmark, M1-E03, with the definitions of its data sets. It is committed from a clean tree before any benchmark data exist and offered for review before I6 (`docs/m1_plan.md`, section 13). I6 then generates the development sets and trains; I7 generates the test sets after the technical freeze.
 
 What is already fixed, and stays where it is:

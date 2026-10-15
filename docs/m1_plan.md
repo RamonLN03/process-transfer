@@ -62,7 +62,7 @@ Status on 2026-10-09.
 * Resolved since the answers:
   * the training framework: JAX (section 8.6, D-035), with I3 closed (D-037);
   * P3 at A5 and the lead of 60 s: decided (D-039), implemented (D-040), verified by M1-E02 and closed with I4 (D-041). Data at A5 are generated only through I5, I6 and I7, in that order.
-* Open, for the registration of the benchmark (I5). Recommendations for each are in `docs/m1_i5_proposal.md`, pending review:
+* Open, for the registration of the benchmark (I5). Recommendations for each are in `docs/m1_i5_proposal.md`, and a complete draft of the registration, with its data set definitions, is in `docs/m1_e03_registration_draft.md`; all pending approval:
   * the two budgets of the secondary analysis with E/R held fixed;
   * the number of replicates;
   * the grids of the learned models, their rates and the number of steps, which the pilot of I3 informs and does not fix;
@@ -568,6 +568,8 @@ Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were deci
 
 ## 14. The next iteration, recommended
 
+Status on 2026-10-15: I5 is in preparation. `docs/m1_e03_registration_draft.md` is a draft of the registration of M1-E03, with the definitions of its data sets under `configs/datasets/m1_e03_draft/`. It is pending approval and is not registered. No benchmark data exist.
+
 Status on 2026-10-08, after I4: I4 is closed (D-041). The next iteration is I5, the registration of the benchmark, M1-E03, with the definitions of its data sets. `docs/m1_i5_proposal.md` proposes the decisions it has to make; they are pending review. The paragraphs below were written earlier and are kept.
 
 Status of I4 on 2026-10-08: proposed in `docs/m1_i4_proposal.md`, with M1-E02 registered in the experiment log before any of its code exists. Nothing of I4 is implemented, and M1-E02 has not been run.
@@ -659,3 +661,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 15, 2026-10-09.** Status only. Section 3 notes that the limitation of the test of the exit code of M0-E08, carried from M0, is resolved. No part of the design changed.
 
 **Revision 16, 2026-10-15.** Status only. Section 13 records Codex's review of `fb15745` and the correction of the verdict of M1-E02, whose result stands. No part of the design changed.
+
+**Revision 17, 2026-10-15.** Status only. Sections 3 and 14 point to the draft of the registration of M1-E03, which is pending approval. No part of the design changed.

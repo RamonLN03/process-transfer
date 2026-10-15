@@ -27,7 +27,7 @@ Started 2026-09-22. Question, comparators and exclusions: D-029. The benchmark i
 * I3, the training framework (JAX, D-035) and the learned models BL, BN, HK, HU and HKU (D-036): implemented on 2026-09-27 and 2026-09-28, with a pilot on development data, corrected after Codex's audit of `1a9fad4`, closed on 2026-10-01 (D-037).
 * I4, the lead of 60 s and the amplitude A5 in the identities and the generator, with their verification M1-E02, which passed: closed on 2026-10-08 (D-039 to D-041).
 
-M1 stays open. The next iteration is I5, the registration of the benchmark; no benchmark has been registered or run.
+M1 stays open. The next iteration is I5, the registration of the benchmark. A draft of it, with its data set definitions, awaits approval (`docs/m1_e03_registration_draft.md`); no benchmark has been registered or run.
 
 ## M2: Manual transfer learning
 
