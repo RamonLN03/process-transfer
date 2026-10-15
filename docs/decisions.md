@@ -627,3 +627,5 @@ Carried forward, documented and not blocking:
 * M1-E02 is evidence about the present target, A5, a hold of 120 s, a rest of 600 s and pairs of excursions. It says nothing about any model.
 * The summaries of I3 already written do not record their versions of JAX and jaxlib.
 * The decisions that the registration of the benchmark has to make are proposed, pending review, in `docs/m1_i5_proposal.md`.
+
+*Update of 2026-10-15.* Codex has since reviewed `fb15745`, which holds I4: an audit of that commit that ran the full suite of 1104 tests, and a review on 2026-10-15 that ran 161 focused tests and reproduced two defects of the verdict of M1-E02, corrected in `985a7f6` (`docs/numerical_robustness.md`, nineteenth review).

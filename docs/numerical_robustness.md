@@ -697,6 +697,8 @@ Corrected: the contract that the windows of a training share their length, sampl
 
 Codex, as read-only reviewer, reviewed `a9134bc`: the proposal of I4 and the registration of M1-E02, before any code of I4 existed. The owner relayed its points on 2026-10-08. The amendment of the registration resolves them (`e1af873`, experiment log), and the implementation of I4 carries the amendment out (D-040). Codex has not reviewed the amendment, the implementation or the runs.
 
+*Update of 2026-10-15.* Codex has since reviewed `fb15745`, which holds I4: an audit of that commit that ran the full suite of 1104 tests, and a review on 2026-10-15 that ran 161 focused tests and reproduced two defects of the verdict of M1-E02, corrected in `985a7f6` (`docs/numerical_robustness.md`, nineteenth review).
+
 * A. The proposal put the generation of data at A5 in I5. Corrected: I4 verifies, I5 registers, I6 and I7 generate.
 * B. The registration did not ask every trajectory to pass the acceptance checks. The structural check of `Trajectory` could have been read as standing in for them. Corrected:
   * the script judges `check_trajectory(...).accepted` on all 320 trajectories, beside the other rows;
@@ -712,3 +714,63 @@ Codex, as read-only reviewer, reviewed `a9134bc`: the proposal of I4 and the reg
 
 * The summaries of the pilot and the checks of I3 do not record their versions of JAX and jaxlib. They are not reconstructed.
 * The limitations still open from the eleventh to seventeenth reviews, among them LSODA's `UserWarning`, which the continuous integration of `376b8d7` printed once on Python 3.12, in a test of fitting.
+
+## Review of 2026-10-15, nineteenth: Codex's review of `fb15745`
+
+Scope, as the owner relayed it. Codex, as read-only reviewer, reviewed `fb15745` twice:
+
+* an audit of that commit, which ran the full suite of 1104 tests;
+* on 2026-10-15, a review that confirmed no commit followed `fb15745`, checked GitHub and the continuous integration, ran 161 focused tests and reproduced the two defects below.
+
+Neither is a new exhaustive audit of I3. Both defects are in the verdict of the script of M1-E02, `criteria()` in `experiments/m1_e02_p3_a5.py`. They were reproduced on `fb15745` by the implementation agent before anything was changed, and corrected in `985a7f6`.
+
+### A. The coverage of the cases
+
+`criteria()` compared the number of records of each group with the number expected, not their identities. Replacing the last pair with a copy of the first kept 256 records, and every row passed. The same held, on `fb15745`, for:
+
+* a duplicated recovery;
+* a case with the lead at A10 relabelled as A5;
+* a reference with a corner that does not exist;
+* a pair whose record has lost its identity.
+
+Corrected: `coverage()` asks each group to hold every expected identity exactly once:
+
+* the 16 corners for the recoveries at A5 and for the references at A10;
+* the 256 ordered pairs at A5, repeats included;
+* the 32 pairs of amplitude and corner for the cases with the lead.
+
+What is missing, duplicated, unexpected or without an identity is named in the row `complete`, and every row that reads a group also asks for its coverage. A record without an identity no longer raises.
+
+### B. The domain of a deviation
+
+`at_most()` accepted any number not above its tolerance, so -1 K and minus infinity passed as residuals. The quantities are absolute deviations.
+
+Corrected: `deviation_within()` accepts a finite number, zero or more, not above its tolerance. A boolean, a string, a missing value, not a number, an infinity or a negative number fails, and nothing is converted. Zero and the tolerance itself pass. Negative zero compares equal to zero and is taken as zero.
+
+### Also corrected
+
+Found by the implementation agent while correcting B, not by Codex: the count of steady states was compared with `== 1`, which `True` satisfies. It now has to be an integer.
+
+### Regression tests
+
+They are in `tests/test_m1_e02_script.py` and use synthetic records only; nothing in them simulates P3 at A5. They cover:
+
+* each substitution, relabelling and loss of identity above;
+* a missing group, and a group that is not a list;
+* negative, minus-infinite and very small negative deviations in every field that is checked;
+* a count of steady states that is not an integer;
+* the rejection carried to the verdict and the exit code of `main()`;
+* the read-only recheck.
+
+Of the 59 tests added, 32 fail with the script of `fb15745`. The other 27 test the domain: infinity, not a number, a boolean and a string, which the old script also refused, and zero, which it accepted. They are kept as tests of the domain.
+
+### The existing evidence
+
+The two summaries of 2026-10-08 were read again by the corrected criteria, without a new run (experiment log, entry of 2026-10-15). Both pass, every group is covered exactly, and every row is judged as it was.
+
+### Open
+
+* Negative zero is accepted as zero.
+* The largest values reported beside the rows are shown as recorded, whatever their domain. They are reports, not criteria.
+* A recheck reads what a summary says. It cannot show that the summary is the one its run wrote; the SHA-256 of each summary read is therefore recorded in the experiment log.
+* The limitations still open from the eleventh to eighteenth reviews.

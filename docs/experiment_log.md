@@ -1429,3 +1429,21 @@ The three levels of the amendment of M1-E02, point C:
 * Not imposed: no test pins the content hashes of simulated data. On another platform or with other library versions, a difference in the last bits would not by itself be a defect of I4.
 
 The published data of M0 were not touched. A fingerprint of the 149 files under `data/available` and `data/private` was the same before the reproductions and after M1-E02.
+
+#### M1-E02: the verdict corrected, and the two runs read again (2026-10-15)
+
+This is not a new run. Codex's review of `fb15745` reproduced two defects in `criteria()` of `experiments/m1_e02_p3_a5.py`:
+
+* it counted the records of each group without checking their identities;
+* it accepted negative and minus-infinite deviations.
+
+Both were corrected in `985a7f6`, with regression tests (`docs/numerical_robustness.md`, nineteenth review). The physics, the amplitudes, the tolerances, the durations and the rules of the registration did not change.
+
+The two summaries of 2026-10-08 were then read by the corrected criteria, with `python experiments/m1_e02_p3_a5.py --recheck <run directory> <run directory>`, from `985a7f6` with a clean working tree. Nothing was simulated, and each summary keeps its own provenance. The record of the recheck is `20261015T185719Z_985a7f6`, under `<PT_DATA_DIR>/experiments/m1_e02_rechecks/`.
+
+| Run | SHA-256 of `summary.json`, before and after | Coverage | Rows |
+|---|---|---|---|
+| `20261008T161734Z_376b8d7` | `fefbdb427b52840669b3fe744e91e7863caeb2ac4e5d3bc5621631f1d4af67be`, unchanged | 16 recoveries, 256 pairs, 32 cases with the lead and 16 references, each identity once; nothing missing, duplicated, unexpected or unidentified | every row passes, as originally judged |
+| `20261008T161752Z_376b8d7` | `3b5c0e785343ebfdaa77d936bdef3e3975368b54428aa0a556316f7267318130`, unchanged | the same | every row passes, as originally judged |
+
+The result of M1-E02 and its reading stand as recorded on 2026-10-08, and M1-E02 was not repeated. Codex had already found the coverage of these runs complete.

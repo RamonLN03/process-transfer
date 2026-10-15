@@ -564,6 +564,8 @@ A5 is not tried here: it waits for the verification of P3 at A5 (I4).
 
 Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were decided on 2026-10-08 (D-039). Codex reviewed `a9134bc` before any code existed; its points were resolved by an amendment of the registration of M1-E02, published before the code, and by the implementation (D-040). The lead and A5 are in the protocol, the identities, the definitions and the generator, with tests, and version 1 of the contract stands. M1-E02 passed twice from `376b8d7`, with the same numbers. The data sets of M0 reproduce exactly in the reference environment. Codex has not reviewed the implementation or the runs.
 
+*Update of 2026-10-15.* Codex has since reviewed `fb15745`, which holds I4: an audit of that commit that ran the full suite of 1104 tests, and a review on 2026-10-15 that ran 161 focused tests and reproduced two defects of the verdict of M1-E02, corrected in `985a7f6` (`docs/numerical_robustness.md`, nineteenth review). The result of M1-E02 stands: its two summaries pass the corrected criteria (experiment log, 2026-10-15).
+
 ## 14. The next iteration, recommended
 
 Status on 2026-10-08, after I4: I4 is closed (D-041). The next iteration is I5, the registration of the benchmark, M1-E03, with the definitions of its data sets. `docs/m1_i5_proposal.md` proposes the decisions it has to make; they are pending review. The paragraphs below were written earlier and are kept.
@@ -655,3 +657,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 14, 2026-10-09.** Status only. The header lists the closed iterations, and section 3 separates what is resolved from what is open: the training framework (D-035) and P3 at A5 (D-039 to D-041) move from open to resolved, and the points left to the registration of the benchmark are listed with their entries. No part of the design changed.
 
 **Revision 15, 2026-10-09.** Status only. Section 3 notes that the limitation of the test of the exit code of M0-E08, carried from M0, is resolved. No part of the design changed.
+
+**Revision 16, 2026-10-15.** Status only. Section 13 records Codex's review of `fb15745` and the correction of the verdict of M1-E02, whose result stands. No part of the design changed.
