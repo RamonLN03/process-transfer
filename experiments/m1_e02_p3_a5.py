@@ -27,9 +27,15 @@ Run from the repository root, with PT_DATA_DIR outside the repository:
 
     python experiments/m1_e02_p3_a5.py
     python experiments/m1_e02_p3_a5.py --compare <run directory> <run directory>
+    python experiments/m1_e02_p3_a5.py --recheck <run directory> [<run directory> ...]
+
+``--recheck`` applies the criteria of this code, read only, to the summaries of earlier
+runs: it simulates nothing, changes no summary and writes a record of its own under
+PT_DATA_DIR/experiments/m1_e02_rechecks.
 
 Exit codes: 0 when every row passes (for ``--compare``, when the two runs agree and both
-passed), 1 when a row fails, 2 when the run cannot complete. A summary saying which is
+passed; for ``--recheck``, when every summary passes and is unchanged), 1 when a row
+fails, 2 when the run cannot complete. A summary saying which is
 written in every case. Outputs go to PT_DATA_DIR/experiments/m1_e02/<run id>; they hold
 the hidden parameters of the target and are diagnostics of the simulator. No data set of
 observations is generated, and no noise is drawn.
@@ -39,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import inspect
 import itertools
 import json
@@ -303,44 +310,130 @@ def run_cases(plant: Plant) -> dict[str, list[dict]]:
 # --------------------------------------------------------------------------- #
 
 
-def at_most(value: object, limit: float) -> bool:
-    """A number no larger than ``limit``. Not a number, a string or a missing value fails."""
-    return isinstance(value, int | float) and not isinstance(value, bool) and value <= limit
+# What each group of cases must hold: every identity exactly once, and nothing else.
+IDENTITY_FIELDS = {
+    "recovery": ("corner",),
+    "pairs": ("first", "second"),
+    "lead": ("amplitude", "corner"),
+    "references_a10": ("corner",),
+}
+
+
+def expected_identities() -> dict[str, set[tuple[str, ...]]]:
+    corners = [corner_label(c) for c in corner_levels()]
+    return {
+        "recovery": {(c,) for c in corners},
+        "pairs": set(itertools.product(corners, repeat=2)),
+        "lead": set(itertools.product(("a5", "a10"), corners)),
+        "references_a10": {(c,) for c in corners},
+    }
+
+
+def identity(name: str, case: object) -> tuple[str, ...] | None:
+    """The identity of a record, or None when a field of it is missing or not a string."""
+    if not isinstance(case, dict):
+        return None
+    values = tuple(case.get(field) for field in IDENTITY_FIELDS[name])
+    return values if all(isinstance(v, str) for v in values) else None
+
+
+def coverage(cases: dict[str, list[dict]]) -> dict[str, dict]:
+    """For each group, whether its records hold every expected identity exactly once. A
+    count alone is not enough: a duplicate can stand in for a missing case and keep it."""
+    found: dict[str, dict] = {}
+    for name, expected in expected_identities().items():
+        records = cases.get(name)
+        records = records if isinstance(records, list) else []
+        seen: dict[tuple[str, ...], int] = {}
+        without_identity: list[int] = []
+        for index, case in enumerate(records):
+            key = identity(name, case)
+            if key is None:
+                without_identity.append(index)
+            else:
+                seen[key] = seen.get(key, 0) + 1
+        missing = sorted(expected - set(seen))
+        duplicated = sorted(key for key, n in seen.items() if n > 1 and key in expected)
+        unexpected = sorted(key for key in seen if key not in expected)
+        found[name] = {
+            "passed": not (missing or duplicated or unexpected or without_identity)
+            and len(records) == len(expected),
+            "records": len(records),
+            "expected": len(expected),
+            "missing": [" ".join(k) for k in missing],
+            "duplicated": [" ".join(k) for k in duplicated],
+            "unexpected": [" ".join(k) for k in unexpected],
+            "without_identity": without_identity,
+        }
+    return found
+
+
+def is_deviation(value: object) -> bool:
+    """An absolute deviation: a finite number, zero or more. A boolean, a string, a missing
+    value, not a number, an infinity or a negative number is not one, and nothing is
+    converted. Negative zero compares equal to zero and is taken as zero."""
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0.0
+    )
+
+
+def deviation_within(value: object, limit: float) -> bool:
+    """An absolute deviation no larger than ``limit``; zero and the limit itself pass."""
+    return is_deviation(value) and value <= limit  # type: ignore[operator]
 
 
 def largest(cases: Sequence[dict], key: str) -> object:
-    values = [c[key] for c in cases if isinstance(c.get(key), int | float)]
+    values = [
+        c[key]
+        for c in cases
+        if isinstance(c.get(key), int | float) and not isinstance(c.get(key), bool)
+    ]
     return max(values) if values else None
 
 
 def criteria(steady: dict, cases: dict[str, list[dict]]) -> dict[str, dict]:
     """Every row of the registration, from the records alone. A row passes only on its own
-    evidence; none can make up for another."""
-    counts = {name: len(cases.get(name, [])) for name in EXPECTED}
-    complete = counts == EXPECTED
-    everything = [case for name in EXPECTED for case in cases.get(name, [])]
-    recovery, pairs, lead = cases.get("recovery", []), cases.get("pairs", []), cases.get("lead", [])
+    evidence; none can make up for another. Each row that reads a group of cases also
+    asks that group to cover its identities exactly."""
+    covered = coverage(cases)
+    complete = all(group["passed"] for group in covered.values())
+    groups = {
+        name: [c for c in cases.get(name, []) if isinstance(c, dict)]
+        if isinstance(cases.get(name), list)
+        else []
+        for name in EXPECTED
+    }
+    everything = [case for name in EXPECTED for case in groups[name]]
+    recovery, pairs, lead = groups["recovery"], groups["pairs"], groups["lead"]
 
-    def label(name: str, case: dict) -> str:
-        if name == "pairs":
-            return f"pair {case['first']} -> {case['second']}"
-        if name == "lead":
-            return f"lead {case['amplitude']} {case['corner']}"
-        return f"{name} {case['corner']}"
+    def label(name: str, index: int, case: dict) -> str:
+        key = identity(name, case)
+        return f"{name} {' '.join(key)}" if key else f"{name}[{index}] without identity"
 
     not_accepted = [
-        label(name, case)
+        label(name, index, case)
         for name in EXPECTED
-        for case in cases.get(name, [])
+        for index, case in enumerate(groups[name])
         if case.get("accepted") is not True
     ]
+    count = steady.get("count")
     rows: dict[str, dict] = {
-        "complete": {"passed": complete, "counts": counts, "expected": EXPECTED},
+        "complete": {
+            "passed": complete,
+            "counts": {name: covered[name]["records"] for name in EXPECTED},
+            "expected": EXPECTED,
+            "coverage": covered,
+        },
         "stability": {
-            "passed": steady.get("count") == 1
+            "passed": isinstance(count, int)
+            and not isinstance(count, bool)
+            and count == 1
             and steady.get("balances_closed") is True
             and steady.get("stable_with_margin") is True,
-            "count": steady.get("count"),
+            "count": count,
             "max_real_part_per_s": steady.get("max_real_part_per_s"),
             "margin_per_s": -NOMINAL_STABILITY_MARGIN,
         },
@@ -350,19 +443,19 @@ def criteria(steady: dict, cases: dict[str, list[dict]]) -> dict[str, dict]:
             "not_accepted": not_accepted,
         },
         "recovery": {
-            "passed": counts["recovery"] == EXPECTED["recovery"]
+            "passed": covered["recovery"]["passed"]
             and all(
-                at_most(c.get("residual_t_K"), RECOVERY_TOLERANCE_T)
-                and at_most(c.get("residual_c_a_mol_m3"), RECOVERY_TOLERANCE_CA)
+                deviation_within(c.get("residual_t_K"), RECOVERY_TOLERANCE_T)
+                and deviation_within(c.get("residual_c_a_mol_m3"), RECOVERY_TOLERANCE_CA)
                 for c in recovery
             ),
             "max_residual_t_K": largest(recovery, "residual_t_K"),
             "max_residual_c_a_mol_m3": largest(recovery, "residual_c_a_mol_m3"),
         },
         "carried_state": {
-            "passed": counts["pairs"] == EXPECTED["pairs"]
+            "passed": covered["pairs"]["passed"]
             and all(c.get("accepted") is True for c in pairs)
-            and all(at_most(c.get("peak_change_K"), PEAK_AGREEMENT) for c in pairs),
+            and all(deviation_within(c.get("peak_change_K"), PEAK_AGREEMENT) for c in pairs),
             "pairs_not_accepted": sum(c.get("accepted") is not True for c in pairs),
             "max_peak_change_K": largest(pairs, "peak_change_K"),
         },
@@ -381,29 +474,31 @@ def criteria(steady: dict, cases: dict[str, list[dict]]) -> dict[str, dict]:
             "limits_K": list(TEMPERATURE_ENVELOPE),
         },
         "lead": {
-            "passed": counts["lead"] == EXPECTED["lead"]
+            "passed": covered["lead"]["passed"]
             and all(
                 c.get("accepted") is True
                 and c.get("continuous") is True
                 and c.get("lead_at_nominal_inputs") is True
-                and at_most(c.get("end_of_lead_t_K"), RECOVERY_TOLERANCE_T)
-                and at_most(c.get("end_of_lead_c_a_mol_m3"), RECOVERY_TOLERANCE_CA)
-                and at_most(c.get("peak_change_K"), PEAK_AGREEMENT)
+                and deviation_within(c.get("end_of_lead_t_K"), RECOVERY_TOLERANCE_T)
+                and deviation_within(c.get("end_of_lead_c_a_mol_m3"), RECOVERY_TOLERANCE_CA)
+                and deviation_within(c.get("peak_change_K"), PEAK_AGREEMENT)
                 for c in lead
             ),
             "max_end_of_lead_t_K": largest(lead, "end_of_lead_t_K"),
             "max_end_of_lead_c_a_mol_m3": largest(lead, "end_of_lead_c_a_mol_m3"),
             "max_peak_change_K": largest(lead, "peak_change_K"),
-            "discontinuous": [label("lead", c) for c in lead if c.get("continuous") is not True],
+            "discontinuous": [
+                label("lead", i, c) for i, c in enumerate(lead) if c.get("continuous") is not True
+            ],
         },
     }
     # the state is carried, never reset, in every trajectory, not only those with the lead
     rows["continuity"] = {
         "passed": complete and all(c.get("continuous") is True for c in everything),
         "discontinuous": [
-            label(name, case)
+            label(name, index, case)
             for name in EXPECTED
-            for case in cases.get(name, [])
+            for index, case in enumerate(groups[name])
             if case.get("continuous") is not True
         ],
     }
@@ -489,6 +584,8 @@ def main(
     refuse_a_data_directory_inside_the_repository()
     if options.compare:
         return compare(*options.compare)
+    if options.recheck:
+        return recheck(options.recheck)
     started = time.perf_counter()
     print(f"process_transfer {__version__}; M1-E02, P3 at A5 and the lead, on the {PLANT}")
     state = git_state()
@@ -588,9 +685,62 @@ def compare(first: str, second: str) -> int:
     return 0 if agree else 1
 
 
+def recheck(directories: Sequence[str]) -> int:
+    """The criteria of this code applied, read only, to the summaries of earlier runs.
+    Nothing is simulated and no summary is changed; each keeps its own provenance. The
+    record written says which summaries were read, by their SHA-256, with which code."""
+    state = git_state()
+    entries = []
+    for directory in directories:
+        source = Path(directory) / "summary.json"
+        before = hashlib.sha256(source.read_bytes()).hexdigest()
+        summary = json.loads(source.read_text(encoding="utf-8"))
+        rows = criteria(summary.get("steady_state", {}), summary.get("cases", {}))
+        recorded = summary.get("criteria", {})
+        after = hashlib.sha256(source.read_bytes()).hexdigest()
+        original = summary.get("provenance", {})
+        entries.append(
+            {
+                "summary": str(source.resolve()),
+                "summary_sha256": before,
+                "summary_unchanged": before == after,
+                "original_run_id": original.get("run_id"),
+                "original_commit": original.get("git", {}).get("commit"),
+                "original_passed": summary.get("passed"),
+                "criteria": rows,
+                "passed": all(row["passed"] is True for row in rows.values()),
+                "rows_as_originally_judged": {
+                    name: recorded[name].get("passed") == row["passed"]
+                    for name, row in rows.items()
+                    if name in recorded
+                },
+            }
+        )
+    result = {
+        "kind": "a recheck of existing summaries by the criteria of this code; not a new run",
+        "code": {"git": state, "environment": environment(), "command": " ".join(sys.argv)},
+        "summaries": entries,
+        "passed": all(e["passed"] and e["summary_unchanged"] for e in entries),
+    }
+    directory = new_directory(output_dir("experiments", "m1_e02_rechecks"), state)
+    (directory / "recheck.json").write_text(
+        json.dumps(plain(result), indent=2, allow_nan=False), encoding="utf-8"
+    )
+    for entry in entries:
+        print(
+            f"{entry['original_run_id']}: summary {entry['summary_sha256'][:12]}, unchanged "
+            f"{entry['summary_unchanged']}"
+        )
+        report({"criteria": entry["criteria"], "passed": entry["passed"]})
+    print(f"recheck passed: {result['passed']}; written to {directory}")
+    return 0 if result["passed"] else 1
+
+
 def parse(arguments: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--compare", nargs=2, metavar="RUN_DIRECTORY")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--compare", nargs=2, metavar="RUN_DIRECTORY")
+    modes.add_argument("--recheck", nargs="+", metavar="RUN_DIRECTORY")
     return parser.parse_args(arguments)
 
 

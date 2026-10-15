@@ -10,6 +10,7 @@ fails, and that only a run whose every row passes exits with 0.
 import copy
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -321,3 +322,142 @@ def test_a_case_that_cannot_be_simulated_is_recorded_as_failed(
         "failure": "IntegrationError: the solver gave up",
         "accepted": False,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Codex's review of fb15745 (2026-10-15): coverage by identity, and the domain of a
+# deviation. Each case below passed every row before the correction.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("group", "change", "failing_row"),
+    [
+        ("pairs", lambda g: g.__setitem__(-1, copy.deepcopy(g[0])), "carried_state"),
+        ("recovery", lambda g: g.__setitem__(-1, copy.deepcopy(g[0])), "recovery"),
+        ("lead", lambda g: g[-1].update(amplitude="a5"), "lead"),
+        ("references_a10", lambda g: g[3].update(corner="xxxx"), "physical_acceptance"),
+        ("pairs", lambda g: g[5].pop("first"), "carried_state"),
+        ("lead", lambda g: g[7].update(amplitude=None), "lead"),
+        ("recovery", lambda g: g.__setitem__(4, "not a record"), "recovery"),
+    ],
+)
+def test_a_case_replaced_relabelled_or_without_identity_fails_the_coverage(
+    group: str, change, failing_row: str
+) -> None:  # noqa: ANN001
+    cases = passing()
+    change(cases[group])
+    failed = failed_rows(STEADY, cases)
+    assert {"complete", failing_row} <= failed
+    covered = E02.criteria(STEADY, cases)["complete"]["coverage"][group]
+    assert covered["passed"] is False
+    assert covered["missing"] or covered["duplicated"] or covered["unexpected"]
+
+
+def test_the_coverage_names_what_is_missing_duplicated_unexpected_or_unidentified() -> None:
+    covered = E02.coverage(passing())
+    assert all(group["passed"] for group in covered.values())
+    assert {g: covered[g]["expected"] for g in covered} == E02.EXPECTED
+
+    cases = passing()
+    cases["pairs"][-1] = copy.deepcopy(cases["pairs"][0])
+    cases["lead"][2].pop("corner")
+    cases["references_a10"].append({"corner": "+-+0", **accepted()})
+    covered = E02.coverage(cases)
+    assert covered["pairs"]["records"] == 256
+    assert covered["pairs"]["missing"] == ["---- ----"]
+    assert covered["pairs"]["duplicated"] == ["++++ ++++"]
+    assert covered["lead"]["without_identity"] == [2] and covered["lead"]["missing"] == [
+        f"a5 {CORNERS[2]}"
+    ]
+    assert covered["references_a10"]["unexpected"] == ["+-+0"]
+
+
+def test_a_missing_group_or_a_group_that_is_not_a_list_fails_without_raising() -> None:
+    for broken in ({}, {"pairs": None}, {"pairs": "256 pairs"}):
+        cases = passing()
+        cases.pop("pairs")
+        cases.update(broken)
+        assert {"complete", "carried_state", "physical_acceptance"} <= failed_rows(STEADY, cases)
+
+
+@pytest.mark.parametrize("value", [-1.0, -1e-300, -math.inf, math.inf, math.nan, True, "0.001"])
+@pytest.mark.parametrize(
+    ("group", "key", "row"),
+    [
+        ("recovery", "residual_t_K", "recovery"),
+        ("recovery", "residual_c_a_mol_m3", "recovery"),
+        ("pairs", "peak_change_K", "carried_state"),
+        ("lead", "end_of_lead_t_K", "lead"),
+        ("lead", "end_of_lead_c_a_mol_m3", "lead"),
+        ("lead", "peak_change_K", "lead"),
+    ],
+)
+def test_a_deviation_must_be_a_finite_number_not_below_zero(
+    value: object, group: str, key: str, row: str
+) -> None:
+    cases = passing()
+    cases[group][9][key] = value
+    assert row in failed_rows(STEADY, cases)
+
+
+@pytest.mark.parametrize("value", [0, 0.0, -0.0])
+def test_a_deviation_of_zero_passes(value: float) -> None:
+    cases = passing()
+    cases["recovery"][0].update(residual_t_K=value, residual_c_a_mol_m3=value)
+    cases["pairs"][0]["peak_change_K"] = value
+    cases["lead"][0].update(
+        end_of_lead_t_K=value, end_of_lead_c_a_mol_m3=value, peak_change_K=value
+    )
+    assert failed_rows(STEADY, cases) == set()
+
+
+def test_a_count_of_steady_states_that_is_not_an_integer_fails() -> None:
+    for count in (True, 1.0, "1"):
+        assert failed_rows({**STEADY, "count": count}, passing()) == {"stability"}
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        lambda c: c["pairs"].__setitem__(-1, copy.deepcopy(c["pairs"][0])),
+        lambda c: c["recovery"][1].update(residual_t_K=-1.0),
+        lambda c: c["pairs"][1].update(peak_change_K=-math.inf),
+    ],
+)
+def test_the_rejection_reaches_the_verdict_and_the_exit_code(outside: Path, spoil) -> None:  # noqa: ANN001
+    cases = passing()
+    spoil(cases)
+    assert E02.main([], cases=lambda plant: cases) == 1
+    summary = only_summary(outside)
+    assert summary["passed"] is False and summary["exit_code"] == 1
+
+
+def test_a_recheck_reads_a_summary_and_changes_nothing(tmp_path: Path, outside: Path) -> None:
+    good, bad = passing(), passing()
+    bad["pairs"][-1] = copy.deepcopy(bad["pairs"][0])
+    runs = []
+    for name, cases in (("good", good), ("bad", bad)):
+        directory = tmp_path / name
+        directory.mkdir()
+        summary = {
+            "passed": True,
+            "provenance": {"run_id": name, "git": {"commit": "abc"}},
+            "steady_state": STEADY,
+            "cases": cases,
+            "criteria": {"complete": {"passed": True}},
+        }
+        (directory / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+        runs.append((directory, (directory / "summary.json").read_bytes()))
+
+    assert E02.main(["--recheck", str(runs[0][0])]) == 0
+    assert E02.main(["--recheck", str(runs[0][0]), str(runs[1][0])]) == 1
+    for directory, content in runs:
+        assert (directory / "summary.json").read_bytes() == content
+    records = sorted((outside.parent / "m1_e02_rechecks").iterdir())
+    found = json.loads((records[-1] / "recheck.json").read_text(encoding="utf-8"))
+    good_entry, bad_entry = found["summaries"]
+    assert good_entry["passed"] is True and good_entry["summary_unchanged"] is True
+    assert bad_entry["passed"] is False
+    assert bad_entry["rows_as_originally_judged"] == {"complete": False}
+    assert found["kind"].startswith("a recheck of existing summaries")
