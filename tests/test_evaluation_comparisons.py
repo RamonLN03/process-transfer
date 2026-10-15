@@ -250,7 +250,8 @@ def test_no_pattern_gives_a_contradictory_verdict_or_loses_a_replicate() -> None
             assert gate.counts_for == c.COMPARATOR
         else:
             assert gate.counts_for is None
-        unordered = c.unordered_family(results, (40, 10), ALPHA, DELTA, MINIMUM)
+        h2 = {b: results[b] for b in (40, 10)}  # a family is given exactly its budgets
+        unordered = c.unordered_family(h2, (40, 10), ALPHA, DELTA, MINIMUM)
         directions = {d.counts_for for d in unordered.decisions} - {None}
         expected = {
             frozenset(): {c.BELOW, c.NO_DECISION},
@@ -293,3 +294,170 @@ def test_rank_agreement_allows_ties_and_says_when_it_cannot_be_computed() -> Non
         None,
         "not computable: every model ties in one of the two orders",
     )
+
+
+# --------------------------------------------------------------------------- #
+# Codex's audit of 46489c8: a wrong configuration must never read as a result
+# --------------------------------------------------------------------------- #
+
+FIVE = {b: uniform(b, WIN) for b in H1_MR_ORDER}
+TWO = {b: uniform(b, WIN) for b in (40, 10)}
+
+
+@pytest.mark.parametrize("alpha", [math.nan, math.inf, -0.1, 0.0, 1.0, 2.0, True, "0.05"])
+def test_a_family_level_outside_its_domain_is_refused(alpha: object) -> None:
+    with pytest.raises(ValueError, match="alpha_family"):
+        c.ordered_family(FIVE, H1_MR_ORDER, alpha, DELTA, MINIMUM)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="alpha_family"):
+        c.unordered_family(TWO, (40, 10), alpha, DELTA, MINIMUM)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("delta", [math.nan, math.inf, -1.0, -1e-300, True, None])
+def test_a_margin_outside_its_domain_is_refused(delta: object) -> None:
+    with pytest.raises(ValueError, match="delta"):
+        c.ordered_family(FIVE, H1_MR_ORDER, ALPHA, delta, MINIMUM)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="delta"):
+        FIVE[40].magnitude(c.CANDIDATE, delta, MINIMUM)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("minimum", [0, -1, True, 5.0, "5"])
+def test_a_minimum_count_outside_its_domain_is_refused(minimum: object) -> None:
+    with pytest.raises(ValueError, match="minimum_complete"):
+        c.ordered_family(FIVE, H1_MR_ORDER, ALPHA, DELTA, minimum)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("direction", ["candiate", "Candidate", "", None, "first"])
+def test_a_misspelt_direction_is_refused_not_read_as_the_comparator(direction: object) -> None:
+    with pytest.raises(ValueError, match="direction"):
+        FIVE[40].p_value(direction)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="direction"):
+        FIVE[40].magnitude(direction, DELTA, MINIMUM)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="direction"):
+        c.Decision(40, True, direction, c.RELEVANT)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("results", "order", "message"),
+    [
+        ({}, (), "non-empty"),
+        (FIVE, (40, 40, 20, 10, 5, 2), "distinct"),
+        (FIVE, (40, 20), "exactly those of the budgets"),
+        ({40: FIVE[40]}, (40, 20), "exactly those of the budgets"),
+        ({40: FIVE[20]}, (40,), "filed under budget 40"),
+        ({40: FIVE[40], 20: uniform(20, WIN, n=9)}, (40, 20), "same replicates"),
+        (FIVE, "40", "non-empty sequence"),
+        ({5: FIVE[5]}, (5.0,), "budget must be an integer"),
+    ],
+)
+def test_an_order_of_budgets_must_match_its_results(
+    results: dict, order: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        c.ordered_family(results, order, ALPHA, DELTA, MINIMUM)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=message):
+        c.unordered_family(results, order, ALPHA, DELTA, MINIMUM)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("candidate", "comparator", "message"),
+    [
+        ([], [], "non-empty sequence"),
+        ([0.1, 0.2], [0.1], "every replicate"),
+        ("0.1", "0.2", "non-empty sequence"),
+        ([10**400], [0.1], "candidate must be a finite number"),
+        ([np.bool_(True)], [0.1], "candidate must be a finite number"),
+    ],
+)
+def test_a_series_of_replicates_outside_its_domain_is_refused(
+    candidate: object, comparator: object, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        c.budget(5, candidate, comparator)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("successes", "trials"), [(True, 1), (9.0, 10), (-1, 10), (11, 10), (1, -1)]
+)
+def test_the_sign_test_refuses_counts_outside_its_domain(successes: object, trials: object) -> None:
+    with pytest.raises(ValueError):
+        c.one_sided_p(successes, trials)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "scores",
+    [{}, {"a": [], "b": []}, {"a": [0.1, 0.2], "b": [0.1]}, {"a": [math.nan], "b": [0.1]}],
+)
+def test_ranks_need_replicates_and_finite_scores(scores: dict) -> None:
+    with pytest.raises(ValueError):
+        c.mean_ranks(scores)
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ({"a": 1.0, "b": math.nan, "c": 3.0}, {"a": 1.0, "b": 2.0, "c": 3.0}),
+        ({"a": 1.0, "b": math.inf}, {"a": 1.0, "b": 2.0}),
+        ({"a": True, "b": 2.0}, {"a": 1.0, "b": 2.0}),
+        ({"a": 1.0, "b": 2.0}, {"a": 1.0, "c": 2.0}),
+        ({"a": 1.0}, {"a": 1.0}),
+        ([1.0, 2.0], {"a": 1.0, "b": 2.0}),
+    ],
+)
+def test_an_agreement_of_invalid_ranks_is_refused_not_computed(
+    first: object, second: object
+) -> None:
+    with pytest.raises(ValueError):
+        c.rank_agreement(first, second)  # type: ignore[arg-type]
+
+
+def test_valid_inputs_without_evidence_are_not_errors() -> None:
+    every_pair_a_tie = uniform(10, (None, None))
+    assert every_pair_a_tie.p_value(c.CANDIDATE) == every_pair_a_tie.p_value(c.COMPARATOR) == 1.0
+    assert c.rank_agreement({"a": 1.0, "b": 1.0}, {"a": 1.0, "b": 2.0})[0] is None
+    # numpy numbers are numbers
+    numpy_budget = c.budget(np.int64(10), [np.float64(0.1)] * 10, [np.float64(0.2)] * 10)
+    assert numpy_budget.magnitude(c.CANDIDATE, np.float64(0.05), np.int64(5)) == c.RELEVANT
+
+
+# --------------------------------------------------------------------------- #
+# The median without overflow
+# --------------------------------------------------------------------------- #
+
+
+def test_codex_case_the_median_of_large_differences_does_not_overflow() -> None:
+    """Every difference is 1e308. statistics.median added the two central values and gave
+    infinity, so a margin of 1.1e308 read as reached. The median is 1e308, below it."""
+    result = c.budget(10, [0.0] * 10, [1e308] * 10)
+    assert c.median(result.differences) == 1e308
+    assert result.magnitude(c.CANDIDATE, 1.1e308, 5) == c.BELOW_MARGIN
+    assert result.magnitude(c.CANDIDATE, 1e308, 5) == c.RELEVANT
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([1e308, 1.5e308], 1.25e308),  # large, same sign
+        ([-1.5e308, -1e308], -1.25e308),
+        ([1.7976931348623157e308] * 2, 1.7976931348623157e308),
+        ([-1e308, 1e308], 0.0),  # opposite signs
+        ([-1.0, 3.0], 1.0),
+        ([2.0**-1000, 3 * 2.0**-1000], 2.0**-999),  # small magnitudes, exactly
+        ([0.0, 1e-323], 5e-324),
+        ([3.0, 1e308, -1.0], 3.0),  # an odd number of values
+        ([0.25, 0.75, 0.25, 0.75], 0.5),
+    ],
+)
+def test_the_median_is_the_midpoint_and_stays_finite(values: list[float], expected: float) -> None:
+    found = c.median(values)
+    assert found == pytest.approx(expected, rel=1e-15, abs=0.0) and math.isfinite(found)
+
+
+def test_a_median_equal_to_the_margin_is_relevant() -> None:
+    result = c.budget(10, [0.0] * 10, [0.25] * 5 + [0.75] * 5)  # median exactly 0.5
+    assert result.magnitude(c.CANDIDATE, 0.5, 5) == c.RELEVANT
+    assert result.magnitude(c.CANDIDATE, math.nextafter(0.5, 1.0), 5) == c.BELOW_MARGIN
+
+
+def test_the_median_of_nothing_is_refused() -> None:
+    with pytest.raises(ValueError):
+        c.median([])
