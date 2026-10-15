@@ -4,7 +4,8 @@ What it holds: the known specification of a plant as an export states it (``plan
 windows, phases and contexts found from the known inputs (``windows``); budgets and their
 division into a fitting part F and a validation part V (``budgets``); metrics against
 readings (``metrics``); records of failures and the rules of paired comparison
-(``outcomes``); the validity bounds of a prediction and the rate and heat flow that a
+(``outcomes``); the verdicts of the paired comparisons that the draft registration of M1-E03
+proposes (``comparisons``); the validity bounds of a prediction and the rate and heat flow that a
 right-hand side implies (``physics``).
 
 This package is on the available side. It reads ``Observations`` and the known parameters
