@@ -691,7 +691,50 @@ The registration fixes what the development runs do (M1-E03, sections 2 to 5, 8 
   * a missing export;
   * an export that is not the registered development set with exactly its runs on the target.
 
-  Runs made apart are combined only when `benchmark.compatible` finds the same specification, commit, clean tree and data. The analysis of the development runs calls it before reading two directories together.
+  Runs made apart are combined only when `benchmark.compatible` finds the same specification, commit, clean tree and data. The analysis of the development runs calls it before reading two directories together. *Superseded in part by D-045,* which defines what compatible means and how runs are combined.
 * **Not here, on purpose:**
   * the evaluation on the test sets and the oracle diagnostics, which are I7's;
   * the generation of the development sets, which uses the generator as it stands since I4.
+
+## D-045 I6 of M1: the executor corrected after Codex's audit (2026-10-17, decided by the implementation agent, technical and reversible)
+
+Codex, as read-only reviewer, reviewed the definitive registration of M1-E03 favourably, as the owner relayed on 2026-10-17. That is the review that D-043 put before any benchmark data. In the same audit Codex found three operational gaps in the executor of `f25152f` (D-044), recorded in the twenty-first review of `docs/numerical_robustness.md`. They are corrected here. Nothing of the registered design changed: the models, the grids, the seeds, the budgets, the division into F and V, the criteria, the tolerances, the treatment of failures and the four steps of the scheme per row are those of D-042.
+
+* **Records as each task ends.**
+  * `provenance.json` is written before the first task, and `execute` refuses to start without it.
+  * Each record is written as its task ends, with the selected checkpoint of a training. Each file is written once and entered with its SHA-256 in `ledger.jsonl`, which is only appended to.
+  * Worker processes are started by spawn on every platform, since a fork of a process that has started JAX can deadlock. Results are taken as each task ends, not when a phase ends.
+* **Two kinds of outcome, kept apart.**
+  * A failure of a fit or a training, such as a loss that is not finite or a start that failed, is a scientific outcome. It is recorded, counted and never retried.
+  * An exception of the software, a lost worker or an interruption is an error of infrastructure. The task has no record and stays pending with its reason, and a hybrid whose MR_F did not end waits with it, neither blocked nor failed.
+  * The script retries nothing and recovers no state of Adam. What happens to a pending task is decided explicitly.
+* **The end of a run.**
+  * `summary.json` is written whatever happens. Its status is `complete`, `incomplete` or `interrupted`, and it lists the pending tasks and the errors.
+  * A family is selected only when every one of its configurations has an outcome.
+  * Exit codes: 0 when complete and the exports unchanged; 1 when the exports changed during the run; 2 when the run is refused before it starts, or runs cannot be combined; 3 when the run is incomplete or interrupted.
+* **The identity of the observable data.** The content hash of a run covers its labels, its instrument specification and its numbers. It does not cover the known parameters of the plant, which the manifest of the export carries. The identity that a run records, `benchmark.data_identity`, holds:
+  * the data set;
+  * the known parameters as they were read (`KnownPlant`);
+  * the content hash of every run;
+  * the SHA-256 of every file of the export, its manifest included;
+  * the attempt of generation that the manifest records, its commit and time;
+  * the SHA-256 of all of these.
+
+  It reaches the private provenance of the generation only through that attempt. No private configuration, master seed or seed of the noise is read. It is in `provenance.json` with the commit, the specification and its SHA-256, and the environment.
+* **Provenance and compatibility.**
+  * `benchmark.check_provenance` requires every field of `benchmark.REQUIRED` and checks each value. The commit must be a full object name and the tree clean. The specification's SHA-256 must be that of the specification. The condition must be known, and its replicates distinct and within it. The data must be those of its development set, with an identity that matches its content. The numerical environment must be complete.
+  * `benchmark.compatible` requires the same commit, specification and numerical environment, and the same identity of the data within each condition. A10 and A5 are different sets, and their identities are not compared with each other.
+* **Combination.** `--combine` reads each run and checks every record and model against its ledger. It refuses:
+  * a file that is missing, altered or not in the ledger;
+  * a ledger that enters a file or a key twice;
+  * a model that is not the one its record names;
+  * a run given twice;
+  * a task recorded twice, whatever its outcome;
+  * a record of a task that the run was not given.
+
+  Nothing is deduplicated and no repetition is chosen by its result. Failures stay in every count. The result goes to a new directory under `experiments/m1_e03_combined/` and changes nothing in the runs it reads. It refers to each run by its directory, its run id, and the SHA-256 of its provenance and of its ledger. It gives the coverage of each condition, and it is complete only when every task of every condition has an outcome; a valid partial combination says what is missing.
+* **The policy on the environment.** Runs are combined only when all of these are identical: the version and implementation of Python, the machine, numpy, scipy, JAX and jaxlib, the backend of JAX, x64 and the float type. The platform string, which names the build of the operating system, may differ, and the combination reports every value it saw. The reason: an update of the system during a campaign of days would otherwise make runs of the same numerical stack impossible to combine, while a change of any part of the stack listed is refused.
+* **The number of worker processes** is chosen from the resources of the machine at each run and recorded in the provenance. The 14 of the experiment log of I6 is not assumed.
+* **The objective of a mechanistic fit and the metric are not the same number.** The objective that MR_F and MR record is computed by the fit, from an integration that carries the sensitivities of the states. The metric of the benchmark integrates the states alone, by the reference rollout. They are the same quantity from two integrations, and they differ in the last digits. On the synthetic case of the tests they were 1.0032638845081838 and 1.0032638846987934, a relative difference of 1.9e-10. Neither stands for the other: the objective is what the fit minimised, and the metric is what the evaluation reports, computed again from the recorded parameters. No tolerance was changed for this.
+
+Codex has not reviewed these corrections; their independent review is pending.

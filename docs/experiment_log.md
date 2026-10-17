@@ -1891,3 +1891,24 @@ The software of I6, written and tested on synthetic data after the closure of I5
 6. **The rest of the development runs,** in one or more runs of the script. Runs made apart are combined only if `benchmark.compatible` finds them compatible. Then the technical freeze of I6, and only after it the test sets (I7).
 
 **Result.** None: the executor has not been run on benchmark data.
+
+### I6: the executor corrected after Codex's audit (2026-10-17, not run on benchmark data)
+
+Codex reviewed the registration of M1-E03 favourably, and found three operational gaps in the executor of `f25152f`. D-045 records the corrections and the twenty-first review of `docs/numerical_robustness.md` the findings and the tests. The design is unchanged.
+
+* **What the executor does now.**
+  * It writes its provenance before the first task, with the identity of the observable data.
+  * It writes each record and model as its task ends, and enters it in a ledger.
+  * It keeps errors of infrastructure apart from scientific failures, and leaves their tasks pending.
+  * It ends with a status of `complete`, `incomplete` or `interrupted`, and exit code 3 when not complete.
+  * With `--combine` it puts runs made apart together only when they are compatible and intact, with no task recorded twice.
+* **Tests.** 58 in `tests/test_m1_e03_development.py`, among them a run of the tests with one process and with two workers that gives the same records, selections, models and predictions exactly.
+
+#### What comes before an official run, as it now stands
+
+1. Codex's review of the registration: done, favourable, as the owner relayed on 2026-10-17.
+2. Ingestion, disk space and the development sets: as above, unchanged.
+3. Training cost: `python experiments/m1_e03_development.py --condition A10 --replicates 0 --workers N`. N is chosen from the resources of the machine at the time and recorded in the provenance; 14 is not assumed.
+4. The rest of the development runs, then `--combine` on every run directory.
+
+**Result.** None: the executor has not been run on benchmark data.

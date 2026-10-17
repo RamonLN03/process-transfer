@@ -824,3 +824,53 @@ The 33 earlier tests keep their verdicts. One passes a family exactly its own bu
 ### Open
 
 * Codex has not reviewed these corrections.
+
+## Review of 2026-10-17, twenty-first: Codex's audit of `f25152f`
+
+Codex, as read-only reviewer, audited `f25152f`, as the owner relayed it on 2026-10-17. It reviewed the definitive registration of M1-E03 in the experiment log favourably, the review that D-043 put before any benchmark data. It also ran the executor: 16 tasks with two processes, and in sequential mode the exact reproduction of selections, criteria and hashes. It found three operational gaps in the executor, which the implementation agent confirmed in the code of `f25152f` before changing anything.
+
+### Found by Codex
+
+1. **Persistence.** `execute()` waited for `_map()` to return every result of a phase before writing any. An interruption, a lost worker or an exception in one task lost every result of its phase, and nothing marked the run as incomplete.
+2. **The provenance of the observable data.** The content hashes of the runs do not cover the known parameters of the plant, and the fingerprints of the export were computed to check that it was not changed, but not stored. Two inputs with equal observations and other known parameters had the same recorded identity.
+3. **Compatibility.** `compatible()` accepted a provenance without its fields, did not see a replicate given twice and ignored the environment, and nothing combined runs made apart.
+
+### Corrected, by the implementation agent
+
+D-045 records the corrections:
+
+* records and models written as each task ends, with a ledger of their hashes;
+* the provenance written before the first task;
+* errors of infrastructure kept apart from scientific failures;
+* a status and an exit code for a run that did not end;
+* the identity of the observable data;
+* the validation of a provenance, an explicit policy on the environment, and a combination that refuses what it cannot vouch for.
+
+The registered design is unchanged.
+
+### Tests
+
+`tests/test_m1_e03_development.py` now holds 58 tests; it held 21. Most use interfaces that `f25152f` did not have, so they were not run against it. They check:
+
+* **For the first finding:**
+  * that an execution refuses to start without its provenance;
+  * that an interruption after a completed fit, and after a completed training, leaves its record, its model and their entries in the ledger intact and readable, and a run marked `interrupted`, with the other tasks pending and no selection of a family that lacks an outcome;
+  * that an exception in a task, in the process of the script or in a worker, leaves that task pending with its error and the hybrids that need it waiting, neither blocked nor failed, while the other tasks go on;
+  * that a run stopped through `main` exits with 3 and had written its provenance before its first fit, and that a run that ends exits with 0.
+* **For the second:** two exports with the same observations and different known parameters. Their content hashes are equal, their identities differ, and runs on them are not compatible.
+* **For the third:**
+  * every required field missing, and every invalid value;
+  * an identity of the data that does not match its content;
+  * a difference of numpy, of JAX, of x64 or of the commit, refused, and a different platform string, reported;
+  * A10 and A5 with different identities, accepted, and two runs of A10 with different identities, refused;
+  * a run given twice, a task recorded twice, a record of a task the run was not given, and a record, a model or a ledger altered;
+  * two runs of disjoint replicates, combined into a new directory without changing them, with their failures counted, and one replicate alone, combined as a valid partial coverage.
+* **Sequential and two processes.** The same specification of the tests, run in one process and with two workers, gives the same tasks, the same records except their times, the same selections, the same models by their SHA-256 and the same predictions on V. The criterion was exact equality, fixed before the run. Each task is a deterministic computation on the CPU, with the same program, inputs and seeds in whichever process runs it, and the order in which tasks end decides nothing. It held.
+
+The full suite passed: 1339 tests on `91d0c45`, pytest exit code 0, with ruff and `git diff --check` clean.
+
+### Open
+
+* Codex has not reviewed these corrections. Its own check of two processes and of the sequential reproduction was of `f25152f` and does not cover them.
+* No test kills a worker process. A lost worker reaches the script as an exception of its future and takes the path that the tests of exceptions check, but that path is not exercised by a real loss.
+* An interruption is tested in the process of the script, not while workers run.
