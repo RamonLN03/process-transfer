@@ -164,10 +164,11 @@ def median(values: Sequence[float]) -> float:
     that it cannot overflow: from their sum when their signs differ, and as the smaller plus
     half their difference when they agree. Both are the same mathematical midpoint;
     ``statistics.median`` adds the two values first, which overflows near the largest
-    float."""
-    if not values:
-        raise ValueError("the median of no values is not defined")
-    ordered = sorted(values)
+    float. ``values`` is a non-empty sequence of finite numbers; anything else is refused,
+    since a median of not a number or of an infinity is no median of differences."""
+    if isinstance(values, str | bytes) or not isinstance(values, Sequence) or not values:
+        raise ValueError(f"values must be a non-empty sequence of finite numbers, got {values!r}")
+    ordered = sorted(_real(f"values[{i}]", value) for i, value in enumerate(values))
     n = len(ordered)
     if n % 2:
         return ordered[n // 2]

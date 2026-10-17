@@ -461,3 +461,26 @@ def test_a_median_equal_to_the_margin_is_relevant() -> None:
 def test_the_median_of_nothing_is_refused() -> None:
     with pytest.raises(ValueError):
         c.median([])
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ([math.nan], r"values\[0\] must be a finite number"),
+        ([math.inf, math.inf], r"values\[0\] must be a finite number"),
+        ([1.0, -math.inf], r"values\[1\] must be a finite number"),
+        ([1.0, math.nan], r"values\[1\] must be a finite number"),
+        ([True, 2.0], r"values\[0\] must be a finite number"),
+        ([10**400], r"values\[0\] must be a finite number"),
+        (["1", "2"], r"values\[0\] must be a finite number"),
+        ("12", "non-empty sequence"),
+        ((x for x in [1.0]), "non-empty sequence"),
+        ([], "non-empty sequence"),
+    ],
+)
+def test_the_median_refuses_values_that_are_not_finite_numbers(
+    values: object, message: str
+) -> None:
+    """Codex's audit of 32d6e51: median([nan]) returned nan and median([inf, inf]) inf."""
+    with pytest.raises(ValueError, match=message):
+        c.median(values)  # type: ignore[arg-type]
