@@ -749,3 +749,44 @@ The owner asked for the checks of section 10 of the registration of M1-E03, the 
 * **The number of worker processes was 12.** The machine is the one of the pilot: 10 cores, 16 threads and 31.7 GB of memory, 14.1 GB of it free, on mains power, with other programs taking 22 to 50 % of the processor in three readings. Twelve leave four threads to that load and to the main process. The estimate of the registration was made with 14, so the times of a task are not measured under the same load as the estimate's; the comparison with it is approximate in that respect, as section 10 says of its assumptions.
 * **Replicate 0 is kept as it is** and is not run again. Replicates 1 to 9 of A10 and the ten of A5 are to be run from a checkout of `d424f43` and combined with it by `--combine`. `benchmark.compatible` requires the same commit, so runs made at a later commit, even one of documentation only, could not be combined with replicate 0 under D-045.
 * Nothing of the design changed, no setting was changed after a result was seen, and no task was retried.
+
+## D-047 I6 of M1: two controls of the combiner, after Codex's audit of `f06a1b3` (2026-10-17, decided by the implementation agent, technical and reversible)
+
+Codex, as read-only reviewer, audited the delivery up to `f06a1b3`, as the owner relayed on 2026-10-17. It checked:
+
+* 81 focused tests, which passed;
+* the continuous integration of `d424f43` and `f06a1b3`;
+* the identities of the exports of A10 and A5, which match those recorded;
+* replicate 0 of A10, with its 107 tasks and no failure or pending task;
+* the integrity of its records and models against the ledger;
+* that the 88 saved models reproduce their criterion on V exactly;
+* the projection of 46.63 hours of task time, below the registered threshold.
+
+Replicate 0 is valid and is kept as it is. Codex found two defects in the combiner of `91d0c45`, which the implementation agent confirmed in the code before changing anything.
+
+1. **The final check of the exports.** `read_run()` and `combine()` admitted a run whose `exports_after.json` said `{"unchanged": false}`, and a run without that file.
+2. **The structure of the identity of the data.** `check_provenance()` accepted `data` holding only `dataset_id` and a SHA-256 consistent with that content, without the known parameters, the content hashes of the runs, the hashes of the export or the attempt of generation.
+
+Corrected in `1ec7e0b`:
+
+* **How a run ended.**
+  * `read_run()` now records, from the run's own files and with nothing inferred from an absence:
+    * the status of `summary.json`: `complete`, `incomplete` or `interrupted`, or `missing` or `malformed`;
+    * the final check of `exports_after.json`: `unchanged` or `changed`, or `missing` or `malformed`. The file must hold exactly `{"unchanged": true}` or `{"unchanged": false}`.
+  * `combine()` admits a run only when it ended `complete` with its exports `unchanged`, and only whole, with a record of every task it was given. A missing check is not taken for a pass.
+  * A run that was interrupted, that ended with tasks pending, or whose final check is missing, malformed or negative is refused, with a message that says which. Its recovery is a separate and explicit step, not implemented, and nothing in it is changed.
+* **The structure of the identity, checked before its hash** (`benchmark.check_data_identity`):
+  * exactly its six fields;
+  * known parameters with exactly the fields of `KnownPlant`, of the plant of the specification, finite numbers and valid as a `KnownPlant`;
+  * content hashes for exactly the runs of the condition, each a SHA-256;
+  * hashes for exactly the files of the export, its manifest and one Parquet file a run, each a SHA-256;
+  * an attempt of generation with the fields the generator writes: a time in UTC, a full commit, a clean tree and the versions of its packages;
+  * then the hash.
+
+  A value that JSON cannot hold, such as not a number, is reported, not raised. A10 and A5 keep their own identities: a valid identity of one condition is refused for the other.
+* **A run refuses to start** on data whose identity breaks that contract, since no combination could accept its results.
+* **The synthetic fixtures of the tests** are built to the contract: the runs of the specification of the tests, the files of an export of them with hashes made up for the tests, and a complete attempt of generation. The checks of the official runs were not relaxed for them.
+
+**Scope.** These are controls of validation and of combination. Fitting, training, selection, the persistence of models and every record written are unchanged. The code that trains stays at `d424f43`, and replicate 0 is not repeated. Read with the corrected code, replicate 0 is admissible: it ended `complete` with its exports `unchanged`, its provenance passes, and its 200 files have the same SHA-256 before and after it was read.
+
+Codex has not reviewed these corrections; their independent review is pending.

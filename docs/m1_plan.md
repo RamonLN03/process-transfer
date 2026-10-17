@@ -570,6 +570,8 @@ Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were deci
 
 ## 14. The next iteration, recommended
 
+Status on 2026-10-17, after Codex's audit of `f06a1b3`: two controls of the combiner are corrected, the final check of the exports and the structure of the identity of the data (D-047, `1ec7e0b`). Training is unchanged and stays at `d424f43`. The independent review of these corrections is pending.
+
 Status on 2026-10-17, after replicate 0: the checks of ingestion and disk space passed, the development sets were generated at `d424f43`, and replicate 0 of A10 ran complete, at a projected cost of 46.6 hours of task time against an estimate of 53 (D-046; experiment log, I6). The rest of the development runs wait for the owner. I6 is not closed.
 
 Status on 2026-10-17, after Codex's audit: Codex reviewed the registration favourably, and the three gaps it found in the executor are corrected and tested (D-045; experiment log, I6). The independent review of those corrections is pending. Next come the checks of ingestion, disk space and the cost of the first replicate. No benchmark data have been generated and no benchmark model has been fitted.
@@ -685,3 +687,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 22, 2026-10-17.** Status only. The header and section 14 record Codex's favourable review of the registration and the corrections of the executor after its audit (D-045). No part of the design changed.
 
 **Revision 23, 2026-10-17.** Status only. The header and section 14 record the checks before the full run, the development sets and replicate 0 of A10 (D-046). No part of the design changed.
+
+**Revision 24, 2026-10-17.** Status only. Section 14 records the two controls of the combiner corrected after Codex's audit of `f06a1b3` (D-047). No part of the design changed.

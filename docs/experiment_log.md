@@ -1968,3 +1968,16 @@ Run at `d424f43` after its continuous integration passed (run 35: tests on Pytho
   The ratio to the estimate is 0.88. At the parallel efficiency of replicate 0, the rest would take about 4.3 hours of wall time in 12 processes.
 
 **Interpretation.** The three checks pass. Ingestion is far below its limit, and its extrapolation by the square of the runs overstated the time by a factor of five here. The disk is not a constraint. The projected cost is below the estimate, not above twice it. That says the registered schedule can be kept on this machine. It is a projection from one replicate, under a load not identical to the estimate's, and with A5 assumed to cost what A10 costs. No criterion, selection or prediction of replicate 0 has been read as a result: the runs are development runs, and their analysis waits for the rest of them, combined. By the owner's instruction, the work stops here, after replicate 0, though its cost is acceptable.
+
+### I6: two controls of the combiner corrected (2026-10-17, no benchmark run)
+
+Codex's audit of `f06a1b3` confirmed replicate 0 of A10 and found two defects of the combiner, corrected in `1ec7e0b` (D-047; numerical robustness, twenty-second review). The combiner now refuses:
+
+* a run without a normal, complete end;
+* a run whose final check of the exports is missing, malformed or negative;
+* a run that does not hold every task it was given;
+* a run whose identity of the data lacks any part of its contract, even when its hash matches.
+
+Nothing that trains changed. The code of the remaining development runs stays at `d424f43`, as replicate 0's does, and replicate 0 is admissible under the corrected controls without being changed.
+
+**Result.** None of the benchmark.

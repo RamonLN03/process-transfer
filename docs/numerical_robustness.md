@@ -874,3 +874,53 @@ The full suite passed: 1339 tests on `91d0c45`, pytest exit code 0, with ruff an
 * Codex has not reviewed these corrections. Its own check of two processes and of the sequential reproduction was of `f25152f` and does not cover them.
 * No test kills a worker process. A lost worker reaches the script as an exception of its future and takes the path that the tests of exceptions check, but that path is not exercised by a real loss.
 * An interruption is tested in the process of the script, not while workers run.
+
+## Review of 2026-10-17, twenty-second: Codex's audit of `f06a1b3`
+
+Codex, as read-only reviewer, audited the delivery up to `f06a1b3`, as the owner relayed it. D-047 lists what it checked and found sound, replicate 0 of A10 included. That evidence is kept apart from the two defects below and from the corrections, which Codex has not reviewed.
+
+### Found by Codex
+
+1. `read_run()` and `combine()` admitted a run whose final check of the exports was negative, `{"unchanged": false}`, or missing.
+2. `check_provenance()` accepted an identity of the data with only `dataset_id` and a SHA-256 consistent with that content.
+
+Both were confirmed in the code of `f06a1b3` before anything was changed. Neither changes what a run fits, trains, selects or writes.
+
+### Corrected, by the implementation agent
+
+In `1ec7e0b`, as D-047 records:
+
+* the ending of a run read from its own files;
+* a run combined only whole, after a complete end with its exports unchanged;
+* the structure of the identity checked before its hash;
+* a run refused before it starts on data that break the contract.
+
+### Tests
+
+`tests/test_m1_e03_development.py` now holds 111 tests; it held 58. The new ones check:
+
+* **The final check of the exports.**
+  * Positive: combined.
+  * Negative, missing, and malformed in six ways (not JSON, a list, an empty object, a string or a number for the boolean, an extra field): refused, each with its message.
+  * The original run is not touched.
+* **The ending of a run.**
+  * A summary missing, malformed, `interrupted` or `incomplete`: refused.
+  * An interrupted run and a run with an error of infrastructure, made by the executor itself: read, and refused.
+  * A run with one record removed together with its line of the ledger: refused, since a run is combined whole.
+* **The identity of the data,** in 32 cases whose hash was recomputed so that it matches. Each is refused for its structure, and none for its hash:
+  * only `dataset_id`, the defect as found;
+  * each field removed, and a field added;
+  * known parameters incomplete, of another plant, not positive, boolean, textual or of the wrong shape;
+  * the content hashes of a run missing, of a foreign run, or not SHA-256 digests;
+  * the files of the export without the manifest, without a run, with an extra file, or with a hash that is not one;
+  * an attempt of generation that is missing, without its commit, at a short commit, from a tree that was not clean, at a time that is not in UTC or not a time, or with packages that are not a mapping of names to versions.
+* **Identities that are not one:** not a mapping, or only a data set and a hash. A value that JSON cannot hold is refused without raising.
+* **A10 and A5:** an identity of A5 is refused for A10.
+* **A run on data generated from a tree that was not clean** is refused before its directory exists.
+
+The full suite passed: 1392 tests on `1ec7e0b`, pytest exit code 0, with ruff and `git diff --check` clean. Replicate 0 was read with the corrected code, and its files were compared by SHA-256 before and after.
+
+### Open
+
+* Codex has not reviewed these corrections.
+* The recovery of a run that did not end complete is not implemented. Such a run is refused by the combiner and kept as it is.
