@@ -29,6 +29,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -498,40 +499,38 @@ class Selection:
     validation_windows: tuple[tuple[str, int], ...] = field(default=())
 
 
-def select(
-    family_key: str, results: Sequence[tuple[dict[str, Any], TrainingRecord | None]]
-) -> Selection:
-    """The configuration kept, by ``training.select_configuration``: the lowest criterion on
-    V among the configurations that did not fail, the first in declared order on a tie. A
-    training that could not run counts as failed. A family whose every configuration failed
-    has no model there: a training failure, not retried."""
-    ordered = sorted(results, key=lambda pair: pair[0]["index"])
-    if [found["index"] for found, _ in ordered] != list(range(len(ordered))):
+def select(family_key: str, records: Sequence[Mapping[str, Any]]) -> Selection:
+    """The configuration kept, by ``training.select_configuration`` applied to the records
+    of the family's trainings: the lowest criterion on V among the configurations that did
+    not fail, the first in declared order on a tie. A training that could not run counts as
+    failed. A family whose every configuration failed has no model there: a training
+    failure, not retried."""
+    ordered = sorted(records, key=lambda r: r["index"])
+    if [r["index"] for r in ordered] != list(range(len(ordered))):
         raise ValueError(f"{family_key}: the trainings of the grid are not all present")
-    trained = [(i, record) for i, (_, record) in enumerate(ordered) if record is not None]
-    position = select_configuration([record for _, record in trained])
-    chosen = None if position is None else trained[position][0]
-    records = [found for found, _ in ordered]
+    outcomes = [SimpleNamespace(failure=r["failure"], criterion=r["criterion"]) for r in ordered]
+    chosen = select_configuration(outcomes)
     windows = next(
-        (tuple(tuple(k) for k in r["validation_windows"]) for r in records if r["trained"]), ()
+        (tuple(tuple(k) for k in r["validation_windows"]) for r in ordered if r["trained"]), ()
     )
     return Selection(
         key=family_key,
-        tried=tuple(r["key"] for r in records),
-        criteria=tuple(r["criterion"] for r in records),
-        failures=tuple(r["failure"] for r in records),
-        selected=None if chosen is None else records[chosen]["key"],
+        tried=tuple(r["key"] for r in ordered),
+        criteria=tuple(r["criterion"] for r in ordered),
+        failures=tuple(r["failure"] for r in ordered),
+        selected=None if chosen is None else ordered[chosen]["key"],
         failure=None
         if chosen is not None
         else f"{family_key}: every configuration failed: "
-        + "; ".join(str(r["failure"]) for r in records),
-        seconds=sum(r.get("wall_seconds", 0.0) for r in records),
+        + "; ".join(str(r["failure"]) for r in ordered),
+        seconds=sum(r.get("wall_seconds", 0.0) for r in ordered),
         validation_windows=windows,
     )
 
 
-def family_key(task: Task) -> str:
-    return task.key.rsplit("/", 1)[0]
+def family_key(key: str) -> str:
+    """The key of the family a training belongs to: its key without the configuration."""
+    return key.rsplit("/", 1)[0]
 
 
 def expected_keys(spec: Specification, condition: str, replicates: Sequence[int]) -> set[str]:
@@ -539,14 +538,276 @@ def expected_keys(spec: Specification, condition: str, replicates: Sequence[int]
     return {t.key for t in fits + trainings if t.replicate in replicates}
 
 
-def compatible(provenances: Sequence[Mapping[str, Any]]) -> list[str]:
-    """Why runs of the development set could not be combined, or nothing: they must share
-    the specification, the commit, a working tree that git called clean, and the data."""
+def families(spec: Specification, condition: str, replicates: Sequence[int]) -> dict[str, int]:
+    """Every family of trainings at the replicates, with the number of its configurations."""
+    found: dict[str, int] = {}
+    for task in tasks(spec, condition)[1]:
+        if task.replicate in replicates:
+            found[family_key(task.key)] = found.get(family_key(task.key), 0) + 1
+    return found
+
+
+# --------------------------------------------------------------------------- #
+# Tasks in worker processes
+# --------------------------------------------------------------------------- #
+
+_WORKER: dict[str, Any] = {}
+
+
+def initialise_worker(context: Mapping[str, Any]) -> None:
+    """The data a worker process needs, handed once: the specification, the known plant,
+    the windows of every run and the modeller's values."""
+    _WORKER.clear()
+    _WORKER.update(context)
+
+
+def _parts_of(task: Task) -> tuple[tuple[WindowData, ...], tuple[WindowData, ...]]:
+    run_windows, data = _WORKER["runs"][task.run_id]
+    return parts(run_windows, data, task.budget)
+
+
+def fit_task(task: Task) -> dict[str, Any]:
+    fitting, validation = _parts_of(task)
+    return run_fit(
+        task, fitting, validation, _WORKER["known"], _WORKER["modeller"], _WORKER["spec"]
+    )
+
+
+def train_task(item: tuple[Task, Mapping[str, float] | None]) -> tuple[dict[str, Any], Any]:
+    task, start = item
+    fitting, validation = _parts_of(task)
+    parameters = None if start is None else MechanisticParameters(**start)
+    return run_training(task, fitting, validation, _WORKER["known"], parameters, _WORKER["spec"])
+
+
+# --------------------------------------------------------------------------- #
+# The identity of the observable data, and the provenance of a run
+# --------------------------------------------------------------------------- #
+
+
+def canonical_sha256(value: object) -> str:
+    text = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def data_identity(
+    dataset_id: str,
+    known: KnownPlant,
+    run_content: Mapping[str, str],
+    export_files: Mapping[str, str],
+    generation: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """What identifies the observable data a run used, with its SHA-256:
+
+    * the data set;
+    * the known parameters of the plant as they were read (``KnownPlant``), which the
+      content hash of an observation set does not cover;
+    * the content hash of every run, which covers the readings, the inputs and the
+      specification of the instruments;
+    * the SHA-256 of every file of the export, its manifest included;
+    * the attempt of generation the manifest records, commit and time, which links to the
+      private provenance without reading it.
+
+    Nothing private enters: no master seed, no plant configuration, nothing of the truth."""
+    identity = {
+        "dataset_id": dataset_id,
+        "known_plant": dataclasses.asdict(known),
+        "run_content_sha256": dict(sorted(run_content.items())),
+        "export_files_sha256": dict(sorted(export_files.items())),
+        "generation": None if generation is None else dict(generation),
+    }
+    return {**identity, "sha256": canonical_sha256(identity)}
+
+
+ENVIRONMENT = (
+    ("python",),
+    ("implementation",),
+    ("machine",),
+    ("packages", "numpy"),
+    ("packages", "scipy"),
+    ("learning", "jax"),
+    ("learning", "jaxlib"),
+    ("learning", "backend"),
+    ("learning", "x64"),
+    ("learning", "float_dtype"),
+)
+
+
+def relevant_environment(environment: Mapping[str, Any]) -> dict[str, Any]:
+    """The part of the environment that decides the numbers. Runs combined must agree on
+    every item of it; the full platform string may differ, and is reported."""
+    found = {}
+    for path in ENVIRONMENT:
+        node: Any = environment
+        for part in path:
+            node = node.get(part) if isinstance(node, Mapping) else None
+        found[".".join(path)] = node
+    return found
+
+
+REQUIRED = (
+    "run_id",
+    "commit",
+    "code_identified",
+    "environment",
+    "specification_sha256",
+    "condition",
+    "replicates",
+    "data",
+)
+
+
+def check_provenance(provenance: Mapping[str, Any], spec: Specification) -> list[str]:
+    """Why a provenance cannot be used, or nothing."""
+    name = provenance.get("run_id", "a run")
+    missing = [k for k in REQUIRED if k not in provenance]
+    if missing:
+        return [f"{name}: the provenance lacks {missing}"]
     problems = []
-    for name in ("specification_sha256", "commit", "data"):
-        values = {json.dumps(p.get(name), sort_keys=True) for p in provenances}
-        if len(values) > 1:
-            problems.append(f"the runs differ in {name}")
-    if not all(p.get("code_identified") is True for p in provenances):
-        problems.append("a run was not made from a clean commit")
+    commit = provenance["commit"]
+    if (
+        not isinstance(commit, str)
+        or len(commit) not in (40, 64)
+        or not all(c in "0123456789abcdef" for c in commit)
+    ):
+        problems.append(f"{name}: the commit {commit!r} is not a full object name")
+    if provenance["code_identified"] is not True:
+        problems.append(f"{name}: not made from a clean commit")
+    if provenance["specification_sha256"] != spec.digest():
+        problems.append(f"{name}: made under another specification")
+    condition = provenance["condition"]
+    if condition not in spec.sets:
+        problems.append(f"{name}: unknown condition {condition!r}")
+        return problems
+    replicates = provenance["replicates"]
+    allowed = range(len(spec.run_ids(condition)))
+    if (
+        not isinstance(replicates, list)
+        or not replicates
+        or len(set(replicates)) != len(replicates)
+        or not all(
+            isinstance(r, int) and not isinstance(r, bool) and r in allowed for r in replicates
+        )
+    ):
+        problems.append(f"{name}: the replicates {replicates!r} are not distinct replicates")
+    data = provenance["data"]
+    if not isinstance(data, Mapping) or data.get("dataset_id") != spec.sets[condition].dataset_id:
+        problems.append(f"{name}: its data are not the development set of {condition}")
+    else:
+        stored = data.get("sha256")
+        recomputed = canonical_sha256({k: v for k, v in data.items() if k != "sha256"})
+        if stored != recomputed:
+            problems.append(f"{name}: the identity of its data does not match its content")
+    environment = relevant_environment(provenance["environment"])
+    absent = sorted(k for k, v in environment.items() if v is None)
+    if absent:
+        problems.append(f"{name}: the environment lacks {absent}")
     return problems
+
+
+def compatible(provenances: Sequence[Mapping[str, Any]], spec: Specification) -> list[str]:
+    """Why runs of the development sets could not be combined, or nothing. Each must have a
+    complete provenance; together they must share the commit, the specification and the
+    relevant environment; and the runs of each condition must share the identity of that
+    condition's data. A10 and A5 are different sets and are not compared with each other."""
+    problems = [p for provenance in provenances for p in check_provenance(provenance, spec)]
+    if problems:
+        return problems
+    for name in ("commit", "specification_sha256"):
+        if len({p[name] for p in provenances}) > 1:
+            problems.append(f"the runs differ in {name}")
+    environments = {canonical_sha256(relevant_environment(p["environment"])) for p in provenances}
+    if len(environments) > 1:
+        problems.append("the runs differ in their numerical environment")
+    by_condition: dict[str, set[str]] = {}
+    for p in provenances:
+        by_condition.setdefault(p["condition"], set()).add(p["data"]["sha256"])
+    for condition, identities in sorted(by_condition.items()):
+        if len(identities) > 1:
+            problems.append(f"the runs of {condition} differ in the identity of their data")
+    return problems
+
+
+def combine(runs: Sequence[Mapping[str, Any]], spec: Specification) -> dict[str, Any]:
+    """The records of runs made apart, put together. Each item of ``runs`` holds the
+    ``provenance`` of a run, its ``records`` by key, and its ``directory``. The runs must be
+    compatible; a task recorded twice is refused, whatever its outcome, so no repetition is
+    chosen by its result; a record whose key the specification does not call for is
+    refused. Failures are outcomes and stay in every count. The originals are not changed:
+    the result refers to them."""
+    if not runs:
+        raise ValueError("no run to combine")
+    problems = compatible([r["provenance"] for r in runs], spec)
+    if problems:
+        raise ValueError("; ".join(problems))
+    names = [r["provenance"]["run_id"] for r in runs]
+    repeated = sorted({n for n in names if names.count(n) > 1})
+    if repeated:
+        raise ValueError(f"the runs {repeated} are given more than once")
+    owners: dict[str, str] = {}
+    records: dict[str, Mapping[str, Any]] = {}
+    for run in runs:
+        condition = run["provenance"]["condition"]
+        allowed = expected_keys(spec, condition, run["provenance"]["replicates"])
+        for key, record in run["records"].items():
+            if key not in allowed:
+                raise ValueError(f"{key}, in {run['directory']}, is not a task of that run")
+            if record.get("key") != key:
+                raise ValueError(
+                    f"{run['directory']}: the record filed as {key} says {record.get('key')}"
+                )
+            if key in owners:
+                raise ValueError(
+                    f"{key} is recorded twice, in {owners[key]} and {run['directory']}; "
+                    "a repetition is not chosen by its result"
+                )
+            owners[key] = str(run["directory"])
+            records[key] = record
+    coverage = {}
+    for condition in sorted({r["provenance"]["condition"] for r in runs}):
+        every = list(range(len(spec.run_ids(condition))))
+        expected = expected_keys(spec, condition, every)
+        found = {k for k in records if k.startswith(f"{condition}/")}
+        coverage[condition] = {
+            "expected": len(expected),
+            "recorded": len(found),
+            "missing": len(expected - found),
+            "complete": found == expected,
+        }
+    selections = {}
+    for condition in coverage:
+        every = list(range(len(spec.run_ids(condition))))
+        for key, size in sorted(families(spec, condition, every).items()):
+            members = [
+                r for k, r in records.items() if family_key(k) == key and r["kind"] == "training"
+            ]
+            if len(members) == size:
+                selections[key] = select(key, members)
+    return {
+        "runs": [
+            {
+                "directory": str(r["directory"]),
+                "run_id": r["provenance"]["run_id"],
+                "condition": r["provenance"]["condition"],
+                "replicates": r["provenance"]["replicates"],
+                "provenance_sha256": canonical_sha256(r["provenance"]),
+                "ledger_sha256": r.get("ledger_sha256"),
+                "records": len(r["records"]),
+            }
+            for r in runs
+        ],
+        "commit": runs[0]["provenance"]["commit"],
+        "specification_sha256": spec.digest(),
+        "coverage": coverage,
+        "complete": all(c["complete"] for c in coverage.values())
+        and set(coverage) == set(spec.sets),
+        "failures": {
+            "fits": sorted(
+                k for k, r in records.items() if r["kind"] != "training" and r["failure"]
+            ),
+            "trainings": sorted(
+                k for k, r in records.items() if r["kind"] == "training" and r["failure"]
+            ),
+        },
+        "selections": selections,
+    }
