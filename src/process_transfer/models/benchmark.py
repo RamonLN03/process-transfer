@@ -25,15 +25,19 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import math
+import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from fractions import Fraction
 from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 
+from process_transfer.data.export import EXPORT_MANIFEST
 from process_transfer.data.identifiers import run_identifier
 from process_transfer.evaluation.budgets import split_budget
 from process_transfer.evaluation.outcomes import TrainingFailure
@@ -66,6 +70,8 @@ from process_transfer.models.training import (
 
 # the two analyses; "held" is the analysis with E/R held, a word that is safe in a key
 PRIMARY, HELD = "primary", "held"
+# how a run of the development runs ended, as its summary says
+COMPLETE, INCOMPLETE, INTERRUPTED = "complete", "incomplete", "interrupted"
 MECHANISTIC = ("MR_F", "MR", "BL")
 FAMILIES = ("BN", "HK", "HU", "HKU")
 
@@ -645,6 +651,125 @@ def relevant_environment(environment: Mapping[str, Any]) -> dict[str, Any]:
     return found
 
 
+DATA_FIELDS = (
+    "dataset_id",
+    "known_plant",
+    "run_content_sha256",
+    "export_files_sha256",
+    "generation",
+    "sha256",
+)
+GENERATION_FIELDS = ("generated_at_utc", "commit", "code_identified", "packages")
+KNOWN_FIELDS = tuple(f.name for f in dataclasses.fields(KnownPlant))
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+_COMMIT = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
+def _hex(value: object, pattern: re.Pattern[str] = _SHA256) -> bool:
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def _number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _hashes(name: str, found: object, expected: set[str]) -> list[str]:
+    """A mapping from exactly ``expected`` to SHA-256 digests."""
+    if not isinstance(found, Mapping):
+        return [f"{name} is not a mapping"]
+    problems = []
+    if set(found) != expected:
+        problems.append(
+            f"{name} covers {len(found)} names, not the {len(expected)} expected: missing "
+            f"{sorted(expected - set(found))}, not expected {sorted(set(found) - expected)}"
+        )
+    bad = sorted(str(k) for k, v in found.items() if not _hex(v))
+    if bad:
+        problems.append(f"{name} holds values that are not SHA-256 digests, for {bad}")
+    return problems
+
+
+def _known(found: object, spec: Specification) -> list[str]:
+    """The known parameters of the plant of the specification, valid as ``KnownPlant``."""
+    if not isinstance(found, Mapping) or set(found) != set(KNOWN_FIELDS):
+        names = sorted(found) if isinstance(found, Mapping) else found
+        return [f"the known parameters are {names!r}, not the fields {list(KNOWN_FIELDS)}"]
+    if found["plant_id"] != spec.plant:
+        return [f"the known parameters are of {found['plant_id']!r}, not of {spec.plant!r}"]
+    nominal = found["nominal_inputs"]
+    scalars = [found[name] for name in KNOWN_FIELDS if name not in ("plant_id", "nominal_inputs")]
+    if not isinstance(nominal, list | tuple) or not all(map(_number, [*scalars, *nominal])):
+        return ["the known parameters are not all finite numbers"]
+    try:
+        KnownPlant(**{**found, "nominal_inputs": tuple(nominal)})
+    except ValueError as error:
+        return [f"the known parameters are not valid: {error}"]
+    return []
+
+
+def _generation(found: object) -> list[str]:
+    """The attempt of generation as the generator writes it into the manifest: when, from
+    which commit, from a clean tree, with which packages."""
+    if not isinstance(found, Mapping) or set(found) != set(GENERATION_FIELDS):
+        names = sorted(found) if isinstance(found, Mapping) else found
+        return [
+            f"the attempt of generation has {names!r}, not the fields {list(GENERATION_FIELDS)}"
+        ]
+    problems = []
+    if not _hex(found["commit"], _COMMIT):
+        problems.append(f"the data were generated at {found['commit']!r}, not at a full commit")
+    if found["code_identified"] is not True:
+        problems.append("the data were not generated from a clean commit")
+    when = found["generated_at_utc"]
+    try:
+        stamp = datetime.fromisoformat(when) if isinstance(when, str) else None
+    except ValueError:
+        stamp = None
+    if stamp is None or stamp.utcoffset() != timedelta(0):
+        problems.append(f"the time of generation {when!r} is not a time in UTC")
+    packages = found["packages"]
+    if (
+        not isinstance(packages, Mapping)
+        or not packages
+        or not all(
+            isinstance(k, str) and (v is None or isinstance(v, str)) for k, v in packages.items()
+        )
+    ):
+        problems.append("the packages of the generation are not a mapping of names to versions")
+    return problems
+
+
+def check_data_identity(data: object, spec: Specification, condition: str) -> list[str]:
+    """Why ``data`` is not the identity of the development set of ``condition``, or nothing.
+    Its structure is checked before its hash: every field and its type, valid known
+    parameters, the content hash of exactly the runs of the condition, the hash of exactly
+    the files of its export, an attempt of generation as the generator writes it, and a
+    SHA-256 that is that of the rest. A hash that matches an incomplete content proves
+    nothing about the data."""
+    if not isinstance(data, Mapping):
+        return ["the identity of its data is not a mapping"]
+    if set(data) != set(DATA_FIELDS):
+        return [
+            f"the identity of its data has the fields {sorted(data)}, not {sorted(DATA_FIELDS)}"
+        ]
+    problems = []
+    if data["dataset_id"] != spec.sets[condition].dataset_id:
+        problems.append(f"its data are not the development set of {condition}")
+    problems += _known(data["known_plant"], spec)
+    runs = set(spec.run_ids(condition))
+    problems += _hashes("the content hashes of its runs", data["run_content_sha256"], runs)
+    files = {EXPORT_MANIFEST} | {f"{run_id}.parquet" for run_id in runs}
+    problems += _hashes("the hashes of its export", data["export_files_sha256"], files)
+    problems += _generation(data["generation"])
+    try:  # a value that JSON cannot hold, such as not a number, has no canonical form
+        recomputed = canonical_sha256({k: v for k, v in data.items() if k != "sha256"})
+    except (TypeError, ValueError):
+        recomputed = None
+    if not _hex(data["sha256"]) or data["sha256"] != recomputed:
+        problems.append("the identity of its data does not match its content")
+    return problems
+
+
 REQUIRED = (
     "run_id",
     "commit",
@@ -690,14 +815,7 @@ def check_provenance(provenance: Mapping[str, Any], spec: Specification) -> list
         )
     ):
         problems.append(f"{name}: the replicates {replicates!r} are not distinct replicates")
-    data = provenance["data"]
-    if not isinstance(data, Mapping) or data.get("dataset_id") != spec.sets[condition].dataset_id:
-        problems.append(f"{name}: its data are not the development set of {condition}")
-    else:
-        stored = data.get("sha256")
-        recomputed = canonical_sha256({k: v for k, v in data.items() if k != "sha256"})
-        if stored != recomputed:
-            problems.append(f"{name}: the identity of its data does not match its content")
+    problems += [f"{name}: {p}" for p in check_data_identity(provenance["data"], spec, condition)]
     environment = relevant_environment(provenance["environment"])
     absent = sorted(k for k, v in environment.items() if v is None)
     if absent:
@@ -728,13 +846,57 @@ def compatible(provenances: Sequence[Mapping[str, Any]], spec: Specification) ->
     return problems
 
 
+ENDINGS = {
+    "missing": "has no summary.json: it did not end, and a run that did not end is not combined",
+    "malformed": "has a summary.json that does not say how the run ended",
+    "incomplete": (
+        "ended incomplete, with tasks pending after errors of infrastructure; it is not "
+        "combined until its recovery has been decided and checked, as a separate step"
+    ),
+    "interrupted": (
+        "was interrupted; it is not combined until its recovery has been decided and "
+        "checked, as a separate step"
+    ),
+}
+EXPORT_CHECKS = {
+    "missing": (
+        "has no exports_after.json: the final check of its exports was not made, and a "
+        "missing check is not taken for a pass"
+    ),
+    "malformed": (
+        'has an exports_after.json that is not {"unchanged": true} or {"unchanged": false}'
+    ),
+    "changed": "says its exports changed during the run",
+}
+
+
+def check_ending(run: Mapping[str, Any]) -> list[str]:
+    """Why a run cannot be combined by the way it ended, or nothing. ``run["ending"]`` holds
+    the status its summary gives and the result of the final check of its exports, as the
+    run's own files state them; nothing is inferred from an absence. A run must have ended
+    complete, with its exports unchanged. ``combine`` also requires that it hold a record of
+    every task it was given."""
+    where = run["directory"]
+    ending = run.get("ending")
+    if not isinstance(ending, Mapping):
+        return [f"{where}: how the run ended was not read"]
+    problems = []
+    status, exports = ending.get("summary"), ending.get("exports")
+    if status != COMPLETE:
+        problems.append(f"{where} {ENDINGS.get(status, ENDINGS['malformed'])}")
+    if exports != "unchanged":
+        problems.append(f"{where} {EXPORT_CHECKS.get(exports, EXPORT_CHECKS['malformed'])}")
+    return problems
+
+
 def combine(runs: Sequence[Mapping[str, Any]], spec: Specification) -> dict[str, Any]:
     """The records of runs made apart, put together. Each item of ``runs`` holds the
-    ``provenance`` of a run, its ``records`` by key, and its ``directory``. The runs must be
-    compatible; a task recorded twice is refused, whatever its outcome, so no repetition is
-    chosen by its result; a record whose key the specification does not call for is
-    refused. Failures are outcomes and stay in every count. The originals are not changed:
-    the result refers to them."""
+    ``provenance`` of a run, its ``records`` by key, its ``directory`` and its ``ending``.
+    The runs must be compatible, and each must have ended complete with its exports
+    unchanged (``check_ending``); a task recorded twice is refused, whatever its outcome,
+    so no repetition is chosen by its result; a record whose key the specification does not
+    call for is refused. Failures are outcomes and stay in every count. The originals are
+    not changed: the result refers to them."""
     if not runs:
         raise ValueError("no run to combine")
     problems = compatible([r["provenance"] for r in runs], spec)
@@ -744,6 +906,9 @@ def combine(runs: Sequence[Mapping[str, Any]], spec: Specification) -> dict[str,
     repeated = sorted({n for n in names if names.count(n) > 1})
     if repeated:
         raise ValueError(f"the runs {repeated} are given more than once")
+    problems = [p for run in runs for p in check_ending(run)]
+    if problems:
+        raise ValueError("; ".join(problems))
     owners: dict[str, str] = {}
     records: dict[str, Mapping[str, Any]] = {}
     for run in runs:
@@ -763,6 +928,11 @@ def combine(runs: Sequence[Mapping[str, Any]], spec: Specification) -> dict[str,
                 )
             owners[key] = str(run["directory"])
             records[key] = record
+        if set(run["records"]) != allowed:
+            raise ValueError(
+                f"{run['directory']} holds {len(set(run['records']) & allowed)} of the "
+                f"{len(allowed)} records of its tasks; a run is combined whole"
+            )
     coverage = {}
     for condition in sorted({r["provenance"]["condition"] for r in runs}):
         every = list(range(len(spec.run_ids(condition))))
@@ -793,6 +963,7 @@ def combine(runs: Sequence[Mapping[str, Any]], spec: Specification) -> dict[str,
                 "provenance_sha256": canonical_sha256(r["provenance"]),
                 "ledger_sha256": r.get("ledger_sha256"),
                 "records": len(r["records"]),
+                "ending": dict(r["ending"]),
             }
             for r in runs
         ],

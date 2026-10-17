@@ -16,9 +16,17 @@ Regression tests for the three findings of Codex's audit of I6 (D-045):
 * runs made apart are combined only with a complete and valid provenance, the same
   numerical environment and the same data, every record and model intact, and no task
   recorded twice.
+
+And for the two controls that Codex found missing in ``f06a1b3`` (D-047): a run is combined
+only after a normal end with a passed final check of its exports, and the identity of its
+data must have the structure of the contract, not only a hash that matches what is there.
+The synthetic identities of the tests are built to that contract: the runs of the
+specification of the tests, the files of an export of them, with hashes made up for the
+tests, and an attempt of generation as the generator writes it.
 """
 
 import dataclasses
+import hashlib
 import importlib.util
 import json
 import shutil
@@ -180,7 +188,12 @@ SMALL = benchmark.Specification(
 # three fits and three trainings a replicate, for the tests of interruptions and errors
 TINY = dataclasses.replace(SMALL, budgets={"A10": (2,)}, held_budgets=())
 STATE = {"commit": "a" * 40, "code_identified": True, "dirty": False}
-ATTEMPT = {"generated_at_utc": "2026-10-17T00:00:00+00:00", "commit": "0" * 40}
+ATTEMPT = {
+    "generated_at_utc": "2026-10-17T00:00:00+00:00",
+    "commit": "0" * 40,
+    "code_identified": True,
+    "packages": {"numpy": "2.5.3", "process-transfer": "0.0.1"},
+}
 TIMES = ("seconds", "wall_seconds")
 
 
@@ -203,9 +216,23 @@ def runs(observed: dict) -> dict:
     return found
 
 
+def export_files(spec: benchmark.Specification, condition: str) -> dict[str, str]:
+    """The files of an export of the condition's set, its manifest and one Parquet file a
+    run, each with a hash made up for the tests."""
+    names = ["export.json", *(f"{run_id}.parquet" for run_id in spec.run_ids(condition))]
+    return {name: hashlib.sha256(name.encode()).hexdigest() for name in names}
+
+
 def identity_of(observed: dict, known: KnownPlant = KNOWN) -> dict:
     content = {run_id: o.content_digest() for run_id, o in observed.items()}
-    return benchmark.data_identity("synthetic-a10", known, content, {}, None)
+    files = export_files(SMALL, "A10")
+    return benchmark.data_identity("synthetic-a10", known, content, files, ATTEMPT)
+
+
+def finish(directory: Path, unchanged: bool = True) -> Path:
+    """The final check of the exports, as ``main`` writes it after a run that returned."""
+    DEV.write_once(directory / "exports_after.json", {"unchanged": unchanged})
+    return directory
 
 
 def begin(directory: Path, spec: benchmark.Specification, replicates: list, observed: dict) -> Path:
@@ -224,7 +251,7 @@ def executed(
 ) -> tuple[Path, dict]:
     directory = begin(tmp_path_factory.mktemp("development"), SMALL, [0], observed)
     out = DEV.execute(SMALL, "A10", [0], KNOWN, runs, modeller_values(), directory)
-    return directory, out
+    return finish(directory), out
 
 
 @pytest.fixture(scope="module")
@@ -252,7 +279,7 @@ def blocked_run(
         patch.setattr(benchmark, "fit_mechanistic", failing_mr_f)
         patch.setattr(benchmark, "train", counted)
         out = DEV.execute(SMALL, "A10", [1], KNOWN, runs, modeller_values(), directory)
-    return directory, out, calls
+    return finish(directory), out, calls
 
 
 def records(directory: Path) -> dict[str, dict]:
@@ -456,7 +483,12 @@ def test_an_interruption_after_a_fit_keeps_it_and_the_run_is_not_complete(
     assert summary["interrupted"]["type"] == "KeyboardInterrupt"
     assert set(summary["pending"]) == benchmark.expected_keys(TINY, "A10", [0]) - set(found)
     assert read_json(directory / "selections.json") == {}
-    assert set(DEV.read_run(directory)["records"]) == set(found)  # intact, and readable
+    run = DEV.read_run(directory)
+    assert set(run["records"]) == set(found)  # intact, and readable
+    assert run["ending"] == {"summary": "interrupted", "exports": "missing"}
+    with pytest.raises(ValueError, match="was interrupted") as refused:
+        benchmark.combine([run], TINY)
+    assert "a missing check is not taken for a pass" in str(refused.value)
 
 
 def test_an_interruption_after_a_training_keeps_it_and_its_model(
@@ -505,6 +537,10 @@ def test_an_error_of_infrastructure_leaves_its_task_pending_not_failed(
     assert out["pending"][f"{head}/HK/0"] == f"its start {head}/MR_F has no record"
     assert out["pending"][f"{head}/MR_F"] == "error of infrastructure"
     assert out["accounting"]["training_failures"] == [] == out["accounting"]["fit_failures"]
+    run = DEV.read_run(finish(directory))  # even with its exports checked
+    assert run["ending"] == {"summary": "incomplete", "exports": "unchanged"}
+    with pytest.raises(ValueError, match="ended incomplete"):
+        benchmark.combine([run], TINY)
 
 
 def test_errors_in_worker_processes_are_recorded_and_the_others_go_on(
@@ -578,19 +614,23 @@ def plant_record(known: KnownPlant) -> PlantRecord:
 
 
 def write_export(
-    root: Path, observed: dict, known: KnownPlant, monkeypatch: pytest.MonkeyPatch
+    root: Path,
+    observed: dict,
+    known: KnownPlant,
+    monkeypatch: pytest.MonkeyPatch,
+    attempt: dict = ATTEMPT,
 ) -> Path:
     """The runs of the tests as a data set under ``root``, ingested and exported."""
     monkeypatch.setenv("PT_DATA_DIR", str(root))
     dataset = SMALL.sets["A10"].dataset_id
-    with DatasetWriter(dataset, [plant_record(known)], ATTEMPT) as writer:
+    with DatasetWriter(dataset, [plant_record(known)], attempt) as writer:
         for observations in observed.values():
             writer.add_run(observations, RunRecord(dataset, "p3", "synthetic run for a test"))
         writer.publish()
     connection = database.connect()
     try:
         database.ingest_dataset(connection, open_dataset(dataset))
-        assert export_dataset(connection, dataset, ATTEMPT).status == "created"
+        assert export_dataset(connection, dataset, attempt).status == "created"
     finally:
         connection.close()
     return root / "available" / "exports"
@@ -671,6 +711,20 @@ def test_a_run_that_ends_exits_with_zero_and_can_be_combined(
     assert DEV.main(["--combine", str(directory), str(directory)]) == 2
 
 
+def test_a_run_is_refused_before_it_starts_on_data_whose_identity_breaks_the_contract(
+    observed: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Data generated from a tree that was not clean could never be combined, so they are
+    not trained on: the run is refused before its directory exists."""
+    write_export(
+        tmp_path / "pt", observed, KNOWN, monkeypatch, {**ATTEMPT, "code_identified": False}
+    )
+    monkeypatch.setattr(benchmark, "REGISTERED", TINY)
+    monkeypatch.setattr(DEV, "git_state", lambda: dict(STATE))
+    assert DEV.main(["--condition", "A10", "--replicates", "0"]) == 2
+    assert not (tmp_path / "pt" / "experiments").exists()
+
+
 # --------------------------------------------------------------------------- #
 # Finding 3: provenance, compatibility and the combination of runs made apart
 # --------------------------------------------------------------------------- #
@@ -684,8 +738,10 @@ BOTH = dataclasses.replace(
 
 
 def provenance(spec: benchmark.Specification = SMALL, condition: str = "A10", /, **change) -> dict:  # noqa: ANN003
+    content = {run_id: "0" * 64 for run_id in spec.run_ids(condition)}
+    files = export_files(spec, condition)
     identity = benchmark.data_identity(
-        spec.sets[condition].dataset_id, KNOWN, {"run": "0" * 64}, {}, None
+        spec.sets[condition].dataset_id, KNOWN, content, files, ATTEMPT
     )
     found = DEV.provenance_of(
         Path(f"run-{condition}"), STATE, spec, condition, [0], 1, identity, Path("x")
@@ -754,7 +810,13 @@ def test_a10_and_a5_are_other_sets_and_their_identities_are_not_compared() -> No
     assert a10["data"]["sha256"] != a5["data"]["sha256"]
     assert benchmark.compatible([a10, a5], BOTH) == []
     other = provenance(BOTH, "A10")
-    other["data"] = benchmark.data_identity("synthetic-a10", KNOWN, {"run": "1" * 64}, {}, None)
+    content = {run_id: "1" * 64 for run_id in BOTH.run_ids("A10")}
+    files = export_files(BOTH, "A10")
+    other["data"] = benchmark.data_identity("synthetic-a10", KNOWN, content, files, ATTEMPT)
+    # each condition has its own identity: that of A5 is not one of A10
+    problems = benchmark.check_data_identity(a5["data"], BOTH, "A10")
+    assert any("not the development set of A10" in p for p in problems)
+    assert any("content hashes of its runs" in p for p in problems)
     assert any("A10 differ" in p for p in benchmark.compatible([a10, a5, other], BOTH))
 
 
@@ -822,8 +884,8 @@ def test_runs_with_other_data_or_environment_are_not_combined(
         "synthetic-a10",
         dataclasses.replace(KNOWN, volume=0.11),
         original["data"]["run_content_sha256"],
-        {},
-        None,
+        original["data"]["export_files_sha256"],
+        original["data"]["generation"],
     )
     environment = json.loads(json.dumps(original["environment"]))
     environment["learning"]["jax"] = "0.0.1"
@@ -859,6 +921,189 @@ def test_a_record_or_model_that_does_not_match_its_ledger_is_refused(
         message = "enters a file or a key twice"
     with pytest.raises(ValueError, match=message):
         DEV.read_run(copy)
+
+
+# --------------------------------------------------------------------------- #
+# The two controls found missing in f06a1b3: the final check, and the structure of the
+# identity of the data
+# --------------------------------------------------------------------------- #
+
+
+def test_a_run_that_ended_complete_with_its_exports_unchanged_is_combined(
+    executed: tuple[Path, dict],
+) -> None:
+    run = DEV.read_run(executed[0])
+    assert run["ending"] == {"summary": "complete", "exports": "unchanged"}
+    assert benchmark.check_ending(run) == []
+    found = benchmark.combine([run], SMALL)
+    assert found["runs"][0]["ending"] == {"summary": "complete", "exports": "unchanged"}
+
+
+@pytest.mark.parametrize(
+    ("content", "ending", "message"),
+    [
+        (None, "missing", "a missing check is not taken for a pass"),
+        (b'{"unchanged": false}', "changed", "its exports changed during the run"),
+        (b"not json", "malformed", "exports_after.json that is not"),
+        (b"[true]", "malformed", "exports_after.json that is not"),
+        (b"{}", "malformed", "exports_after.json that is not"),
+        (b'{"unchanged": "true"}', "malformed", "exports_after.json that is not"),
+        (b'{"unchanged": 1}', "malformed", "exports_after.json that is not"),
+        (b'{"unchanged": true, "note": 1}', "malformed", "exports_after.json that is not"),
+    ],
+)
+def test_a_final_check_of_the_exports_that_did_not_pass_is_not_a_pass(
+    executed: tuple[Path, dict], tmp_path: Path, content: bytes | None, ending: str, message: str
+) -> None:
+    before = DEV.fingerprints(executed[0])
+    copy = copy_of(executed[0], tmp_path / "copy")
+    path = copy / "exports_after.json"
+    if content is None:
+        path.unlink()
+    else:
+        path.write_bytes(content)
+    run = DEV.read_run(copy)
+    assert run["ending"] == {"summary": "complete", "exports": ending}
+    with pytest.raises(ValueError, match=message):
+        benchmark.combine([run], SMALL)
+    assert DEV.fingerprints(executed[0]) == before  # the original is not touched
+
+
+@pytest.mark.parametrize(
+    ("content", "ending", "message"),
+    [
+        (None, "missing", "has no summary.json"),
+        (b"not json", "malformed", "does not say how the run ended"),
+        (b'{"status": "done"}', "malformed", "does not say how the run ended"),
+        (b'{"status": "interrupted"}', "interrupted", "was interrupted"),
+        (b'{"status": "incomplete"}', "incomplete", "ended incomplete"),
+    ],
+)
+def test_a_run_that_did_not_end_complete_is_not_combined(
+    executed: tuple[Path, dict], tmp_path: Path, content: bytes | None, ending: str, message: str
+) -> None:
+    copy = copy_of(executed[0], tmp_path / "copy")
+    path = copy / "summary.json"
+    if content is None:
+        path.unlink()
+    else:
+        path.write_bytes(content)
+    run = DEV.read_run(copy)
+    assert run["ending"] == {"summary": ending, "exports": "unchanged"}
+    with pytest.raises(ValueError, match=message):
+        benchmark.combine([run], SMALL)
+
+
+def test_a_run_is_combined_whole(executed: tuple[Path, dict], tmp_path: Path) -> None:
+    """A record removed with its line of the ledger leaves files and ledger in agreement;
+    the run is still refused, since it no longer holds every task it was given."""
+    copy = copy_of(executed[0], tmp_path / "copy")
+    key = "A10/r00/b02/primary/BL"
+    (copy / "records" / DEV.file_name(key)).unlink()
+    lines = (copy / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+    kept = [line for line in lines if json.loads(line)["key"] != key]
+    (copy / "ledger.jsonl").write_text("\n".join(kept) + "\n", encoding="utf-8")
+    run = DEV.read_run(copy)
+    with pytest.raises(ValueError, match="15 of the 16 records of its tasks"):
+        benchmark.combine([run], SMALL)
+
+
+def drop_all_but(*kept: str):  # noqa: ANN201
+    return lambda d: [d.pop(k) for k in list(d) if k not in (*kept, "sha256")]
+
+
+def set_in(path: tuple, value: object):  # noqa: ANN201
+    def change(d: dict) -> None:
+        for part in path[:-1]:
+            d = d[part]
+        d[path[-1]] = value
+
+    return change
+
+
+def pop_in(path: tuple):  # noqa: ANN201
+    def change(d: dict) -> None:
+        for part in path[:-1]:
+            d = d[part]
+        d.pop(path[-1])
+
+    return change
+
+
+RUN_0, RUN_1 = SMALL.run_ids("A10")
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (drop_all_but("dataset_id"), "has the fields"),  # the defect as Codex found it
+        (pop_in(("known_plant",)), "has the fields"),
+        (pop_in(("run_content_sha256",)), "has the fields"),
+        (pop_in(("export_files_sha256",)), "has the fields"),
+        (pop_in(("generation",)), "has the fields"),
+        (set_in(("note",), "extra"), "has the fields"),
+        (pop_in(("known_plant", "density")), "not the fields"),
+        (set_in(("known_plant", "plant_id"), "source"), "not of 'target'"),
+        (set_in(("known_plant", "volume"), -0.1), "not valid"),
+        (set_in(("known_plant", "volume"), 0.0), "not valid"),
+        (set_in(("known_plant", "volume"), True), "not all finite numbers"),
+        (set_in(("known_plant", "volume"), "0.1"), "not all finite numbers"),
+        (set_in(("known_plant", "nominal_inputs"), [0.1, 500.0, 350.0]), "not valid"),
+        (set_in(("known_plant", "nominal_inputs"), "nominal"), "not all finite numbers"),
+        (pop_in(("run_content_sha256", RUN_1)), "content hashes of its runs covers 1 names"),
+        (set_in(("run_content_sha256", "target.p3.e9.x3.l60.a10.n0"), "0" * 64), "not expected"),
+        (set_in(("run_content_sha256", RUN_0), "abc"), "not SHA-256 digests"),
+        (set_in(("run_content_sha256", RUN_0), "A" * 64), "not SHA-256 digests"),
+        (set_in(("run_content_sha256",), []), "is not a mapping"),
+        (pop_in(("export_files_sha256", "export.json")), "hashes of its export covers"),
+        (pop_in(("export_files_sha256", f"{RUN_0}.parquet")), "hashes of its export covers"),
+        (set_in(("export_files_sha256", "notes.txt"), "0" * 64), "hashes of its export covers"),
+        (set_in(("export_files_sha256", "export.json"), None), "not SHA-256 digests"),
+        (set_in(("generation",), None), "attempt of generation has"),
+        (pop_in(("generation", "commit")), "attempt of generation has"),
+        (set_in(("generation", "commit"), "abc"), "not at a full commit"),
+        (set_in(("generation", "code_identified"), False), "not generated from a clean commit"),
+        (
+            set_in(("generation", "generated_at_utc"), "2026-10-17T02:00:00+02:00"),
+            "not a time in UTC",
+        ),
+        (set_in(("generation", "generated_at_utc"), "2026-10-17T00:00:00"), "not a time in UTC"),
+        (set_in(("generation", "generated_at_utc"), "yesterday"), "not a time in UTC"),
+        (set_in(("generation", "packages"), {}), "packages of the generation"),
+        (set_in(("generation", "packages"), {"numpy": 2}), "packages of the generation"),
+    ],
+)
+def test_an_incomplete_identity_is_refused_even_when_its_hash_was_recomputed(
+    change,
+    message: str,  # noqa: ANN001
+) -> None:
+    found = provenance()
+    assert benchmark.check_data_identity(found["data"], SMALL, "A10") == []
+    change(found["data"])
+    found["data"]["sha256"] = benchmark.canonical_sha256(
+        {k: v for k, v in found["data"].items() if k != "sha256"}
+    )
+    problems = benchmark.check_provenance(found, SMALL)
+    assert any(message in p for p in problems), problems
+    assert not any("does not match its content" in p for p in problems)  # the hash is right
+    assert benchmark.compatible([provenance(), found], SMALL)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [None, [], "identity", {"dataset_id": "synthetic-a10", "sha256": "0" * 64}],
+)
+def test_an_identity_that_is_not_one_is_refused(data: object) -> None:
+    problems = benchmark.check_provenance(provenance(data=data), SMALL)
+    assert any("identity of its data" in p for p in problems), problems
+
+
+def test_an_identity_with_a_value_json_cannot_hold_is_refused_not_raised() -> None:
+    found = provenance()
+    found["data"]["known_plant"]["volume"] = float("nan")
+    problems = benchmark.check_provenance(found, SMALL)
+    assert any("not all finite numbers" in p for p in problems)
+    assert any("does not match its content" in p for p in problems)
 
 
 # --------------------------------------------------------------------------- #

@@ -2,7 +2,7 @@
 for on the development sets, with each configuration chosen on V, and nothing else.
 
 Registered in ``docs/experiment_log.md`` (M1-E03); the procedure is that of
-``process_transfer.models.benchmark``, and D-044 and D-045 record how it is executed. The
+``process_transfer.models.benchmark``, and D-044, D-045 and D-047 record how it is executed. The
 checks before a full run are those of section 10 of the registration: ingestion, disk
 space, and the cost of the first replicate, which this script runs with ``--replicates 0``.
 
@@ -32,9 +32,13 @@ error of infrastructure: the task stays pending, nothing is retried, and the run
 incomplete. Records already written stay as they are.
 
 ``--combine`` puts runs made apart together, such as the first replicate and then the
-others, after checking their provenance, the integrity of every record and model against
-its ledger, and that no task is recorded twice. It writes a new directory under
-``experiments/m1_e03_combined`` and changes nothing in the runs it reads.
+others, after checking their provenance and the structure of the identity of their data,
+the integrity of every record and model against its ledger, that each run ended complete
+with its exports unchanged and holds every task it was given, and that no task is recorded
+twice. A run that was interrupted, or ended with tasks pending, or whose final check of the
+exports is missing or did not pass, is refused: its recovery is a separate and explicit
+step. It writes a new directory under ``experiments/m1_e03_combined`` and changes nothing
+in the runs it reads.
 
     python experiments/m1_e03_development.py --condition A10 --replicates 0 --workers 8
     python experiments/m1_e03_development.py --combine <run directory> <run directory> ...
@@ -93,7 +97,7 @@ from process_transfer.models.training import learning_environment  # noqa: E402
 
 EXPERIMENT = "m1_e03_development"
 Runs = dict[str, tuple[RunWindows, tuple[WindowData, ...]]]
-COMPLETE, INCOMPLETE, INTERRUPTED = "complete", "incomplete", "interrupted"
+COMPLETE, INCOMPLETE, INTERRUPTED = benchmark.COMPLETE, benchmark.INCOMPLETE, benchmark.INTERRUPTED
 
 
 class Refused(Exception):
@@ -436,9 +440,45 @@ def refuse_a_data_directory_inside_the_repository() -> Path:
 # --------------------------------------------------------------------------- #
 
 
+def ending_of(directory: Path) -> dict[str, str]:
+    """How a run ended, as its own files say, and nothing inferred from an absence:
+
+    * ``summary``: the status that ``summary.json`` gives, ``complete``, ``incomplete`` or
+      ``interrupted``; ``missing`` without the file; ``malformed`` otherwise;
+    * ``exports``: ``unchanged`` or ``changed`` as ``exports_after.json`` says, which holds
+      exactly ``{"unchanged": true}`` or ``{"unchanged": false}``; ``missing`` without the
+      file, which ``main`` writes only after a run that returned; ``malformed`` otherwise.
+    """
+    found = {"summary": "missing", "exports": "missing"}
+    summary = directory / "summary.json"
+    if summary.is_file():
+        try:
+            status = json.loads(summary.read_text(encoding="utf-8")).get("status")
+        except (ValueError, AttributeError):
+            status = None
+        found["summary"] = status if status in (COMPLETE, INCOMPLETE, INTERRUPTED) else "malformed"
+    after = directory / "exports_after.json"
+    if after.is_file():
+        try:
+            check = json.loads(after.read_text(encoding="utf-8"))
+        except ValueError:
+            check = None
+        if (
+            isinstance(check, dict)
+            and set(check) == {"unchanged"}
+            and isinstance(check["unchanged"], bool)
+        ):
+            found["exports"] = "unchanged" if check["unchanged"] else "changed"
+        else:
+            found["exports"] = "malformed"
+    return found
+
+
 def read_run(directory: Path) -> dict[str, Any]:
     """The provenance and records of a run, each record and model checked against the
-    ledger: a file that is missing, altered, or not in the ledger is refused."""
+    ledger: a file that is missing, altered, or not in the ledger is refused. How the run
+    ended is read too (``ending_of``); ``benchmark.combine`` refuses a run that did not end
+    complete with its exports unchanged. Nothing is written."""
     directory = Path(directory)
     if not (directory / "provenance.json").is_file():
         raise ValueError(f"{directory} is not a run of this script: it has no provenance.json")
@@ -484,6 +524,7 @@ def read_run(directory: Path) -> dict[str, Any]:
         "provenance": provenance,
         "records": records,
         "ledger_sha256": file_sha256(ledger) if ledger.exists() else None,
+        "ending": ending_of(directory),
     }
 
 
@@ -567,6 +608,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
         if not export_directory.is_dir():
             raise Refused(f"no export of the development set at {export_directory}")
         known, runs, identity = load_condition(exports, spec, options.condition)
+        problems = benchmark.check_data_identity(identity, spec, options.condition)
+        if problems:  # data that no combination could accept are not trained on
+            raise Refused("; ".join(problems))
     except Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
         return 2
