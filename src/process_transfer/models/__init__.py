@@ -11,6 +11,9 @@ black box BN and of the hybrids HK, HU and HKU, written once for numpy and JAX
 (``learned``); their training with JAX and selection on V (``training``); and the selected
 model of a training written to a file and read back (``persistence``).
 
+In I6: the procedure of the development runs of M1-E03 on windows already read, task by
+task, with the selection of a configuration and the accounting (``benchmark``).
+
 This package is on the available side, like ``evaluation``. A model is built from the known
 parameters of an export and the modeller's values of ``configs/modeller_cstr.yaml``, and
 fitted on the ``WindowData`` it is handed. It never imports ``process_transfer.simulation``

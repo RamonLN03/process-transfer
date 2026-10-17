@@ -202,12 +202,15 @@ def test_the_available_parts_of_m1_e01_read_only_available_information() -> None
     )
 
 
-@pytest.mark.parametrize("name", ["m1_i3_framework_comparison.py", "m1_i3_pilot.py"])
+@pytest.mark.parametrize(
+    "name", ["m1_i3_framework_comparison.py", "m1_i3_pilot.py", "m1_e03_development.py"]
+)
 def test_the_development_scripts_of_i3_read_only_available_information(name: str) -> None:
     """The comparison of frameworks and the pilot of I3 read the exports of M0 and simulate
-    their synthetic runs with the model side's rollout: they never import the simulation,
-    the generator or the private branch, and never mention what reads a plant
-    configuration file."""
+    their synthetic runs with the model side's rollout, and the development runs of M1-E03
+    read the exports of the development sets: they never import the simulation, the
+    generator or the private branch, and never mention what reads a plant configuration
+    file or the definition of a data set."""
     script = EXPERIMENTS / name
     modules, has_relative = _imports(script)
     assert not has_relative
