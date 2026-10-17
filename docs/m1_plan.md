@@ -10,7 +10,7 @@ Status on 2026-10-09. M1 is in progress. Four of its iterations are closed (sect
 * I4, the lead and the amplitude A5 with their verification M1-E02: decided, implemented, verified and closed on 2026-10-08 (D-039 to D-041).
 * I5, the registration of the benchmark: M1-E03, approved on 2026-10-17 (D-042) and registered in the experiment log, and I5 closed the same day (D-043).
 
-Status on 2026-10-17. I6 has its software, written and tested on synthetic data and corrected after Codex's audit (D-045). Codex reviewed the registration favourably, the gate of D-043. The checks before the first official run come next. No benchmark data exist and no benchmark has been run. Section 3 says what is settled and what is still open.
+Status on 2026-10-17. I6 has its software, written and tested on synthetic data and corrected after Codex's audit (D-045). Codex reviewed the registration favourably, the gate of D-043. The checks before the full run passed, the two development sets are generated, and replicate 0 of A10 has been trained to measure the cost (D-046). The other replicates have not been run, no development result has been read, and no test set exists. Section 3 says what is settled and what is still open.
 
 ## 1. The question
 
@@ -570,6 +570,8 @@ Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were deci
 
 ## 14. The next iteration, recommended
 
+Status on 2026-10-17, after replicate 0: the checks of ingestion and disk space passed, the development sets were generated at `d424f43`, and replicate 0 of A10 ran complete, at a projected cost of 46.6 hours of task time against an estimate of 53 (D-046; experiment log, I6). The rest of the development runs wait for the owner. I6 is not closed.
+
 Status on 2026-10-17, after Codex's audit: Codex reviewed the registration favourably, and the three gaps it found in the executor are corrected and tested (D-045; experiment log, I6). The independent review of those corrections is pending. Next come the checks of ingestion, disk space and the cost of the first replicate. No benchmark data have been generated and no benchmark model has been fitted.
 
 Status on 2026-10-17, later: the executor of the development runs is written and tested on synthetic data (D-044; experiment log, I6). Before any official run come Codex's review of the registration, then the checks of ingestion, disk space and the cost of the first replicate. No benchmark data have been generated and no benchmark model has been fitted.
@@ -681,3 +683,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 21, 2026-10-17.** Status only. Section 14 records the executor of I6, tested on synthetic data, and the gates before its first official run (D-044). No part of the design changed.
 
 **Revision 22, 2026-10-17.** Status only. The header and section 14 record Codex's favourable review of the registration and the corrections of the executor after its audit (D-045). No part of the design changed.
+
+**Revision 23, 2026-10-17.** Status only. The header and section 14 record the checks before the full run, the development sets and replicate 0 of A10 (D-046). No part of the design changed.

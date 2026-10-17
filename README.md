@@ -11,7 +11,7 @@ Physics-aware transfer of hybrid process models from a data-rich source plant to
   * the training framework and the learned models;
   * the extensions of the protocol that the benchmark needs, and their verification;
   * the registration of the benchmark, M1-E03, in `docs/experiment_log.md`.
-* The executor of the benchmark's development runs is written and tested on synthetic data, and corrected after an independent review. The registration of the benchmark has been reviewed. No benchmark data have been generated and no benchmark has been run, and no transfer code exists yet.
+* The executor of the benchmark's development runs is written and tested on synthetic data, and corrected after an independent review. The registration of the benchmark has been reviewed. Its two development sets are generated, and the first of their ten replicates has been trained, to measure the cost. No result of the benchmark has been read, no test set exists, and no transfer code exists yet.
 
 ## What the project asks
 

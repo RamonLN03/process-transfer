@@ -1912,3 +1912,59 @@ Codex reviewed the registration of M1-E03 favourably, and found three operationa
 4. The rest of the development runs, then `--combine` on every run directory.
 
 **Result.** None: the executor has not been run on benchmark data.
+
+### I6: the checks before the full run, the development sets and replicate 0 of A10 (2026-10-17)
+
+Run at `d424f43` after its continuous integration passed (run 35: tests on Python 3.12 and 3.13 and the Docker image). Its code is that of `91d0c45`. D-046 records the choices made in running it. Data and outputs are under `PT_DATA_DIR = C:/Users/rlnsk/pt-data-m1-e03`, outside the repository and outside OneDrive. No test set was generated.
+
+**Hypothesis** (registration, section 10). Ingestion of a development set takes under an hour; there is room on the disk; and the cost of the whole development campaign, projected from replicate 0 of A10, does not exceed twice the estimate of about 53 hours of task time (50 for the primary analysis and 3 for E/R held).
+
+**Method.**
+
+1. **Ingestion and disk.**
+   * A definition outside the benchmark, `m1-e03-preflight-ingestion`, with two runs of 40 excursions of P3 with the lead at A10, excitation seeds 41 and 42 and master seed 20261201, was generated into a scratch PT_DATA_DIR.
+   * The times of `7_ingest_duckdb` and `9_export` were added and multiplied by (10 / 2)^2 = 25.
+   * The sizes were scaled by 10 / 2, and compared with the free space.
+   * The scratch directory was then discarded. Its reports are kept in `PT_DATA_DIR/preflight/`.
+2. **The development sets.** `m1-e03-train-a10` and `m1-e03-train-a5` were generated with the registered commands from the clean tree of `d424f43`. Their exports were then read by the script of the benchmark, which checks that each is the registered set, with exactly its runs.
+3. **Replicate 0 of A10.**
+   * The command was `python experiments/m1_e03_development.py --condition A10 --replicates 0 --workers 12`: every budget, every family, and the analysis with E/R held.
+   * After the run, every record and model was checked against the ledger, and every selected model was loaded and scored on V again.
+   * The projection is the one registered: 10 times the summed seconds of the fits and trainings of replicate 0, plus, for A5, 10 times those of replicate 0 at b = 10 and 40 in the primary analysis, since A5 has no analysis with E/R held.
+   * Its assumptions: every replicate of A10 costs what replicate 0 costs, which nothing has measured; A5 costs at each budget what A10 costs; the same machine, processes and load; nothing for generation, evaluation, the oracle or OF.
+
+**Result.**
+
+* **Ingestion.** The generator passed its ten checks.
+  * On the two runs, `7_ingest_duckdb` took 0.976 s and `9_export` 0.565 s, so 1.541 s in all, extrapolated to 38.5 s for ten runs against a limit of 3600 s.
+  * The ten runs of each development set then took 5.44 s and 2.16 s at A10, and 5.42 s and 2.07 s at A5.
+* **Disk.**
+  * Two runs took 0.48 MB of data set, 6.8 MB of database and 0.31 MB of export, which scale to 76 MB for both sets.
+  * The disk had 593 GB free.
+  * After the run, the two sets take 49 MB and the outputs of replicate 0 2.2 MB.
+* **The development sets.** Both were created and passed the generator's ten checks. Each holds ten runs of the registered identities, 4811 rows and 40 windows each, on the target, with the known parameters of the target, generated at `d424f43`. The SHA-256 of their identities, as `benchmark.data_identity` gives them:
+  * A10: `bb736ff61f4804bc46924a84b6ee877718ab3d7d6821cd6b24dc69ff11f51324`;
+  * A5: `144b3a1d807d613477e78bd53c1c79b169b5d8a0ad47790a5cc52d9c977906ed`.
+* **Replicate 0 of A10.**
+  * The run is `experiments/m1_e03_development/20261017T125815Z_d424f43`, 12:58:12 to 13:15:27 UTC, with status `complete` and exit code 0. The exports were unchanged.
+  * It recorded 107 tasks of the 107 expected: 19 fits and 88 trainings. There was no scientific failure and no error of infrastructure.
+  * There are 22 selections out of 22 families, none without a model.
+  * The 88 selected models load from their files, and each gives its recorded criterion on V again, exactly. The ledger holds 195 entries: 107 records and 88 models, all matching their files.
+  * Taken alone, the run is a valid partial coverage of A10: 107 of 1070 tasks.
+* **Cost.**
+  * Wall time: 61 s of fits and 970 s of trainings in 12 processes.
+  * Task time: 11272 s in all. The primary analysis took 10415 s, E/R held 856 s, and b = 10 and 40 of the primary analysis 5515 s.
+  * The trainings dominate: by budget, 551, 1710, 2054, 2540 and 3297 s for b = 2, 5, 10, 20 and 40 in the primary analysis.
+
+  | | projected task time |
+  |---|---|
+  | A10, primary analysis | 28.9 h |
+  | A10, E/R held | 2.4 h |
+  | A5 | 15.3 h |
+  | **Total** | **46.6 h** |
+  | Estimate | 53 h |
+  | Threshold of a stop, twice the estimate | 106 h |
+
+  The ratio to the estimate is 0.88. At the parallel efficiency of replicate 0, the rest would take about 4.3 hours of wall time in 12 processes.
+
+**Interpretation.** The three checks pass. Ingestion is far below its limit, and its extrapolation by the square of the runs overstated the time by a factor of five here. The disk is not a constraint. The projected cost is below the estimate, not above twice it. That says the registered schedule can be kept on this machine. It is a projection from one replicate, under a load not identical to the estimate's, and with A5 assumed to cost what A10 costs. No criterion, selection or prediction of replicate 0 has been read as a result: the runs are development runs, and their analysis waits for the rest of them, combined. By the owner's instruction, the work stops here, after replicate 0, though its cost is acceptable.
