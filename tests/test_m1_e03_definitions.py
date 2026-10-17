@@ -1,4 +1,4 @@
-"""The draft definitions of the data sets of M1-E03 (docs/m1_e03_registration_draft.md).
+"""The registered definitions of the data sets of M1-E03 (docs/experiment_log.md, M1-E03).
 
 They are checked as the generator would read them, and nothing is simulated or generated:
 the definitions load; their runs, identities, inputs, durations and sizes are those of the
@@ -17,7 +17,7 @@ from process_transfer.data.identifiers import require_distinct_runs
 from process_transfer.generation import pipeline
 from process_transfer.measurement.sensors import MeasurementSpec
 
-DRAFT = Path(__file__).resolve().parents[1] / "configs" / "datasets" / "m1_e03_draft"
+DATASETS = Path(__file__).resolve().parents[1] / "configs" / "datasets"
 NOMINAL = np.array([0.1 / 60.0, 500.0, 350.0, 337.5])
 
 # set: file, runs, excursions per run, amplitude, rows per run
@@ -59,15 +59,18 @@ def nothing_is_simulated(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def definitions() -> dict[str, object]:
-    return {name: load_dataset_definition(DRAFT / spec[0]) for name, spec in SETS.items()}
+    return {name: load_dataset_definition(DATASETS / spec[0]) for name, spec in SETS.items()}
 
 
 def runs_of(definition: object) -> list[pipeline.RunDefinition]:
     return pipeline.define_runs(definition, ["target"])
 
 
-def test_every_draft_definition_loads_on_the_target_alone() -> None:
-    assert sorted(p.name for p in DRAFT.glob("*.yaml")) == sorted(s[0] for s in SETS.values())
+def test_every_registered_definition_loads_on_the_target_alone() -> None:
+    assert sorted(p.name for p in DATASETS.glob("m1_e03_*.yaml")) == sorted(
+        s[0] for s in SETS.values()
+    )
+    assert not (DATASETS / "m1_e03_draft").exists()  # moved, not copied
     for name, definition in definitions().items():
         assert [Path(p).name for p in definition.plants] == ["target_cstr.yaml"], name
         assert Path(definition.sensors).name == "sensors_cstr.yaml"
@@ -80,7 +83,7 @@ def test_each_set_has_the_runs_inputs_and_size_of_the_plan(name: str) -> None:
     definition = definitions()[name]
     runs = runs_of(definition)
     assert len(runs) == n_runs
-    sensors = load_sensors(DRAFT / definition.sensors)
+    sensors = load_sensors(DATASETS / definition.sensors)
     period = MeasurementSpec.from_config(sensors).sample_period
     assert period == 6.0
     for run in runs:
@@ -123,7 +126,7 @@ def test_no_seed_or_run_of_an_earlier_experiment_is_reused() -> None:
     assert not set(excitation) & USED_EXCITATION_SEEDS
     masters = {d.sensor_master_seed for d in found.values()}
     assert not masters & USED_OTHER_SEEDS
-    m0 = [load_dataset_definition(DRAFT.parent / name) for name in M0_DEFINITIONS]
+    m0 = [load_dataset_definition(DATASETS / name) for name in M0_DEFINITIONS]
     assert not masters & {d.sensor_master_seed for d in m0}
     m0_ids = {run.run_id for d in m0 for run in pipeline.define_runs(d, ["source", "target"])}
     new_ids = {run.run_id for d in found.values() for run in runs_of(d)}

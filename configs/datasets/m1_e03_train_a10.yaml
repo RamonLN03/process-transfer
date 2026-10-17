@@ -1,7 +1,8 @@
-# DRAFT for the registration of M1-E03 (I5), pending approval. Not registered.
-# Nothing may be generated from this file before the registration is approved, committed
-# and reviewed: development sets are generated in I6, test sets in I7 after the technical
-# freeze (docs/m1_plan.md, section 13; docs/m1_e03_registration_draft.md).
+# Registered for M1-E03 (docs/experiment_log.md; approved in D-042). Fixed and committed
+# before any benchmark data exist. Development sets are generated in I6, and only after
+# Codex has reviewed the registration; test sets are generated in I7, after the technical
+# freeze (docs/m1_plan.md, section 13). Read by the generator only: sensor_master_seed is
+# private and never reaches the available branch.
 #
 # train-A10: the development runs at A10, ten replicates of 40 excursions (plan, 5.2).
 #
@@ -10,13 +11,13 @@
 # test or smoke run (tests/test_m1_e03_definitions.py checks it). The noise stream of a
 # run follows from its identity and the master seed (D-021). Sensors of D-020.
 #
-# Paths are relative to this file. When the definition moves to configs/datasets/
-# after approval, ../../ becomes ../, and tests/test_m1_e03_definitions.py is run again.
+# Paths are relative to this file. Moved from configs/datasets/m1_e03_draft/ on
+# 2026-10-17, which changed the two relative paths below and nothing else.
 dataset_id: m1-e03-train-a10
 description: M1-E03 train-A10, development runs of P3 with the lead at A10, ten replicates of 40 excursions.
 plants:
-  - ../../target_cstr.yaml
-sensors: ../../sensors_cstr.yaml
+  - ../target_cstr.yaml
+sensors: ../sensors_cstr.yaml
 protocol: p3
 n_excursions: 40
 excitation_seeds: [31001, 31002, 31003, 31004, 31005, 31006, 31007, 31008, 31009, 31010]

@@ -1,5 +1,7 @@
 # M1-E03, the benchmark of M1: draft registration
 
+**Status on 2026-10-17: approved (D-042) and superseded.** The registration of M1-E03 in `docs/experiment_log.md` is normative, and holds where the two differ. This draft is kept unchanged below as the record of how the design was reached, and is not normative. Its definitions have moved from `configs/datasets/m1_e03_draft/` to `configs/datasets/`.
+
 **Status: draft for review, not registered.** Written on 2026-10-15 for I5. Every choice below is labelled:
 
 * **fixed**: settled by the plan or by a recorded decision, cited with its entry;

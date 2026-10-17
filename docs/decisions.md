@@ -629,3 +629,24 @@ Carried forward, documented and not blocking:
 * The decisions that the registration of the benchmark has to make are proposed, pending review, in `docs/m1_i5_proposal.md`.
 
 *Update of 2026-10-15.* Codex has since reviewed `fb15745`, which holds I4: an audit of that commit that ran the full suite of 1104 tests, and a review on 2026-10-15 that ran 161 focused tests and reproduced two defects of the verdict of M1-E02, corrected in `985a7f6` (`docs/numerical_robustness.md`, nineteenth review).
+
+## D-042 M1-E03: the owner's approval of its design (2026-10-17, decided by the owner)
+
+The owner approved, on 2026-10-17, the eighteen recommendations of section 12 of `docs/m1_e03_registration_draft.md`, as revised on 2026-10-15 after Codex's reviews of `35a7cf5` and `46489c8`, including the rule of complete coverage for H5. Among them:
+
+* the four families P1 to P4, with an overall one-sided level of 0.05, 0.0125 for each family and half of that for each direction;
+* delta = 0.05 on E;
+* five replicates with a numeric difference before a magnitude is established;
+* L = E(test-A10) - E(test-A5) for extrapolation;
+* the primary metric of H5 only with every one of the 8800 states valid, partial diagnostics kept apart and out of the counts;
+* the grid, rates, steps, four steps per row, double precision, failure policy, seeds and data set definitions as proposed.
+
+The design is not to be changed to make results easier. A change would be a new decision, recorded before any benchmark data exist, or a recorded deviation afterwards.
+
+Kept apart:
+
+* **This approval.** It is a decision about the design, by the owner.
+* **The technical reviews that preceded it.** Codex, as read-only reviewer, reviewed `35a7cf5` and `46489c8` and found the defects that the draft's two revisions resolved. It also audited `32d6e51` and found that `median()` accepted values that are not finite numbers, corrected in `075c5b9`, as the owner relayed.
+* **The closure of I5,** in D-043.
+
+The registration that carries this design out is M1-E03 in `docs/experiment_log.md`.
