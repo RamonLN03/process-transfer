@@ -667,3 +667,31 @@ Who did what:
 * the owner approved the design and authorised the closure and the start of I6;
 * Codex reviewed the drafts and earlier commits as recorded in D-042, and has not reviewed the registration;
 * Claude Code wrote the registration, moved and checked the definitions, corrected `median()`, and checked the conditions.
+
+## D-044 I6 of M1: how the development runs of M1-E03 are executed (2026-10-17, decided by the implementation agent, technical and reversible)
+
+The registration fixes what the development runs do (M1-E03, sections 2 to 5, 8 and 9). This entry records how the software carries it out, where the registration left the how open.
+
+* **Where the code is.**
+  * `process_transfer.models.benchmark` holds the procedure on windows already read: the specification as approved, with a digest that identifies it; the tasks of a condition; one fit or training; the selection of a configuration; and the accounting.
+  * `experiments/m1_e03_development.py` reads the exports and runs the tasks.
+  * Neither reads a plant configuration, the definition of a data set, the private branch, a test set or the truth. `tests/test_boundaries.py` holds the script to this.
+* **The specification.** `benchmark.REGISTERED` holds the values of D-042. A test checks them against the registration and against the definitions of the development sets. Its SHA-256 goes into every summary, and runs under another specification are never combined.
+* **Tasks and keys.**
+  * A task is a fit, MR_F, MR or BL, or the training of one configuration. Its key names the condition, replicate, budget, analysis and family, for instance `A10/r03/b20/primary/HK/2`.
+  * The analysis with E/R held is named `held` in keys, so that a key has no slash inside a part.
+  * The fits come first, since a hybrid starts from the MR_F of its own replicate, budget and analysis.
+  * A hybrid whose MR_F failed is recorded as a training failure that names the failed start. It is not trained and not retried.
+* **What each task reads.** F and V are those of `evaluation.budgets.split_budget`: MR_F and every training get F, MR and BL get all b windows, and the checkpoints of a training are chosen on V. The scales of a network are computed from F by `training.train`. The settings of every training are given explicitly, four steps of the scheme per row included; the default of the code is not used.
+* **Selection.** The configuration a family keeps is chosen by `training.select_configuration`, on V alone. The record of a selection gives the configurations tried, their criteria and failures, the one kept, the time spent and the windows of V used. A family whose every configuration failed has no model there.
+* **What is written.** Every record is written once, with an exclusive create, so a record is never replaced. The selected checkpoint of every configuration that has one is written by `models.persistence`, with the SHA-256 of its content. MR, MR_F and BL are recorded with what rebuilds them exactly. The excitation of every budget is recorded, its corners and their rank (plan, section 5.3). Each run of the script writes a new directory under `PT_DATA_DIR/experiments/m1_e03_development/`.
+* **Guards.** An official run refuses:
+  * a data directory inside the repository;
+  * a working tree that git does not call clean;
+  * a missing export;
+  * an export that is not the registered development set with exactly its runs on the target.
+
+  Runs made apart are combined only when `benchmark.compatible` finds the same specification, commit, clean tree and data. The analysis of the development runs calls it before reading two directories together.
+* **Not here, on purpose:**
+  * the evaluation on the test sets and the oracle diagnostics, which are I7's;
+  * the generation of the development sets, which uses the generator as it stands since I4.

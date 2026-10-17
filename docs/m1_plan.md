@@ -570,6 +570,8 @@ Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were deci
 
 ## 14. The next iteration, recommended
 
+Status on 2026-10-17, later: the executor of the development runs is written and tested on synthetic data (D-044; experiment log, I6). Before any official run come Codex's review of the registration, then the checks of ingestion, disk space and the cost of the first replicate. No benchmark data have been generated and no benchmark model has been fitted.
+
 Status on 2026-10-17: I5 is closed (D-043). M1-E03 is registered in the experiment log, and its definitions are in `configs/datasets/`. The next iteration is I6: its executor is written and tested on synthetic data first. Codex's review of the registration is a gate before any benchmark data are generated or any benchmark model is fitted. That is a deviation from section 13, which asked for the review before I6, chosen by the owner and recorded in D-043.
 
 Status on 2026-10-15: I5 is in preparation. `docs/m1_e03_registration_draft.md` is a draft of the registration of M1-E03, with the definitions of its data sets under `configs/datasets/m1_e03_draft/`. It is pending approval and is not registered. No benchmark data exist. It was revised on 2026-10-15 after Codex's review of `35a7cf5`, which found rules that could support and contradict a hypothesis at once; the rules for reading the hypotheses are now checked on synthetic scores. A second revision the same day, after Codex's audit of `46489c8`, checks the domain of every argument of those rules and makes the primary diagnostic of H5 require its whole domain of states.
@@ -673,3 +675,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 19, 2026-10-15.** Status only. Section 14 records the second revision of the draft registration of M1-E03, after Codex's audit of `46489c8`. No part of the design changed.
 
 **Revision 20, 2026-10-17.** Status only. The header, section 3 and section 14 record the approval of the design of M1-E03 (D-042), its registration, the closure of I5 and the start of I6 with Codex's review as a gate before data (D-043). No part of the design changed.
+
+**Revision 21, 2026-10-17.** Status only. Section 14 records the executor of I6, tested on synthetic data, and the gates before its first official run (D-044). No part of the design changed.

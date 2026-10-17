@@ -1853,3 +1853,41 @@ A check by the implementation agent, not an independent review. Codex's review o
 **Result.** Pending: M1-E03 has not been run, and no benchmark data exist.
 
 **Interpretation.** Pending, to be read by the rules of section 7 once the results exist.
+
+### I6: the executor of the development runs of M1-E03 (2026-10-17, not run on benchmark data)
+
+The software of I6, written and tested on synthetic data after the closure of I5 (D-043); D-044 records how it is built. Nothing of the benchmark has been generated or fitted.
+
+* **Code.**
+  * `process_transfer.models.benchmark`, the registered procedure on windows already read.
+  * `experiments/m1_e03_development.py`, which reads the exports of the development sets and runs every task of a condition, or of some replicates of it.
+* **Tests**, in `tests/test_m1_e03_development.py`, 21 of them:
+  * the specification against the registration and against the definitions of the development sets;
+  * the counts of the registration: 1120 trainings and 210 fits, and 80 trainings and 40 fits with E/R held;
+  * the seeds, their reuse at every budget, and the steps of the scheme given explicitly;
+  * the digest, which changes with any value.
+  * The executor itself is run on a small specification of the tests, on two runs simulated with the modeller's equations and the excitation seeds of the tests, 41 and 42. On it the tests check:
+    * that every expected task has one record;
+    * that F and V are kept apart, MR_F reading F alone and MR and BL all b windows;
+    * that the hybrids start from MR_F, with E/R held where the task says;
+    * that the selection is made on V, with its effort recorded;
+    * that a selected model is written and reproduces its criterion exactly;
+    * that MR and BL are refitted to the same records and rebuilt to the same predictions, bit for bit;
+    * that a failed start blocks its hybrids without a retry;
+    * that records are never overwritten, that only the registered development set is read, that runs combine only when compatible, and that an official run is refused without a clean commit, outside data or its export.
+
+  The script is also held by `tests/test_boundaries.py` to read nothing of the truth.
+
+#### What comes before an official run, in this order
+
+1. **Codex's review of the registration of M1-E03.** It is the gate of D-043, and it has not happened.
+2. **Ingestion** (registration, section 10, check 1). Into a new scratch PT_DATA_DIR, generate a definition outside the benchmark with two runs of 40 excursions of P3 with the lead at A10. Its excitation seeds are those of the tests of the data path, 41 and 42, and its master seed is one used by no data set. Read the times of `7_ingest_duckdb` and `9_export` in the report of the generator. Extrapolated by the square of the number of runs to the ten runs of a development set, they must stay under one hour. Then discard the scratch directory. If the limit is exceeded, the schedule is decided and recorded before generating; the science does not change.
+3. **Disk space** (check 2). The free space under PT_DATA_DIR must hold the two development sets, their databases and exports, and the outputs of the runs. The sizes are measured by the check of ingestion, on its two runs, and scaled to the ten runs of each set.
+4. **The development sets.** Generate them with `python -m process_transfer.generation configs/datasets/m1_e03_train_a10.yaml`, and the same for `m1_e03_train_a5.yaml`, from a clean commit. The test sets are not generated.
+5. **Training cost** (check 3). Run `python experiments/m1_e03_development.py --condition A10 --replicates 0 --workers 14`.
+   * The projected total is ten times the summed seconds of its fits and trainings, plus, for A5, ten times those of its budgets 10 and 40.
+   * It is compared with the estimate of section 10 of the registration: about 50 hours, and about 3 more for E/R held.
+   * If it exceeds twice the estimate, the run stops, and the schedule is decided and recorded. More processes or more time may change; the settings may not.
+6. **The rest of the development runs,** in one or more runs of the script. Runs made apart are combined only if `benchmark.compatible` finds them compatible. Then the technical freeze of I6, and only after it the test sets (I7).
+
+**Result.** None: the executor has not been run on benchmark data.
