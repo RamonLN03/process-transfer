@@ -8,8 +8,9 @@ Status on 2026-10-09. M1 is in progress. Four of its iterations are closed (sect
 * I2, the identifiability diagnostic M1-E01: registered, run and documented on 2026-09-27, corrected after Codex's review, and accepted on 2026-10-08 (D-034, D-038).
 * I3, the training framework and the learned models: implemented on 2026-09-27 and 2026-09-28, corrected after Codex's audit, and closed on 2026-10-01 (D-035 to D-037).
 * I4, the lead and the amplitude A5 with their verification M1-E02: decided, implemented, verified and closed on 2026-10-08 (D-039 to D-041).
+* I5, the registration of the benchmark: M1-E03, approved on 2026-10-17 (D-042) and registered in the experiment log, and I5 closed the same day (D-043).
 
-The next iteration is I5, the registration of the benchmark. No benchmark data exist and no benchmark has been run. Section 3 says what is settled and what is still open.
+Status on 2026-10-17. I6 has begun with its software, written and tested on synthetic data. Codex's review of the registration is a gate before any benchmark data are generated or any benchmark model is fitted. No benchmark data exist and no benchmark has been run. Section 3 says what is settled and what is still open.
 
 ## 1. The question
 
@@ -62,7 +63,8 @@ Status on 2026-10-09.
 * Resolved since the answers:
   * the training framework: JAX (section 8.6, D-035), with I3 closed (D-037);
   * P3 at A5 and the lead of 60 s: decided (D-039), implemented (D-040), verified by M1-E02 and closed with I4 (D-041). Data at A5 are generated only through I5, I6 and I7, in that order.
-* Open, for the registration of the benchmark (I5). Recommendations for each are in `docs/m1_i5_proposal.md`, and a complete draft of the registration, with its data set definitions, is in `docs/m1_e03_registration_draft.md`; all pending approval:
+* Resolved on 2026-10-17 by the registration of M1-E03 (D-042, D-043): every point of the list below, which is kept as it was written on 2026-10-15.
+* Open, for the registration of the benchmark (I5), as listed on 2026-10-15. Recommendations for each are in `docs/m1_i5_proposal.md`, and a complete draft of the registration, with its data set definitions, is in `docs/m1_e03_registration_draft.md`; all pending approval at that date:
   * the two budgets of the secondary analysis with E/R held fixed;
   * the number of replicates;
   * the grids of the learned models, their rates and the number of steps, which the pilot of I3 informs and does not fix;
@@ -568,6 +570,8 @@ Status of I4 on 2026-10-08: closed (D-041). The points of the proposal were deci
 
 ## 14. The next iteration, recommended
 
+Status on 2026-10-17: I5 is closed (D-043). M1-E03 is registered in the experiment log, and its definitions are in `configs/datasets/`. The next iteration is I6: its executor is written and tested on synthetic data first. Codex's review of the registration is a gate before any benchmark data are generated or any benchmark model is fitted. That is a deviation from section 13, which asked for the review before I6, chosen by the owner and recorded in D-043.
+
 Status on 2026-10-15: I5 is in preparation. `docs/m1_e03_registration_draft.md` is a draft of the registration of M1-E03, with the definitions of its data sets under `configs/datasets/m1_e03_draft/`. It is pending approval and is not registered. No benchmark data exist. It was revised on 2026-10-15 after Codex's review of `35a7cf5`, which found rules that could support and contradict a hypothesis at once; the rules for reading the hypotheses are now checked on synthetic scores. A second revision the same day, after Codex's audit of `46489c8`, checks the domain of every argument of those rules and makes the primary diagnostic of H5 require its whole domain of states.
 
 Status on 2026-10-08, after I4: I4 is closed (D-041). The next iteration is I5, the registration of the benchmark, M1-E03, with the definitions of its data sets. `docs/m1_i5_proposal.md` proposes the decisions it has to make; they are pending review. The paragraphs below were written earlier and are kept.
@@ -667,3 +671,5 @@ Defaults that stand unless the owner objects, and none was raised with the answe
 **Revision 18, 2026-10-15.** Status only. Section 14 records the revision of the draft registration of M1-E03 after Codex's review of `35a7cf5`. No part of the design changed.
 
 **Revision 19, 2026-10-15.** Status only. Section 14 records the second revision of the draft registration of M1-E03, after Codex's audit of `46489c8`. No part of the design changed.
+
+**Revision 20, 2026-10-17.** Status only. The header, section 3 and section 14 record the approval of the design of M1-E03 (D-042), its registration, the closure of I5 and the start of I6 with Codex's review as a gate before data (D-043). No part of the design changed.

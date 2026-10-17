@@ -650,3 +650,20 @@ Kept apart:
 * **The closure of I5,** in D-043.
 
 The registration that carries this design out is M1-E03 in `docs/experiment_log.md`.
+
+## D-043 I5 of M1 closed; I6 may be written, and Codex's review of the registration is a gate before any benchmark data (2026-10-17, closure authorised by the owner, checked by the implementation agent)
+
+The owner authorised, on 2026-10-17, the closure of I5 once its design was approved and registered, and the start of I6 in the same delivery. The conditions were checked:
+
+* **Approval.** The design was approved (D-042).
+* **Registration.** M1-E03 is registered in `docs/experiment_log.md`, from a commit made before any benchmark data exist. Its five definitions are in `configs/datasets/`, moved from the draft directory with only their relative paths and header comments changed. What they give is unchanged: identities, noise streams, settings, seeds and resolved paths. Nothing was generated to check it.
+* **Review by the implementation agent.** The registration was checked against the approved draft: no scientific decision changed, configurations and registration agree, sizes and counts are coherent, the test sets are reserved for after the freeze, and no result is claimed (experiment log, M1-E03, review). This is a check by the implementation agent, not an independent review.
+* **Tests and integration.** The suite, ruff and the continuous integration of the commit that records the closure are checked after it is pushed. If they fail, the closure does not stand until the failure is corrected.
+
+A deviation from the plan, made explicit. Section 13 of the plan asks that the registration be offered to Codex for review before I6. The owner chose to close I5 and to begin I6 with its software only, written and tested on synthetic data. Codex's review of the registration therefore remains a gate, not yet passed: no data set of the benchmark may be generated, and no benchmark model fitted, before it. Nothing here claims that review.
+
+Who did what:
+
+* the owner approved the design and authorised the closure and the start of I6;
+* Codex reviewed the drafts and earlier commits as recorded in D-042, and has not reviewed the registration;
+* Claude Code wrote the registration, moved and checked the definitions, corrected `median()`, and checked the conditions.

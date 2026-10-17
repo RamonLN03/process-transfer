@@ -5,12 +5,13 @@ Physics-aware transfer of hybrid process models from a data-rich source plant to
 **Status:** early research software.
 
 * M0, a virtual plant and data infrastructure trustworthy enough that later machine-learning results can be believed, was closed on 2026-09-22 (tag `m0-v1.0`; `docs/m0_audit.md`).
-* M1, black-box and hybrid models fitted on target-plant data only, is in progress; its plan is `docs/m1_plan.md`. Four iterations are closed:
+* M1, black-box and hybrid models fitted on target-plant data only, is in progress; its plan is `docs/m1_plan.md`. Five iterations are closed:
   * the evaluation contract and the mechanistic models fitted on the target;
   * a diagnostic of what the data determine about the parameters of the mechanistic model;
   * the training framework and the learned models;
-  * the extensions of the protocol that the benchmark needs, and their verification.
-* The next step is the registration of the benchmark, drafted in `docs/m1_e03_registration_draft.md` and awaiting approval. No benchmark has been registered or run, and no transfer code exists yet.
+  * the extensions of the protocol that the benchmark needs, and their verification;
+  * the registration of the benchmark, M1-E03, in `docs/experiment_log.md`.
+* The executor of the benchmark's development runs is being written and tested on synthetic data. No benchmark data have been generated and no benchmark has been run, and no transfer code exists yet.
 
 ## What the project asks
 
